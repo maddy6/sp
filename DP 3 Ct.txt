@@ -1,0 +1,407 @@
+import h2o
+import pandas as pd
+import numpy as np
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load dataset (Assuming dataset is already loaded in Pandas DataFrame)
+df = pd.read_csv("your_dataset.csv")
+
+# Creating Complex Interaction Features
+# 1. High-Value Transaction Velocity with Merchant Consistency
+df['high_val_trx_velocity'] = df['cnt_same_merc_24hr'] / (df['amt_same_merc_24hr'] + 1)
+
+# 2. Fraud Amplification Score (Weighted High-Dollar Risk)
+df['fraud_amplification_score'] = (
+    df['cnt_cvv2_mismatch_24hr'] * 0.5 + df['cnt_exp_date_mismatch_15days'] * 0.3 + df['cnt_avs_mismatch_24hr'] * 0.2
+) * df['amt_swipe_24hr']
+
+# 3. Fraudulent Transaction Drift Indicator
+df['fraud_trx_drift'] = (df['tot_amt_24hr'] - df['avg_trxn_amt_60days']) / (df['avg_trxn_amt_60days'] + 1)
+
+# 4. Risk-Weighted Zero Auth Frequency
+df['risk_weighted_zero_auth'] = (
+    df['zero_auth_24hr_ind'] * df['high_dollar_zero_auth_1hr_ind'] * df['amt_ge500_ind']
+)
+
+# 5. Fraud Cluster Density Score
+df['fraud_cluster_density'] = (
+    df['cnt_same_mid_termid_24hr'] / (df['cnt_same_merc_24hr'] + 1)
+) * df['cnt_forg_swipe_24hr']
+
+# 6. Velocity-Based Merchant Risk Indicator
+df['velocity_merchant_risk'] = (
+    df['cnt_same_merc_id_6hr'] / (df['cnt_same_merc_id_30min'] + 1)
+)
+
+# 7. Parameterized Bayesian MCC Risk Score
+df['bayesian_mcc_risk'] = (
+    df['hct_mer_mcc_baysian_risk'] * df['cnt_same_mcc_24hr']
+)
+
+# 8. High-Dollar Fraudulent BIN Pattern Score
+df['fraud_bin_pattern_score'] = (
+    df['cnt_forg_cnp_24hr'] / (df['cnt_same_merc_id_24hr'] + 1)
+) * df['amt_forg_cnp_24hr']
+
+# 9. Drift-Adjusted Transaction Spike Score
+df['trx_spike_score'] = (
+    (df['tot_amt_24hr'] - df['avg_trxn_amt_30days']) / (df['avg_trxn_amt_30days'] + 1)
+) * df['cnt_trxns_ge200_24hr']
+
+# Convert to H2OFrame for Model Training
+h2o_df = H2OFrame(df)
+
+# Save Processed Data
+h2o.export_file(h2o_df, path="processed_fraud_dataset.csv", force=True)
+
+print("Feature engineering completed and saved.")
+
+
+
+
+------------------------------------------------------
+
+
+
+
+10-20. Additional Features
+Feature Name	Formula	Explanation
+MCC Shift Index	abs(new_mcc_ind - avg_same_mcc_amt_30days)	Detects abnormal MCC shifts.
+Auth Decline Ratio	cnt_sameamt_auth_6h / (cnt_same_merc_id_6hr + 1)	Identifies fraud patterns in repeated declines.
+Transaction Amount Drift	(amt_swipe_tdy - avg_trxn_amt_30days) / (avg_trxn_amt_60days + 1)	Detects deviation from past transactions.
+Merchant Name Characteristic Anomaly	alphanumeric_merch_name_ind * numeric_merch_name_ind	Fraudsters use abnormal merchant names.
+High-Density Swipe Score	cnt_swipe_24hr / (cnt_swipe_60days + 1)	Captures sudden bursts of card-present swipes.
+High-Dollar Transaction Spread Score	tot_amt_30min / (tot_amt_24hr + 1)	Detects fraud rings conducting multiple transactions.
+Zero Auth High-Risk Merchant Score	zero_auth_diff_mer_nm_ind * hct_mer_mcc_baysian_risk	Zero-dollar authorizations at high-risk merchants.
+Drift-Corrected Fraud Indicator	abs(avg_trxn_amt_24hr - avg_trxn_amt_60days) / std_dev(amt_swipe_60days + 1)	Adjusts for seasonal spending patterns.
+Multi-State Swipe Fraud Score	diff_state_swp_24hr_ind * high_risk_velocity_idx	Fraudsters using stolen cards across multiple states.
+High-Frequency MCC Outlier Score	cnt_same_mcc_30min / (cnt_same_mcc_24hr + 1)	Identifies fraud patterns at the MCC level.
+
+
+
+import h2o
+import numpy as np
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load transaction data
+df = h2o.import_file("transactions.csv")
+
+# ------------------ Feature Engineering ------------------ #
+
+# 1. High-Risk Velocity Index
+df["high_risk_velocity_idx"] = (df["cnt_same_merc_id_6hr"] + df["cnt_same_pos_cnt_6hr"]) / \
+                               (df["cnt_same_merc_id_24hr"] + 1) * h2o.H2OFrame(np.log(1 + df["hct_mer_mcc_baysian_risk"]))
+
+# 2. High-Dollar Fraudulent Merchant Ratio
+df["high_dollar_fraud_mer_ratio"] = df["amt_same_mid_termid_30min"] / (df["amt_same_mid_termid_24hr"] + 1)
+
+# 3. Transaction Anomaly Score (TAS)
+df["TAS"] = abs(df["amt_swipe_tdy"] - df["avg_swipe_amt_60days"]) / (df["std_dev_amt_swipe_60days"] + 1)
+
+# 4. Fraudulent Zero Auth Ratio
+df["fraud_zero_auth_ratio"] = (df["cnt_za_mis_24hr"] + df["cnt_za_mis_7days"]) / (df["tot_zero_auth_cnt_24hr"] + 1)
+
+# 5. MCC Risk-Weighted Spending Score
+df["mcc_risk_spend"] = df["amt_5310_5411_24hr"] * df["hct_mer_mcc_baysian_risk"]
+
+# 6. High-Risk Merchant Name Shift Indicator
+df["high_risk_mer_name_shift"] = (df["new_merch_ind"] == 1) * df["hct_mer_mcc_baysian_risk"]
+
+# 7. Swipe Anomaly Score
+df["swipe_anomaly_score"] = abs(df["amt_swipe_tdy"] - df["avg_swipe_amt_24hr"]) / (df["avg_swipe_amt_60days"] + 1)
+
+# 8. Time Since Last High-Dollar Transaction
+df["time_since_last_high_dollar"] = (df["amt_ge500_ind"] == 1) * df["time_since_last_trxn"]
+
+# 9. Same MCC, Different Merchant Risk Score
+df["same_mcc_diff_mer_risk"] = (df["cnt_same_mcc_24hr"] - df["cnt_same_merc_24hr"]) / (df["cnt_same_mcc_24hr"] + 1)
+
+# 10. MCC Shift Index
+df["mcc_shift_index"] = abs(df["new_mcc_ind"] - df["avg_same_mcc_amt_30days"])
+
+# 11. Auth Decline Ratio
+df["auth_decline_ratio"] = df["cnt_sameamt_auth_6h"] / (df["cnt_same_merc_id_6hr"] + 1)
+
+# 12. Transaction Amount Drift
+df["transaction_amt_drift"] = (df["amt_swipe_tdy"] - df["avg_trxn_amt_30days"]) / (df["avg_trxn_amt_60days"] + 1)
+
+# 13. Merchant Name Characteristic Anomaly
+df["merchant_name_anomaly"] = df["alphanumeric_merch_name_ind"] * df["numeric_merch_name_ind"]
+
+# 14. High-Density Swipe Score
+df["high_density_swipe_score"] = df["cnt_swipe_24hr"] / (df["cnt_swipe_60days"] + 1)
+
+# 15. High-Dollar Transaction Spread Score
+df["high_dollar_txn_spread_score"] = df["tot_amt_30min"] / (df["tot_amt_24hr"] + 1)
+
+# 16. Zero Auth High-Risk Merchant Score
+df["zero_auth_high_risk_mer_score"] = df["zero_auth_diff_mer_nm_ind"] * df["hct_mer_mcc_baysian_risk"]
+
+# 17. Drift-Corrected Fraud Indicator
+df["drift_corrected_fraud_indicator"] = abs(df["avg_trxn_amt_24hr"] - df["avg_trxn_amt_60days"]) / \
+                                        (df["std_dev_amt_swipe_60days"] + 1)
+
+# 18. Multi-State Swipe Fraud Score
+df["multi_state_swp_fraud_score"] = df["diff_state_swp_24hr_ind"] * df["high_risk_velocity_idx"]
+
+# 19. High-Frequency MCC Outlier Score
+df["high_freq_mcc_outlier_score"] = df["cnt_same_mcc_30min"] / (df["cnt_same_mcc_24hr"] + 1)
+
+# 20. Fraudulent Merchant Reuse Score
+df["fraudulent_merch_reuse_score"] = (df["cnt_high_risk_merch_24hr"] > 2) * df["high_risk_velocity_idx"]
+
+# ------------------ Save Transformed Data ------------------ #
+
+# Convert to H2O Frame
+df_h2o = H2OFrame(df)
+
+# Export the transformed dataset
+df_h2o.export_file("transformed_data.csv", force=True)
+
+print("Feature engineering completed. Transformed dataset saved as 'transformed_data.csv'.")
+
+
+
+
+----------------------------------
+
+
+
+
+import h2o
+import numpy as np
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load transaction data
+df = h2o.import_file("transactions.csv")
+
+# ------------------ Feature Engineering ------------------ #
+
+# 21. High-Risk MCC Concentration Score
+df["high_risk_mcc_conc_score"] = df["cnt_same_mcc_6hr"] / (df["cnt_same_mcc_30days"] + 1)
+
+# 22. Merchant Cross-Transaction Anomaly Score
+df["merchant_cross_txn_anomaly"] = abs(df["cnt_same_mer_24hr"] - df["cnt_same_mcc_24hr"]) / \
+                                   (df["cnt_same_mcc_30days"] + 1)
+
+# 23. Graph-Based Multi-Account Fraud Index
+df["graph_multi_acc_fraud_idx"] = df["cnt_same_device_24hr"] / (df["cnt_same_card_24hr"] + 1)
+
+# 24. MCC Fraud Frequency Ratio
+df["mcc_fraud_freq_ratio"] = df["cnt_high_risk_mcc_24hr"] / (df["cnt_high_risk_mcc_60days"] + 1)
+
+# 25. Multi-Merchant Network Density Score
+df["multi_merchant_net_density"] = df["cnt_same_merch_name_24hr"] / (df["cnt_same_merch_name_7days"] + 1)
+
+# 26. High-Frequency Same-Card Swipes
+df["high_freq_card_swipe"] = (df["cnt_swipe_same_card_30min"] > 3) * df["cnt_swipe_same_card_24hr"]
+
+# 27. Risk-Adjusted High-Value Transactions
+df["risk_adj_high_val_txn"] = (df["amt_txn"] > 500) * df["hct_mer_mcc_baysian_risk"]
+
+# 28. Time-Adjusted Fraud Pattern Score
+df["time_adj_fraud_score"] = (df["cnt_txn_off_peak_6hr"] - df["cnt_txn_off_peak_30days"]) / \
+                             (df["cnt_txn_off_peak_60days"] + 1)
+
+# 29. Velocity-Based Geospatial Risk Score
+df["geo_velocity_risk_score"] = (df["cnt_diff_state_24hr"] > 1) * df["cnt_same_mcc_24hr"]
+
+# 30. Rare Merchant Transaction Risk
+df["rare_merch_txn_risk"] = (df["cnt_same_merch_30days"] < 3) * df["hct_mer_mcc_baysian_risk"]
+
+# 31. MCC Shift Probability Score
+df["mcc_shift_prob_score"] = abs(df["new_mcc_ind"] - df["avg_same_mcc_amt_30days"]) / \
+                            (df["avg_same_mcc_amt_60days"] + 1)
+
+# 32. Cross-Card Fraud Likelihood Score
+df["cross_card_fraud_likelihood"] = df["cnt_diff_card_same_mer_24hr"] / (df["cnt_same_merch_7days"] + 1)
+
+# 33. Merchant Aging Risk Factor
+df["merchant_aging_risk_factor"] = (df["days_since_first_txn"] < 30) * df["hct_mer_mcc_baysian_risk"]
+
+# 34. Device-Based Fraud Density Score
+df["device_fraud_density"] = df["cnt_same_device_24hr"] / (df["cnt_same_device_7days"] + 1)
+
+# 35. Declined Transaction Fraud Ratio
+df["declined_txn_fraud_ratio"] = df["cnt_declined_txn_24hr"] / (df["cnt_total_txn_24hr"] + 1)
+
+# 36. Cross-Device Anomaly Score
+df["cross_device_anomaly"] = abs(df["cnt_diff_device_6hr"] - df["cnt_diff_device_30days"]) / \
+                            (df["cnt_diff_device_60days"] + 1)
+
+# 37. High-Cash Withdrawal Risk Score
+df["high_cash_withdrawal_risk"] = (df["amt_cash_withdrawal_24hr"] > 1000) * df["hct_mer_mcc_baysian_risk"]
+
+# 38. MCC-Based Transaction Drift Score
+df["mcc_txn_drift_score"] = abs(df["cnt_same_mcc_24hr"] - df["cnt_same_mcc_7days"]) / \
+                            (df["cnt_same_mcc_30days"] + 1)
+
+# 39. Fraudulent Merchant Cluster Risk
+df["fraudulent_merchant_cluster_risk"] = (df["cnt_high_risk_merch_24hr"] > 2) * df["high_risk_mcc_conc_score"]
+
+# 40. Time Series Fraud Score Adjustment
+df["time_series_fraud_adj"] = df["fraudulent_txn_7days"] / (df["fraudulent_txn_30days"] + 1)
+
+# ------------------ Save Transformed Data ------------------ #
+
+# Convert to H2O Frame
+df_h2o = H2OFrame(df)
+
+# Export the transformed dataset
+df_h2o.export_file("transformed_data_2.csv", force=True)
+
+print("Additional feature engineering completed. Transformed dataset saved as 'transformed_data_2.csv'.")
+
+
+
+Feature Name	Formula	Explanation
+High-Risk MCC Concentration Score	cnt_same_mcc_6hr / (cnt_same_mcc_30days + 1)	Measures the density of transactions in high-risk MCC (Merchant Category Codes) within 6 hours compared to 30 days. Higher values indicate potential fraud patterns.
+Merchant Cross-Transaction Anomaly	abs(cnt_same_mer_24hr - cnt_same_mcc_24hr) / (cnt_same_mcc_30days + 1)	Identifies merchants with unusually high transactions compared to their MCC category, signaling possible fraud.
+Graph-Based Multi-Account Fraud Index	cnt_same_device_24hr / (cnt_same_card_24hr + 1)	Detects fraud rings by analyzing multiple accounts using the same device within 24 hours.
+MCC Fraud Frequency Ratio	cnt_high_risk_mcc_24hr / (cnt_high_risk_mcc_60days + 1)	Calculates how often a customer transacts in high-risk MCCs in 24 hours vs. 60 days. A sudden increase is a red flag.
+Multi-Merchant Network Density Score	cnt_same_merch_name_24hr / (cnt_same_merch_name_7days + 1)	Evaluates how transactions are clustered among merchants over different time frames.
+High-Frequency Same-Card Swipes	(cnt_swipe_same_card_30min > 3) * cnt_swipe_same_card_24hr	Flags multiple rapid transactions on the same card within 30 minutes.
+Risk-Adjusted High-Value Transactions	(amt_txn > 500) * hct_mer_mcc_baysian_risk	Identifies high-value transactions in high-risk MCCs using Bayesian risk scores.
+Time-Adjusted Fraud Pattern Score	(cnt_txn_off_peak_6hr - cnt_txn_off_peak_30days) / (cnt_txn_off_peak_60days + 1)	Detects abnormal transaction behavior outside normal business hours.
+Velocity-Based Geospatial Risk Score	(cnt_diff_state_24hr > 1) * cnt_same_mcc_24hr	Flags transactions occurring across different states within 24 hours under the same MCC.
+Rare Merchant Transaction Risk	(cnt_same_merch_30days < 3) * hct_mer_mcc_baysian_risk	Flags transactions at rarely visited merchants with high risk scores.
+MCC Shift Probability Score	abs(new_mcc_ind - avg_same_mcc_amt_30days) / (avg_same_mcc_amt_60days + 1)	Measures unusual spending shifts in MCC categories.
+Cross-Card Fraud Likelihood Score	cnt_diff_card_same_mer_24hr / (cnt_same_merch_7days + 1)	Detects fraud patterns when different cards are used at the same merchant in 24 hours.
+Merchant Aging Risk Factor	(days_since_first_txn < 30) * hct_mer_mcc_baysian_risk	Identifies fraud risks associated with newly onboarded merchants.
+Device-Based Fraud Density Score	cnt_same_device_24hr / (cnt_same_device_7days + 1)	Measures how frequently a device is used in a short period compared to historical usage.
+Declined Transaction Fraud Ratio	cnt_declined_txn_24hr / (cnt_total_txn_24hr + 1)	Tracks the proportion of declined transactions, as frequent declines indicate fraudulent attempts.
+Cross-Device Anomaly Score	abs(cnt_diff_device_6hr - cnt_diff_device_30days) / (cnt_diff_device_60days + 1)	Detects transactions that suddenly switch devices at an unusual rate.
+High-Cash Withdrawal Risk Score	(amt_cash_withdrawal_24hr > 1000) * hct_mer_mcc_baysian_risk	Identifies high-cash withdrawals linked to risky merchants or customers.
+MCC-Based Transaction Drift Score	abs(cnt_same_mcc_24hr - cnt_same_mcc_7days) / (cnt_same_mcc_30days + 1)	Detects sudden MCC spending behavior changes.
+Fraudulent Merchant Cluster Risk	(cnt_high_risk_merch_24hr > 2) * high_risk_mcc_conc_score	Flags transactions at multiple high-risk merchants within a short time.
+Time Series Fraud Score Adjustment	fraudulent_txn_7days / (fraudulent_txn_30days + 1)	Measures short-term fraud patterns based on historical trends.
+
+
+
+
+
+------------------------------------------------------
+-----------------------------------------------------------
+
+
+
+
+Feature Name	Formula	Explanation
+Cross-Account Transaction Risk	cnt_diff_acct_same_device_24hr / (cnt_diff_acct_same_device_30days + 1)	Flags multiple accounts transacting from the same device in 24 hours.
+Merchant Velocity Score	cnt_same_merch_1hr / (cnt_same_merch_24hr + 1)	Identifies merchants experiencing sudden transaction spikes within an hour.
+Transaction Route Deviation	haversine_dist(last_txn_lat, last_txn_long, curr_txn_lat, curr_txn_long)	Calculates the geospatial distance between the last and current transactions to detect anomalies.
+Card Sharing Probability	cnt_diff_card_same_device_24hr / (cnt_same_device_7days + 1)	Detects potential card-sharing fraud by analyzing different cards on the same device.
+Unusual Time Gap Between Transactions	time_diff(curr_txn_time, prev_txn_time) < threshold	Flags transactions that occur unusually quickly after the previous transaction.
+Linked-Account Fraud Index	(cnt_same_ip_diff_card_24hr > 2) * cnt_same_ip_diff_card_7days	Identifies fraud rings using multiple cards under the same IP.
+Merchant Density Anomaly Score	cnt_same_merch_6hr / (cnt_same_merch_30days + 1)	Flags merchants experiencing a transaction surge in 6 hours compared to 30 days.
+Cashback Exploitation Score	cnt_cashback_txn_24hr / (cnt_cashback_txn_30days + 1)	Detects potential fraud linked to cashback abuse.
+MCC-Based Transaction Velocity	cnt_same_mcc_1hr / (cnt_same_mcc_24hr + 1)	Identifies unusually high transaction rates within the same MCC.
+Fraudulent Merchant Cluster Index	(cnt_high_risk_merch_24hr > 2) * hct_mer_mcc_baysian_risk	Flags users transacting at multiple high-risk merchants.
+Time Series Spend Drift Score	abs(avg_txn_amt_24hr - avg_txn_amt_7days) / (avg_txn_amt_30days + 1)	Detects abnormal spending shifts over time.
+Repeated Decline Fraud Score	cnt_declined_txn_1hr / (cnt_declined_txn_24hr + 1)	Measures repeated declines within an hour, indicating potential fraud.
+IP Address Velocity Score	cnt_diff_ip_24hr / (cnt_diff_ip_7days + 1)	Flags transactions from multiple IPs in a short time.
+Chargeback Risk Index	cnt_chargeback_30days / (cnt_total_txn_30days + 1)	Detects customers with a high chargeback rate.
+Cross-Border Transaction Anomaly	(txn_country != home_country) * cnt_cross_border_7days	Flags unusual international transactions.
+Geographic Spend Consistency Score	haversine_dist(avg_txn_lat_30days, avg_txn_long_30days, curr_txn_lat, curr_txn_long)	Detects transactions occurring in unfamiliar locations.
+High-Value Refund Anomaly	(amt_refund > threshold) * hct_mer_mcc_baysian_risk	Identifies fraud cases involving large refunds.
+Peak Hour Transaction Volume Score	cnt_txn_peak_hours_24hr / (cnt_txn_peak_hours_7days + 1)	Measures transaction spikes during peak hours.
+Low-Value Micro-Transaction Fraud Score	(amt_txn < micro_threshold) * cnt_micro_txn_24hr	Flags patterns of multiple small transactions used for fraud.
+Synthetic Identity Fraud Indicator	(cnt_diff_email_same_card_24hr > 2) * cnt_diff_email_same_card_7days	Detects accounts using multiple email IDs linked to the same card.
+💡 Full H2O Python Code for Next 20 Features
+python
+Copy
+Edit
+import h2o
+import numpy as np
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load transaction data
+df = h2o.import_file("transactions.csv")
+
+# ------------------ Feature Engineering ------------------ #
+
+# 41. Cross-Account Transaction Risk
+df["cross_acct_txn_risk"] = df["cnt_diff_acct_same_device_24hr"] / (df["cnt_diff_acct_same_device_30days"] + 1)
+
+# 42. Merchant Velocity Score
+df["merchant_velocity_score"] = df["cnt_same_merch_1hr"] / (df["cnt_same_merch_24hr"] + 1)
+
+# 43. Transaction Route Deviation (Haversine Distance)
+df["txn_route_deviation"] = df["haversine_dist"].apply(lambda row: haversine_dist(
+    row["last_txn_lat"], row["last_txn_long"], row["curr_txn_lat"], row["curr_txn_long"]))
+
+# 44. Card Sharing Probability
+df["card_sharing_prob"] = df["cnt_diff_card_same_device_24hr"] / (df["cnt_same_device_7days"] + 1)
+
+# 45. Unusual Time Gap Between Transactions
+df["unusual_time_gap"] = (df["time_diff(curr_txn_time, prev_txn_time)"] < threshold).astype(int)
+
+# 46. Linked-Account Fraud Index
+df["linked_acc_fraud_index"] = (df["cnt_same_ip_diff_card_24hr"] > 2) * df["cnt_same_ip_diff_card_7days"]
+
+# 47. Merchant Density Anomaly Score
+df["merchant_density_anomaly"] = df["cnt_same_merch_6hr"] / (df["cnt_same_merch_30days"] + 1)
+
+# 48. Cashback Exploitation Score
+df["cashback_exploit_score"] = df["cnt_cashback_txn_24hr"] / (df["cnt_cashback_txn_30days"] + 1)
+
+# 49. MCC-Based Transaction Velocity
+df["mcc_txn_velocity"] = df["cnt_same_mcc_1hr"] / (df["cnt_same_mcc_24hr"] + 1)
+
+# 50. Fraudulent Merchant Cluster Index
+df["fraud_merch_cluster_idx"] = (df["cnt_high_risk_merch_24hr"] > 2) * df["hct_mer_mcc_baysian_risk"]
+
+# 51. Time Series Spend Drift Score
+df["spend_drift_score"] = abs(df["avg_txn_amt_24hr"] - df["avg_txn_amt_7days"]) / (df["avg_txn_amt_30days"] + 1)
+
+# 52. Repeated Decline Fraud Score
+df["repeated_decline_score"] = df["cnt_declined_txn_1hr"] / (df["cnt_declined_txn_24hr"] + 1)
+
+# 53. IP Address Velocity Score
+df["ip_velocity_score"] = df["cnt_diff_ip_24hr"] / (df["cnt_diff_ip_7days"] + 1)
+
+# 54. Chargeback Risk Index
+df["chargeback_risk_index"] = df["cnt_chargeback_30days"] / (df["cnt_total_txn_30days"] + 1)
+
+# 55. Cross-Border Transaction Anomaly
+df["cross_border_anomaly"] = (df["txn_country"] != df["home_country"]) * df["cnt_cross_border_7days"]
+
+# 56. Geographic Spend Consistency Score
+df["geo_spend_consistency"] = df["haversine_dist"].apply(lambda row: haversine_dist(
+    row["avg_txn_lat_30days"], row["avg_txn_long_30days"], row["curr_txn_lat"], row["curr_txn_long"]))
+
+# 57. High-Value Refund Anomaly
+df["high_val_refund_anomaly"] = (df["amt_refund"] > threshold) * df["hct_mer_mcc_baysian_risk"]
+
+# 58. Peak Hour Transaction Volume Score
+df["peak_hour_txn_vol"] = df["cnt_txn_peak_hours_24hr"] / (df["cnt_txn_peak_hours_7days"] + 1)
+
+# 59. Low-Value Micro-Transaction Fraud Score
+df["micro_txn_fraud_score"] = (df["amt_txn"] < micro_threshold) * df["cnt_micro_txn_24hr"]
+
+# 60. Synthetic Identity Fraud Indicator
+df["synthetic_id_fraud"] = (df["cnt_diff_email_same_card_24hr"] > 2) * df["cnt_diff_email_same_card_7days"]
+
+# ------------------ Save Transformed Data ------------------ #
+df_h2o = H2OFrame(df)
+df_h2o.export_file("transformed_data_3.csv", force=True)
+
+print("Feature engineering completed. Transformed dataset saved as 'transformed_data_3.csv'.")
+🚀 Next Steps
+Would you like:
+
+Another 20 features focusing on graph-based & network analytics?
+Integration into a fraud model with H2O AutoML?
+Additional justifications for MRM approval?

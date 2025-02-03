@@ -1,0 +1,382 @@
+New Interaction Features with Detailed Explanations
+**1. Transaction Velocity and Acceleration Features
+These features capture the rate of change in transaction behavior, which is critical for detecting fraud.
+
+Feature: transaction_acceleration_24hr
+
+Formula: (tot_amt_24hr - tot_amt_48hr) / (tot_amt_48hr + 1)
+
+Explanation: This feature calculates the acceleration of transaction amounts by comparing the total amount in the last 24 hours to the total amount in the previous 24 hours (48 hours ago). It helps detect sudden spikes or drops in transaction activity, which are often associated with fraud.
+
+Feature: high_dollar_acceleration_24hr
+
+Formula: (cnt_trxns_ge200_24hr - cnt_trxns_ge200_48hr) / (cnt_trxns_ge200_48hr + 1)
+
+Explanation: This feature calculates the acceleration of high-dollar transactions (≥$200) by comparing the count in the last 24 hours to the count in the previous 24 hours. It helps detect sudden spikes in high-dollar activity, which are often associated with fraud.
+
+**2. Mismatch Pattern Aggregation Features
+These features aggregate mismatch patterns across multiple time windows to detect systematic fraud attempts.
+
+Feature: cvv2_mismatch_velocity_7days
+
+Formula: (cnt_cvv2_mismatch_7days) / (time_since_last_cvv2_mismatch + 1)
+
+Explanation: This feature calculates the velocity of CVV2 mismatches over the last 7 days, normalized by the time since the last mismatch. It helps detect rapid testing of CVV2 codes, which is often associated with fraud.
+
+Feature: avs_mismatch_ratio_30days
+
+Formula: (cnt_avs_mismatch_30days) / (tot_cnt_30days + 1)
+
+Explanation: This feature calculates the ratio of AVS mismatches to the total number of transactions over the last 30 days. It helps detect systematic issues with AVS verification, which are common in fraud.
+
+**3. Merchant and Terminal Interaction Features
+These features capture anomalies in merchant and terminal usage patterns, which are critical for detecting fraud in card-present transactions.
+
+Feature: merch_terminal_anomaly_score
+
+Formula: (cnt_same_mid_termid_24hr * dist_miles) / (cnt_same_merc_24hr + 1)
+
+Explanation: This feature combines the count of transactions at the same merchant ID and terminal ID in the last 24 hours with the distance between transactions. It helps detect location-based anomalies, such as a card being used at the same terminal in different locations.
+
+Feature: merch_terminal_high_dollar_ratio
+
+Formula: (amt_same_mid_termid_24hr * amt_ge500_ind) / (tot_amt_24hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar transactions at the same merchant ID and terminal ID to the total transaction amount in the last 24 hours. It helps detect disproportionate high-dollar activity at specific terminals, which is a strong fraud signal.
+
+**4. Customer Behavior Deviation Features
+These features capture deviations from a customer’s typical behavior, which are strong indicators of fraud.
+
+Feature: cust_behavior_deviation_score
+
+Formula: (abs(tot_amt_24hr - avg_trxn_amt_60days) + abs(tot_cnt_24hr - avg_trxn_cnt_60days)) / (avg_trxn_amt_60days + 1)
+
+Explanation: This feature calculates the absolute deviation of the total transaction amount and count in the last 24 hours from the 60-day average. It helps detect sudden changes in transaction behavior, which are often associated with fraud.
+
+Feature: cust_swipe_deviation_score
+
+Formula: (abs(amt_swipe_24hr - avg_swipe_amt_60days) + abs(cnt_swipe_24hr - avg_swipe_cnt_60days)) / (avg_swipe_amt_60days + 1)
+
+Explanation: This feature calculates the absolute deviation of swipe transaction amount and count in the last 24 hours from the 60-day average. It helps detect sudden changes in swipe behavior, which are often associated with fraud.
+
+**5. Time-of-Day and Day-of-Week Interaction Features
+These features capture time-based patterns, such as unusual activity during specific times or days, which are often associated with fraud.
+
+Feature: unusual_time_activity_score
+
+Formula: (cnt_trxns_ge200_24hr * (trxn_hour >= 22 or trxn_hour <= 6)) / (tot_cnt_24hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar transactions (≥$200) during nighttime hours (10 PM to 6 AM) to the total number of transactions in the last 24 hours. It helps detect disproportionate nighttime activity, which is often associated with fraud.
+
+Feature: unusual_day_activity_score
+
+Formula: (cnt_trxns_ge200_24hr * trxn_wkend_ind) / (tot_cnt_24hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar transactions (≥$200) on weekends to the total number of transactions in the last 24 hours. It helps detect disproportionate weekend activity, which is often associated with fraud.
+
+**6. Zero-Authorization Pattern Features
+These features capture patterns in zero-authorization transactions, which are often used by fraudsters to test cards.
+
+Feature: zero_auth_mismatch_velocity_24hr
+
+Formula: (cnt_za_mis_24hr) / (time_since_last_zero_auth + 1)
+
+Explanation: This feature calculates the velocity of zero-authorization mismatches (CVV2, AVS, or expiration date) in the last 24 hours, normalized by the time since the last zero-authorization. It helps detect rapid testing of cards.
+
+Feature: zero_auth_high_dollar_ratio
+
+Formula: (amt_forg_cnp_24hr * amt_ge500_ind) / (tot_amt_24hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar zero-authorization transactions to the total transaction amount in the last 24 hours. It helps detect disproportionate high-dollar zero-authorization activity, which is a strong fraud signal.
+
+H2O Python Code for Feature Engineering
+python
+Copy
+# Create new interaction features
+data["transaction_acceleration_24hr"] = (data["tot_amt_24hr"] - data["tot_amt_48hr"]) / (data["tot_amt_48hr"] + 1)
+data["high_dollar_acceleration_24hr"] = (data["cnt_trxns_ge200_24hr"] - data["cnt_trxns_ge200_48hr"]) / (data["cnt_trxns_ge200_48hr"] + 1)
+data["cvv2_mismatch_velocity_7days"] = data["cnt_cvv2_mismatch_7days"] / (data["time_since_last_cvv2_mismatch"] + 1)
+data["avs_mismatch_ratio_30days"] = data["cnt_avs_mismatch_30days"] / (data["tot_cnt_30days"] + 1)
+data["merch_terminal_anomaly_score"] = (data["cnt_same_mid_termid_24hr"] * data["dist_miles"]) / (data["cnt_same_merc_24hr"] + 1)
+data["merch_terminal_high_dollar_ratio"] = (data["amt_same_mid_termid_24hr"] * data["amt_ge500_ind"]) / (data["tot_amt_24hr"] + 1)
+data["cust_behavior_deviation_score"] = (abs(data["tot_amt_24hr"] - data["avg_trxn_amt_60days"]) + abs(data["tot_cnt_24hr"] - data["avg_trxn_cnt_60days"])) / (data["avg_trxn_amt_60days"] + 1)
+data["cust_swipe_deviation_score"] = (abs(data["amt_swipe_24hr"] - data["avg_swipe_amt_60days"]) + abs(data["cnt_swipe_24hr"] - data["avg_swipe_cnt_60days"])) / (data["avg_swipe_amt_60days"] + 1)
+data["unusual_time_activity_score"] = (data["cnt_trxns_ge200_24hr"] * ((data["trxn_hour"] >= 22) | (data["trxn_hour"] <= 6))) / (data["tot_cnt_24hr"] + 1)
+data["unusual_day_activity_score"] = (data["cnt_trxns_ge200_24hr"] * data["trxn_wkend_ind"]) / (data["tot_cnt_24hr"] + 1)
+data["zero_auth_mismatch_velocity_24hr"] = data["cnt_za_mis_24hr"] / (data["time_since_last_zero_auth"] + 1)
+data["zero_auth_high_dollar_ratio"] = (data["amt_forg_cnp_24hr"] * data["amt_ge500_ind"]) / (data["tot_amt_24hr"] + 1)
+
+# Save the engineered features to a new file
+data.save("path_to_save_engineered_data.csv")
+Key Considerations
+Generalization: The features are designed to capture complex patterns without overfitting.
+
+Bias-Variance Trade-off: Normalization and ratio-based features help reduce bias and variance.
+
+Drift: Time-based features account for changes in transaction behavior over time.
+
+Fraud Bin Patterns: Features target high-dollar, mismatch, and behavioral anomalies, which are strong fraud signals.
+
+Regularization: Ratio-based features inherently reduce the impact of outliers.
+
+
+
+
+
+
+
+
+-----------------------------------------
+
+
+
+
+Advanced Interaction Features with Detailed Explanations
+**1. High-Dollar Transaction Clustering Features
+These features capture clustering patterns in high-dollar transactions, which are often indicative of fraud.
+
+Feature: high_dollar_cluster_score
+
+Formula: (cnt_trxns_ge500_24hr * amt_ge500_ind) / (dist_miles + 1)
+
+Explanation: This feature combines the count of high-dollar transactions (≥$500) in the last 24 hours with the distance between transactions. It helps detect clustering of high-dollar transactions in close proximity, which is often associated with fraud.
+
+Feature: high_dollar_time_cluster_score
+
+Formula: (cnt_trxns_ge500_24hr * amt_ge500_ind) / (time_btw_swp + 1)
+
+Explanation: This feature combines the count of high-dollar transactions (≥$500) in the last 24 hours with the time between transactions. It helps detect rapid clustering of high-dollar transactions within a short time frame, which is often associated with fraud.
+
+**2. Non-Linear High-Dollar Velocity Features
+These features capture non-linear patterns in high-dollar transaction velocity, which are critical for detecting fraud.
+
+Feature: high_dollar_velocity_squared
+
+Formula: (cnt_trxns_ge500_24hr ** 2) / (time_since_last_trxn + 1)
+
+Explanation: This feature squares the count of high-dollar transactions (≥$500) in the last 24 hours and normalizes by the time since the last transaction. It helps detect exponential spikes in high-dollar activity, which are often associated with fraud.
+
+Feature: high_dollar_acceleration_squared
+
+Formula: ((cnt_trxns_ge500_24hr - cnt_trxns_ge500_48hr) ** 2) / (cnt_trxns_ge500_48hr + 1)
+
+Explanation: This feature squares the acceleration of high-dollar transactions (≥$500) by comparing the count in the last 24 hours to the count in the previous 24 hours. It helps detect exponential spikes in high-dollar activity, which are often associated with fraud.
+
+**3. High-Dollar Mismatch Pattern Features
+These features capture mismatch patterns specifically for high-dollar transactions, which are strong indicators of fraud.
+
+Feature: high_dollar_cvv2_mismatch_ratio
+
+Formula: (cnt_cvv2_mismatch_24hr * amt_ge500_ind) / (tot_cnt_24hr + 1)
+
+Explanation: This feature calculates the ratio of CVV2 mismatches for high-dollar transactions (≥$500) to the total number of transactions in the last 24 hours. It helps detect disproportionate CVV2 mismatches in high-dollar transactions, which is a strong fraud signal.
+
+Feature: high_dollar_avs_mismatch_ratio
+
+Formula: (cnt_avs_mismatch_24hr * amt_ge500_ind) / (tot_cnt_24hr + 1)
+
+Explanation: This feature calculates the ratio of AVS mismatches for high-dollar transactions (≥$500) to the total number of transactions in the last 24 hours. It helps detect disproportionate AVS mismatches in high-dollar transactions, which is a strong fraud signal.
+
+**4. High-Dollar Merchant Anomaly Features
+These features capture anomalies in merchant usage patterns specifically for high-dollar transactions.
+
+Feature: high_dollar_merch_anomaly_score
+
+Formula: (cnt_same_merc_24hr * amt_ge500_ind) / (avg_same_merc_amt_60days + 1)
+
+Explanation: This feature combines the count of transactions at the same merchant in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the 60-day average transaction amount at the same merchant to detect anomalies in high-dollar merchant activity.
+
+Feature: high_dollar_mcc_anomaly_score
+
+Formula: (cnt_5310_5411_24hr * amt_ge500_ind) / (avg_mcc_amt + 1)
+
+Explanation: This feature combines the count of transactions for MCCs 5310 and 5411 in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the average MCC amount to detect anomalies in high-dollar MCC activity.
+
+**5. High-Dollar Geographic Anomaly Features
+These features capture geographic anomalies specifically for high-dollar transactions.
+
+Feature: high_dollar_geo_anomaly_score
+
+Formula: (cnt_cntry_24hr * amt_ge500_ind) / (dist_miles + 1)
+
+Explanation: This feature combines the count of transactions in different countries in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the distance between transactions to detect location-based anomalies in high-dollar activity.
+
+Feature: high_dollar_state_anomaly_score
+
+Formula: (cnt_dom_states_24hr * amt_ge500_ind) / (dist_miles + 1)
+
+Explanation: This feature combines the count of transactions in different domestic states in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the distance between transactions to detect location-based anomalies in high-dollar activity.
+
+**6. High-Dollar Time-Based Interaction Features
+These features capture time-based patterns specifically for high-dollar transactions.
+
+Feature: high_dollar_nighttime_ratio
+
+Formula: (amt_swipe_24hr * amt_ge500_ind * (trxn_hour >= 22 or trxn_hour <= 6)) / (tot_amt_24hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar nighttime transactions to the total transaction amount in the last 24 hours. It helps detect disproportionate high-dollar activity at night, which is often associated with fraud.
+
+Feature: high_dollar_weekend_ratio
+
+Formula: (amt_swipe_24hr * amt_ge500_ind * trxn_wkend_ind) / (tot_amt_24hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar weekend transactions to the total transaction amount in the last 24 hours. It helps detect disproportionate high-dollar activity on weekends, which is often associated with fraud.
+
+H2O Python Code for Feature Engineering
+python
+Copy
+# Create advanced interaction features
+data["high_dollar_cluster_score"] = (data["cnt_trxns_ge500_24hr"] * data["amt_ge500_ind"]) / (data["dist_miles"] + 1)
+data["high_dollar_time_cluster_score"] = (data["cnt_trxns_ge500_24hr"] * data["amt_ge500_ind"]) / (data["time_btw_swp"] + 1)
+data["high_dollar_velocity_squared"] = (data["cnt_trxns_ge500_24hr"] ** 2) / (data["time_since_last_trxn"] + 1)
+data["high_dollar_acceleration_squared"] = ((data["cnt_trxns_ge500_24hr"] - data["cnt_trxns_ge500_48hr"]) ** 2) / (data["cnt_trxns_ge500_48hr"] + 1)
+data["high_dollar_cvv2_mismatch_ratio"] = (data["cnt_cvv2_mismatch_24hr"] * data["amt_ge500_ind"]) / (data["tot_cnt_24hr"] + 1)
+data["high_dollar_avs_mismatch_ratio"] = (data["cnt_avs_mismatch_24hr"] * data["amt_ge500_ind"]) / (data["tot_cnt_24hr"] + 1)
+data["high_dollar_merch_anomaly_score"] = (data["cnt_same_merc_24hr"] * data["amt_ge500_ind"]) / (data["avg_same_merc_amt_60days"] + 1)
+data["high_dollar_mcc_anomaly_score"] = (data["cnt_5310_5411_24hr"] * data["amt_ge500_ind"]) / (data["avg_mcc_amt"] + 1)
+data["high_dollar_geo_anomaly_score"] = (data["cnt_cntry_24hr"] * data["amt_ge500_ind"]) / (data["dist_miles"] + 1)
+data["high_dollar_state_anomaly_score"] = (data["cnt_dom_states_24hr"] * data["amt_ge500_ind"]) / (data["dist_miles"] + 1)
+data["high_dollar_nighttime_ratio"] = (data["amt_swipe_24hr"] * data["amt_ge500_ind"] * ((data["trxn_hour"] >= 22) | (data["trxn_hour"] <= 6))) / (data["tot_amt_24hr"] + 1)
+data["high_dollar_weekend_ratio"] = (data["amt_swipe_24hr"] * data["amt_ge500_ind"] * data["trxn_wkend_ind"]) / (data["tot_amt_24hr"] + 1)
+
+# Save the engineered features to a new file
+data.save("path_to_save_engineered_data.csv")
+Key Considerations
+Generalization: The features are designed to capture complex patterns without overfitting.
+
+Bias-Variance Trade-off: Non-linear transformations and normalization help reduce bias and variance.
+
+Drift: Time-based features account for changes in transaction behavior over time.
+
+Fraud Bin Patterns: Features specifically target high-dollar transactions and mismatch patterns, which are strong fraud signals.
+
+Regularization: Ratio-based features inherently reduce the impact of outliers.
+
+
+
+
+
+---------------------------------------------------
+
+
+
+Extremely Complex Interaction Features with Detailed Explanations
+**1. High-Dollar Transaction Burst Detection Features
+These features detect sudden bursts of high-dollar transactions, which are often indicative of fraud.
+
+Feature: high_dollar_burst_score
+
+Formula: (cnt_trxns_ge500_1hr * amt_ge500_ind) / (time_since_last_trxn + 1)
+
+Explanation: This feature combines the count of high-dollar transactions (≥$500) in the last hour with an indicator for high-dollar transactions. It normalizes by the time since the last transaction to detect sudden bursts of high-dollar activity, which are often associated with fraud.
+
+Feature: high_dollar_burst_ratio
+
+Formula: (cnt_trxns_ge500_1hr * amt_ge500_ind) / (tot_cnt_1hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar transactions (≥$500) in the last hour to the total number of transactions in the last hour. It helps detect disproportionate high-dollar activity within a short time frame, which is often associated with fraud.
+
+**2. High-Dollar Mismatch Velocity Features
+These features capture the velocity of mismatches specifically for high-dollar transactions.
+
+Feature: high_dollar_cvv2_mismatch_velocity
+
+Formula: (cnt_cvv2_mismatch_24hr * amt_ge500_ind) / (time_since_last_cvv2_mismatch + 1)
+
+Explanation: This feature combines the count of CVV2 mismatches in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the time since the last CVV2 mismatch to detect rapid testing of CVV2 codes for high-dollar transactions.
+
+Feature: high_dollar_avs_mismatch_velocity
+
+Formula: (cnt_avs_mismatch_24hr * amt_ge500_ind) / (time_since_last_avs_mismatch + 1)
+
+Explanation: This feature combines the count of AVS mismatches in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the time since the last AVS mismatch to detect rapid testing of AVS codes for high-dollar transactions.
+
+**3. High-Dollar Merchant and Terminal Interaction Features
+These features capture anomalies in merchant and terminal usage patterns specifically for high-dollar transactions.
+
+Feature: high_dollar_merch_terminal_anomaly_score
+
+Formula: (cnt_same_mid_termid_24hr * amt_ge500_ind) / (avg_same_mid_termid_amt_60days + 1)
+
+Explanation: This feature combines the count of transactions at the same merchant ID and terminal ID in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the 60-day average transaction amount at the same merchant ID and terminal ID to detect anomalies in high-dollar activity.
+
+Feature: high_dollar_merch_terminal_ratio
+
+Formula: (amt_same_mid_termid_24hr * amt_ge500_ind) / (tot_amt_24hr + 1)
+
+Explanation: This feature calculates the ratio of high-dollar transactions at the same merchant ID and terminal ID to the total transaction amount in the last 24 hours. It helps detect disproportionate high-dollar activity at specific terminals, which is a strong fraud signal.
+
+**4. High-Dollar Geographic and Time Interaction Features
+These features capture geographic and time-based anomalies specifically for high-dollar transactions.
+
+Feature: high_dollar_geo_time_anomaly_score
+
+Formula: (cnt_cntry_24hr * amt_ge500_ind * (trxn_hour >= 22 or trxn_hour <= 6)) / (dist_miles + 1)
+
+Explanation: This feature combines the count of transactions in different countries in the last 24 hours with an indicator for high-dollar transactions (≥$500) and nighttime activity. It normalizes by the distance between transactions to detect location-based anomalies in high-dollar nighttime activity.
+
+Feature: high_dollar_state_time_anomaly_score
+
+Formula: (cnt_dom_states_24hr * amt_ge500_ind * (trxn_hour >= 22 or trxn_hour <= 6)) / (dist_miles + 1)
+
+Explanation: This feature combines the count of transactions in different domestic states in the last 24 hours with an indicator for high-dollar transactions (≥$500) and nighttime activity. It normalizes by the distance between transactions to detect location-based anomalies in high-dollar nighttime activity.
+
+**5. High-Dollar Non-Linear Aggregation Features
+These features capture non-linear patterns in high-dollar transaction behavior.
+
+Feature: high_dollar_amt_skewness
+
+Formula: (amt_ge500_ind * (tot_amt_24hr - avg_trxn_amt_60days) ** 3) / (std_trxn_amt_60days ** 3 + 1)
+
+Explanation: This feature calculates the skewness of high-dollar transaction amounts in the last 24 hours relative to the 60-day average. It helps detect asymmetric distributions of high-dollar activity, which are often associated with fraud.
+
+Feature: high_dollar_cnt_kurtosis
+
+Formula: (amt_ge500_ind * (cnt_trxns_ge500_24hr - avg_trxn_cnt_60days) ** 4) / (std_trxn_cnt_60days ** 4 + 1)
+
+Explanation: This feature calculates the kurtosis of high-dollar transaction counts in the last 24 hours relative to the 60-day average. It helps detect peaked distributions of high-dollar activity, which are often associated with fraud.
+
+**6. High-Dollar Zero-Authorization Interaction Features
+These features capture patterns in zero-authorization transactions specifically for high-dollar transactions.
+
+Feature: high_dollar_zero_auth_mismatch_ratio
+
+Formula: (cnt_za_mis_24hr * amt_ge500_ind) / (tot_zero_auth_cnt_24hr + 1)
+
+Explanation: This feature calculates the ratio of zero-authorization mismatches (CVV2, AVS, or expiration date) for high-dollar transactions (≥$500) to the total number of zero-authorization transactions in the last 24 hours. It helps detect disproportionate zero-authorization mismatches in high-dollar transactions, which is a strong fraud signal.
+
+Feature: high_dollar_zero_auth_velocity
+
+Formula: (tot_zero_auth_cnt_24hr * amt_ge500_ind) / (time_since_last_zero_auth + 1)
+
+Explanation: This feature combines the count of zero-authorization transactions in the last 24 hours with an indicator for high-dollar transactions (≥$500). It normalizes by the time since the last zero-authorization to detect rapid testing of cards for high-dollar transactions.
+
+H2O Python Code for Feature Engineering
+python
+Copy
+# Create extremely complex interaction features
+data["high_dollar_burst_score"] = (data["cnt_trxns_ge500_1hr"] * data["amt_ge500_ind"]) / (data["time_since_last_trxn"] + 1)
+data["high_dollar_burst_ratio"] = (data["cnt_trxns_ge500_1hr"] * data["amt_ge500_ind"]) / (data["tot_cnt_1hr"] + 1)
+data["high_dollar_cvv2_mismatch_velocity"] = (data["cnt_cvv2_mismatch_24hr"] * data["amt_ge500_ind"]) / (data["time_since_last_cvv2_mismatch"] + 1)
+data["high_dollar_avs_mismatch_velocity"] = (data["cnt_avs_mismatch_24hr"] * data["amt_ge500_ind"]) / (data["time_since_last_avs_mismatch"] + 1)
+data["high_dollar_merch_terminal_anomaly_score"] = (data["cnt_same_mid_termid_24hr"] * data["amt_ge500_ind"]) / (data["avg_same_mid_termid_amt_60days"] + 1)
+data["high_dollar_merch_terminal_ratio"] = (data["amt_same_mid_termid_24hr"] * data["amt_ge500_ind"]) / (data["tot_amt_24hr"] + 1)
+data["high_dollar_geo_time_anomaly_score"] = (data["cnt_cntry_24hr"] * data["amt_ge500_ind"] * ((data["trxn_hour"] >= 22) | (data["trxn_hour"] <= 6))) / (data["dist_miles"] + 1)
+data["high_dollar_state_time_anomaly_score"] = (data["cnt_dom_states_24hr"] * data["amt_ge500_ind"] * ((data["trxn_hour"] >= 22) | (data["trxn_hour"] <= 6))) / (data["dist_miles"] + 1)
+data["high_dollar_amt_skewness"] = (data["amt_ge500_ind"] * (data["tot_amt_24hr"] - data["avg_trxn_amt_60days"]) ** 3) / (data["std_trxn_amt_60days"] ** 3 + 1)
+data["high_dollar_cnt_kurtosis"] = (data["amt_ge500_ind"] * (data["cnt_trxns_ge500_24hr"] - data["avg_trxn_cnt_60days"]) ** 4) / (data["std_trxn_cnt_60days"] ** 4 + 1)
+data["high_dollar_zero_auth_mismatch_ratio"] = (data["cnt_za_mis_24hr"] * data["amt_ge500_ind"]) / (data["tot_zero_auth_cnt_24hr"] + 1)
+data["high_dollar_zero_auth_velocity"] = (data["tot_zero_auth_cnt_24hr"] * data["amt_ge500_ind"]) / (data["time_since_last_zero_auth"] + 1)
+
+# Save the engineered features to a new file
+data.save("path_to_save_engineered_data.csv")
+Key Considerations
+Generalization: The features are designed to capture complex patterns without overfitting.
+
+Bias-Variance Trade-off: Non-linear transformations and normalization help reduce bias and variance.
+
+Drift: Time-based features account for changes in transaction behavior over time.
+
+Fraud Bin Patterns: Features specifically target high-dollar transactions and mismatch patterns, which are strong fraud signals.
+
+Regularization: Ratio-based features inherently reduce the impact of outliers.
