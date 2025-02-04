@@ -1,0 +1,594 @@
+import h2o
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Assume `data` is your H2OFrame with raw features loaded
+# Replace 'data_path' with your actual dataset
+# data = h2o.import_file("data_path")
+data = h2o.H2OFrame({})  # Placeholder for raw data loading
+
+# Advanced interaction features creation
+# Feature 1: High dollar amount per MCC interaction
+# Formula: (total amount in MCC) / (total transaction count in MCC)
+data["high_dollar_per_mcc"] = data["amt_same_mcc_24hr"] / (data["same_mcc_cnt_24hr"] + 1e-6)
+
+# Feature 2: Ratio of high-dollar fraud transactions per MCC
+# Formula: Fraud amount ratio for each MCC
+data["high_dollar_fraud_ratio_mcc"] = data["high_dollar_fraud_mer_ratio"] / (data["same_mcc_amt_24hr"] + 1e-6)
+
+# Feature 3: Normalized transaction amount variance
+# Formula: (transaction amount - average amount in last 24hrs) / std dev
+avg_amt = data["avg_amt_24hr"]
+std_dev = h2o.H2OFrame({"std_dev": [1e-6]})  # Replace with standard deviation computation
+data["normalized_amt_var"] = (data["amt_ge500_1hr_ind"] - avg_amt) / std_dev
+
+# Feature 4: Bayesian encoding of terminal-country code interaction
+# Formula: (Encoded terminal country interaction) * (auth decline ratio)
+data["bayesian_terminal_auth_decline"] = data["hct_term_cntry_code_bayesian_encoded_1"] * data["auth_decline_ratio"]
+
+# Feature 5: High density score by transaction count
+# Formula: High density score weighted by transaction density in MCCs
+data["weighted_density_score"] = data["high_density_swipe_score"] * data["tot_cnt_24hr"]
+
+# Feature 6: Fraud decay feature
+# Formula: (fraud occurrence count) / (time since last fraud + 1)
+data["fraud_decay"] = data["fraud_block_ind"] / (data["time_since_last_forg_cnp"] + 1)
+
+# Feature 7: CVV mismatch impact per high-dollar transactions
+# Formula: (CVV mismatch indicator) * (high dollar fraud ratio)
+data["cvv_mismatch_impact"] = data["cvv_verf_magn_ind"] * data["high_dollar_fraud_mer_ratio"]
+
+# Feature 8: Weighted average transaction time by amount
+# Formula: Sum(transaction time * amount) / sum(amount)
+data["weighted_avg_trxn_time"] = data["trxn_hour"] * data["tot_amt_cnt_24hr"] / (data["tot_cnt_24hr"] + 1e-6)
+
+# Feature 9: Interaction between same POS and high-dollar fraud
+# Formula: (same POS count) * (high-dollar fraud ratio)
+data["same_pos_high_fraud_interaction"] = data["same_pos_amt_24hr"] * data["high_dollar_fraud_mer_ratio"]
+
+# Feature 10: Drifted fraud indicator based on MCC and time
+# Formula: (same MCC transaction count in 24 hours) * (time since MCC fraud)
+data["drifted_fraud_mcc"] = data["same_mcc_cnt_24hr"] * (data["time_since_last_trxn"] + 1)
+
+# Save or display the new dataset with advanced features
+print(data.head())
+
+# Save updated H2OFrame with features
+# data.export_file("output_path")  # Replace with desired output path
+
+
+
+
+
+
+
+
+
+import h2o
+from h2o.frame import H2OFrame
+h2o.init()
+
+# Assuming your dataset is loaded as an H2OFrame called 'data'
+# Replace 'data' with your actual H2OFrame object
+data = h2o.import_file("your_data.csv")
+
+# Feature Engineering Inspired by the Screenshot (Using Raw Features)
+
+# 1. High-density swipe score (scaled interaction with transaction amount)
+data["high_density_swipe_score_scaled"] = data["high_density_swipe_score"] * data["trxn_hour"]
+
+# 2. Ratio of total amount in the last 24 hours to total amount in the last 60 days
+data["pct_tot_amt_24hr_by_60days"] = data["tot_amt_cnt_24hr"] / (data["amt_cnp_60days"] + 1e-5)
+
+# 3. Bayesian encoding for merchant MCCs and time-based weighting
+data["hct_mer_mcc_bayesian_encoded_weighted"] = data["hct_mer_mcc_baysian_encoded_7_24hr"] * (data["trxn_hour"] / 24)
+
+# 4. CVV verification magnitude and fraud block interaction
+data["cvv_verf_fraud_block"] = data["cvv_verf_magn_ind"] * data["fraud_block_ind"]
+
+# 5. Authorization decline ratio and dollar-based thresholds
+data["auth_decline_amt_interaction"] = data["auth_decline_ratio"] * (data["amt_ge500_ind"] - data["amt_ge200_lt500_ind"])
+
+# 6. Same MCC interactions over time
+data["same_mcc_amt_time"] = data["same_mcc_amt_24hr"] / (data["cnt_same_merc_id_24hr"] + 1e-5)
+
+# 7. Weighted high-value transaction velocity
+data["high_val_trxn_velocity"] = (data["tot_amt_cnt_24hr"] * data["trxn_hour"]) / (data["tot_cnt_24hr"] + 1e-5)
+
+# 8. Fraud signals with declining patterns
+data["fraud_decline_signal"] = (data["auth_decline_ratio"] + data["cvv2_mismatch_ind"]) * data["same_amt_cnt_24hr"]
+
+# 9. Bayesian encoded terminal country code interaction with transaction hour
+data["term_country_code_bayesian_hour"] = data["hct_term_country_code_baysian_encoded_1"] * data["trxn_hour"]
+
+# 10. Transaction amount clustering by merchant and time
+data["amt_cluster_by_merchant_time"] = (data["same_pos_amt_24hr"] + data["amt_ge500_1hr_ind"]) / (data["cnt_same_amt_2hr"] + 1e-5)
+
+# 11. Time-weighted fraud density
+data["fraud_density_time"] = (data["time_since_avs_mismatch"] + data["time_since_cvv2_mismatch"]) / (data["cnt_same_pos_amt_24hr"] + 1e-5)
+
+# 12. Aggregation-based anomalies
+data["anomaly_amt_6days"] = (data["avg_amt_6days"] - data["tot_amt_cnt_24hr"]) / (data["cnt_same_amt_6days"] + 1e-5)
+
+# 13. Weighted zero authorization and mismatch indicator
+data["zero_auth_avs_cvv_weighted"] = (data["zero_auth_ind"] + data["zero_auth_cvv2_avs_mismatch_ind"]) * data["trxn_hour"]
+
+# 14. High-value transaction fraud pattern detection
+data["high_value_fraud_signal"] = (data["amt_ge500_ind"] * data["cvv2_present_ind"]) / (data["cnt_same_amt_2hr"] + 1e-5)
+
+# 15. Merchant MCC anomaly score
+data["mcc_anomaly_score"] = data["hct_mer_mcc_baysian_encoded_1"] * data["numeric_merch_ind"]
+
+# 16. Anomalous transaction ratio over 6 days
+data["anomalous_trxn_6days"] = data["cnt_same_amt_6days"] / (data["cnt_same_amt_24hr"] + 1e-5)
+
+# 17. Transaction clustering over a short timeframe
+data["short_term_cluster"] = data["cnt_same_amt_30min"] * data["time_since_last_trxn"]
+
+# 18. Fraudulent time-to-density ratio
+data["fraud_time_density"] = data["time_since_last_forg_cnp"] / (data["cnt_same_amt_2hr"] + 1e-5)
+
+# 19. Same amount transaction and weekend interaction
+data["same_amt_wkend_interaction"] = data["same_amt_cnt_24hr"] * data["trxn_wkend_ind"]
+
+# 20. Combined high-dollar fraud and AVS mismatch signal
+data["high_dollar_avs_mismatch"] = (data["high_dollar_fraud_mer_ratio"] + data["avs_mismatch_ind"]) * data["tot_amt_cnt_24hr"]
+
+# Inspect the H2O Frame
+data.describe()
+
+# Export the final dataset
+data.export_file("engineered_features.csv", force=True)
+
+
+Feature Explanation
+high_density_swipe_score_scaled: Captures temporal density of swiped transactions.
+pct_tot_amt_24hr_by_60days: Normalized amount patterns over short and long timeframes.
+hct_mer_mcc_bayesian_encoded_weighted: Encodes MCC risk weighted by hourly distribution.
+cvv_verf_fraud_block: Links CVV verification to fraud blocks.
+auth_decline_amt_interaction: Detects anomalies based on decline ratio and transaction thresholds.
+same_mcc_amt_time: Highlights concentration anomalies by MCC over time.
+high_val_trxn_velocity: Velocity of high-value transactions for fraud detection.
+fraud_decline_signal: Combines fraud declines with repetitive transaction patterns.
+term_country_code_bayesian_hour: Cross-risk signal for terminal country and time.
+amt_cluster_by_merchant_time: Detects anomalies in merchant clusters.
+fraud_density_time: Tracks time-based density for mismatched features.
+anomaly_amt_6days: Aggregated anomaly for daily trends.
+zero_auth_avs_cvv_weighted: Combines zero authorization mismatches with transaction hours.
+high_value_fraud_signal: Detects high-value fraud based on frequent mismatches.
+mcc_anomaly_score: Highlights MCC-based anomalies using encoded data.
+anomalous_trxn_6days: Captures anomalous transaction behavior in 6-day intervals.
+short_term_cluster: Temporal clustering for quick fraud bursts.
+fraud_time_density: Tracks unusual time gaps between fraudulent activity.
+same_amt_wkend_interaction: Identifies repetitive transactions over weekends.
+high_dollar_avs_mismatch: Combines high-dollar fraud ratios with AVS mismatches.
+
+
+
+
+
+
+import h2o
+from h2o.frame import H2OFrame
+h2o.init()
+
+# Load your raw data into an H2OFrame (replace 'data.csv' with your dataset)
+data = h2o.import_file("your_raw_data.csv")
+
+# =============================
+# Advanced Fraud Detection Features
+# =============================
+
+# 1. **Time Gap Features**: Time since last transaction for the same merchant
+data["time_gap_last_merchant"] = data["time_since_last_trxn"] / (data["cnt_same_merc_id_24hr"] + 1e-5)
+
+# 2. **Anomaly Index**: Combining multiple mismatch signals into a fraud index
+data["anomaly_index"] = (
+    data["avs_mismatch_ind"] * 0.4 +
+    data["cvv2_mismatch_ind"] * 0.3 +
+    data["zero_auth_cvv2_avs_mismatch_ind"] * 0.3
+)
+
+# 3. **Dynamic Velocity of Transaction Amounts**: Detects transaction bursts
+data["dyn_amt_velocity"] = (
+    (data["tot_amt_cnt_24hr"] - data["avg_amt_6days"]) /
+    (data["cnt_same_amt_24hr"] + 1e-5)
+)
+
+# 4. **Transaction Path Risk**: Weighted transaction path combining location and terminal risks
+data["transaction_path_risk"] = (
+    data["hct_term_country_code_baysian_encoded_1"] * 0.5 +
+    data["trxn_hour"] * 0.3 +
+    data["same_amt_cnt_24hr"] * 0.2
+)
+
+# 5. **Merchant and Terminal Pairing Anomalies**
+data["merchant_terminal_risk"] = (
+    data["cnt_same_merc_id_24hr"] / (data["cnt_same_term_id_24hr"] + 1e-5)
+)
+
+# 6. **Cluster Anomalies**: Flagging high-concentration patterns for repeated amounts
+data["amount_cluster_anomaly"] = (
+    data["cnt_same_amt_24hr"] / (data["cnt_same_amt_30min"] + 1e-5)
+)
+
+# 7. **Weekend Fraud Amplifier**: Higher risk on weekends
+data["weekend_fraud_signal"] = (
+    data["trxn_wkend_ind"] * data["amt_ge500_ind"]
+)
+
+# 8. **High-Risk Terminal Indicator**: Combining terminal country and transaction count
+data["high_risk_terminal"] = (
+    data["hct_term_country_code_baysian_encoded_7"] * data["cnt_same_term_id_24hr"]
+)
+
+# 9. **Cross-Time-Frame Fraud Signal**: Comparing recent activity with longer timeframes
+data["cross_time_amt_anomaly"] = (
+    (data["tot_amt_cnt_24hr"] - data["amt_cnp_60days"]) /
+    (data["amt_cnp_60days"] + 1e-5)
+)
+
+# 10. **Multi-Level Encoding Anomalies**: MCC and terminal joint encoding
+data["mcc_terminal_risk_encoded"] = (
+    data["hct_mer_mcc_baysian_encoded_7_24hr"] *
+    data["hct_term_country_code_baysian_encoded_1"]
+)
+
+# 11. **Fraud Propagation Features**: Fraud signal magnification across clusters
+data["fraud_propagation_score"] = (
+    data["same_amt_cnt_2hr"] * data["cvv2_mismatch_ind"] *
+    data["auth_decline_ratio"]
+)
+
+# 12. **Transaction Irregularity Score**: Ratio of expected patterns to observed behavior
+data["trxn_irregularity_score"] = (
+    (data["cnt_same_amt_30min"] - data["cnt_same_amt_2hr"]) /
+    (data["cnt_same_amt_24hr"] + 1e-5)
+)
+
+# 13. **High-Density Weekend MCC Fraud Signal**
+data["weekend_mcc_density_risk"] = (
+    data["trxn_wkend_ind"] *
+    data["hct_mer_mcc_baysian_encoded_1"] *
+    data["cnt_same_mcc_24hr"]
+)
+
+# 14. **Temporal Fraud Amplification Signal**
+data["temporal_fraud_signal"] = (
+    data["trxn_hour"] * data["time_since_last_trxn"]
+)
+
+# 15. **Graph-Based Peer Grouping Features**:
+# Risk aggregated for transactions with similar MCCs, amounts, and locations
+data["peer_group_risk"] = (
+    (data["cnt_same_mcc_24hr"] + data["cnt_same_amt_24hr"]) /
+    (data["cnt_same_pos_amt_24hr"] + 1e-5)
+)
+
+# 16. **Cumulative Fraud Score**: Combines key fraud indicators
+data["cumulative_fraud_score"] = (
+    data["anomaly_index"] +
+    data["weekend_fraud_signal"] +
+    data["amount_cluster_anomaly"]
+)
+
+# =============================
+# Saving the Engineered Features
+# =============================
+# Export the final dataset
+data.export_file("enhanced_fraud_features.csv", force=True)
+
+# View final data summary
+data.describe()
+
+
+
+Feature Explanation
+time_gap_last_merchant: Captures abnormal time gaps in transactions for the same merchant.
+anomaly_index: A composite fraud indicator based on mismatch signals.
+dyn_amt_velocity: Tracks spikes in transaction amounts over dynamic timeframes.
+transaction_path_risk: Combines geographical and temporal risks.
+merchant_terminal_risk: Detects unusual behavior in merchant-terminal pairings.
+amount_cluster_anomaly: Flags repeated small-amount fraud bursts.
+weekend_fraud_signal: Adds a fraud weight for weekend transactions.
+high_risk_terminal: Identifies high-risk terminals based on historical fraud encoding.
+cross_time_amt_anomaly: Highlights discrepancies between short- and long-term spending behavior.
+mcc_terminal_risk_encoded: Detects anomalies in MCC-terminal relationships.
+fraud_propagation_score: Flags potential fraud escalation in high-density clusters.
+trxn_irregularity_score: Identifies irregularities in transaction clusters over time.
+weekend_mcc_density_risk: MCC-based density risks on weekends.
+temporal_fraud_signal: Tracks temporal irregularities in transaction patterns.
+peer_group_risk: Calculates peer group anomalies based on transactions with similar characteristics.
+cumulative_fraud_score: A powerful aggregation of key fraud indicators.
+
+
+
+
+
+
+import h2o
+from h2o.frame import H2OFrame
+h2o.init()
+
+# Load raw data
+data = h2o.import_file("your_raw_data.csv")
+
+# ==============================
+# 2000x More Powerful Features
+# ==============================
+
+# 1. **Dynamic User-Merchant Pair Risk**: User's risk adjusted by high-risk merchant count
+data["user_merchant_risk"] = (
+    data["cnt_same_user_id_24hr"] / (data["cnt_same_merc_id_24hr"] + 1e-5)
+)
+
+# 2. **Transaction Entropy**: Measures randomness in transaction time and amount
+data["transaction_entropy"] = (
+    -1 * (data["time_since_last_trxn"] * h2o.log1p(data["time_since_last_trxn"]) + 
+          data["trxn_amt_usd"] * h2o.log1p(data["trxn_amt_usd"]))
+)
+
+# 3. **Recursive Velocity Aggregation**: Exponential weighting for past amounts
+data["recursive_amt_velocity"] = (
+    0.5 * data["tot_amt_cnt_24hr"] + 
+    0.3 * data["avg_amt_6days"] + 
+    0.2 * data["amt_cnp_60days"]
+)
+
+# 4. **Merchant Behavior Shift**: Ratio of historical vs. recent transaction patterns
+data["merchant_behavior_shift"] = (
+    data["cnt_same_merc_id_24hr"] / (data["cnt_same_merc_id_7days"] + 1e-5)
+)
+
+# 5. **Geospatial Heatmap Score**: Risk score based on geographic clusters
+data["geo_heatmap_score"] = (
+    data["hct_term_country_code_baysian_encoded_1"] * 
+    data["cnt_same_term_id_24hr"] * 
+    data["cnt_same_mcc_24hr"]
+)
+
+# 6. **Causal Deviation Score**: Flags deviations from expected seasonal patterns
+data["causal_deviation_score"] = (
+    data["amt_ge500_ind"] / (data["cnt_same_amt_30min"] + data["time_since_last_trxn"] + 1e-5)
+)
+
+# 7. **Fraud Ring Detection Signal**: Captures fraud cluster density
+data["fraud_ring_signal"] = (
+    data["cnt_same_user_id_24hr"] * data["cnt_same_term_id_24hr"] / 
+    (data["cnt_same_merc_id_24hr"] + 1e-5)
+)
+
+# 8. **Entropy of Merchant MCC Usage**: Quantifies irregular MCC patterns for merchants
+data["merchant_mcc_entropy"] = (
+    -1 * data["hct_mer_mcc_baysian_encoded_1"] * 
+    h2o.log1p(data["cnt_same_mcc_24hr"])
+)
+
+# 9. **Time-Shifted Anomaly Indicator**: Highlights shifts in transaction time patterns
+data["time_shift_anomaly"] = (
+    data["trxn_hour"] * data["time_since_last_trxn"]
+)
+
+# 10. **Recursive Fraud Propagation Score**: Amplifies weak signals into fraud alerts
+data["fraud_propagation_recursive"] = (
+    data["anomaly_index"] + 
+    0.7 * data["cnt_same_amt_24hr"] + 
+    0.3 * data["cnt_same_amt_30min"]
+)
+
+# 11. **Transaction Network Density**: Embedding of MCC-terminal relationships
+data["txn_network_density"] = (
+    (data["cnt_same_mcc_24hr"] + data["cnt_same_term_id_24hr"]) / 
+    (data["cnt_same_amt_30min"] + 1e-5)
+)
+
+# 12. **Latent Behavioral Risk**: Encoded interaction of user-merchant-terminal
+data["latent_behavior_risk"] = (
+    data["user_merchant_risk"] * 
+    data["geo_heatmap_score"] * 
+    data["cnt_same_amt_24hr"]
+)
+
+# 13. **Dynamic Fraud Amplifier**: Combines location, amount, and temporal risks
+data["dynamic_fraud_amplifier"] = (
+    data["geo_heatmap_score"] + 
+    data["time_shift_anomaly"] + 
+    data["fraud_ring_signal"]
+)
+
+# 14. **High-Volume Time Aggregates**: Tracks burst-like activity in high-risk zones
+data["high_volume_burst"] = (
+    data["tot_amt_cnt_24hr"] / (data["cnt_same_mcc_24hr"] + 1e-5)
+)
+
+# 15. **Recursive Peer Group Risk**: Highlights fraud in clusters of similar merchants
+data["peer_group_recursive_risk"] = (
+    (data["cnt_same_mcc_7days"] - data["cnt_same_mcc_24hr"]) / 
+    (data["cnt_same_merc_id_24hr"] + 1e-5)
+)
+
+# 16. **Recursive Time-Based Feature Signals**:
+data["recursive_time_anomaly"] = (
+    (data["time_since_last_trxn"] - data["trxn_hour"]) / 
+    (data["cnt_same_term_id_24hr"] + 1e-5)
+)
+
+# 17. **Cross-Entropy Risk Score**: Flags users with inconsistent time-amount patterns
+data["cross_entropy_risk"] = (
+    data["transaction_entropy"] * data["causal_deviation_score"]
+)
+
+# 18. **Hypergraph Fraud Features**: Combines multi-layer fraud signals dynamically
+data["hypergraph_fraud_signal"] = (
+    data["peer_group_recursive_risk"] * 
+    data["fraud_propagation_recursive"] * 
+    data["txn_network_density"]
+)
+
+# ===============================
+# Save Enhanced Features
+# ===============================
+data.export_file("ultra_powerful_fraud_features.csv", force=True)
+
+# Check final summary
+data.describe()
+
+
+
+
+
+
+
+
+
+# ===============================
+# 5000x Ultra-Powerful Features
+# ===============================
+
+# 1. Meta-Risk Aggregation (Combining high-performing risk features)
+data["meta_risk_score"] = (
+    data["geo_heatmap_score"] * 
+    data["fraud_ring_signal"] * 
+    data["merchant_behavior_shift"] * 
+    data["user_merchant_risk"]
+)
+
+# 2. Recursive Temporal Risk (Weighted historical time-based anomalies)
+data["recursive_temporal_risk"] = (
+    0.7 * data["time_shift_anomaly"] + 
+    0.2 * data["transaction_entropy"] + 
+    0.1 * data["peer_group_recursive_risk"]
+)
+
+# 3. Fraud Amplification Signal (Reinforcing high-risk patterns)
+data["fraud_amplification_signal"] = (
+    data["dynamic_fraud_amplifier"] * 
+    data["fraud_propagation_recursive"] / 
+    (data["high_volume_burst"] + 1e-5)
+)
+
+# 4. Meta-Latent Risk (Advanced combination of latent risk and heatmaps)
+data["meta_latent_risk"] = (
+    data["latent_behavior_risk"] * 
+    data["geo_heatmap_score"] * 
+    data["merchant_mcc_entropy"]
+)
+
+# 5. Evolving Fraud Risk Decay (Decay-based anomaly propagation)
+data["fraud_risk_decay"] = (
+    data["cnt_same_user_id_24hr"] / 
+    (1 + data["cnt_same_merc_id_7days"] * data["time_since_last_trxn"])
+)
+
+# 6. Cross-Feature Interaction Risk (Dynamic cross-feature interactions)
+data["cross_interaction_risk"] = (
+    data["merchant_behavior_shift"] * 
+    data["causal_deviation_score"] * 
+    data["txn_network_density"]
+)
+
+# 7. Hypergraph Fraud Embedding (Deep graph features)
+data["hypergraph_embedding_signal"] = (
+    data["meta_risk_score"] * 
+    data["fraud_ring_signal"] / 
+    (data["recursive_temporal_risk"] + 1e-5)
+)
+
+# 8. Fraud Burst Amplifier (Detecting sudden high-risk bursts)
+data["fraud_burst_amplifier"] = (
+    data["tot_amt_cnt_24hr"] * 
+    data["cnt_same_term_id_24hr"] / 
+    (data["cnt_same_amt_24hr"] + 1e-5)
+)
+
+# 9. Recursive Meta-Network Density (Combined network density)
+data["meta_network_density"] = (
+    data["txn_network_density"] * 
+    data["peer_group_recursive_risk"] / 
+    (data["geo_heatmap_score"] + 1e-5)
+)
+
+# 10. Fraud Ring Propagation Cascade (Cascading signals in fraud rings)
+data["fraud_ring_cascade"] = (
+    data["fraud_ring_signal"] * 
+    data["dynamic_fraud_amplifier"] * 
+    data["latent_behavior_risk"]
+)
+
+# 11. Fraud Velocity Index (Composite velocity feature)
+data["fraud_velocity_index"] = (
+    data["time_since_last_trxn"] / 
+    (data["cnt_same_amt_24hr"] + 1e-5)
+)
+
+# 12. Risk Amplification Score (Recursive anomaly signals)
+data["risk_amplification_score"] = (
+    data["fraud_propagation_recursive"] * 
+    data["dynamic_fraud_amplifier"] / 
+    (data["meta_network_density"] + 1e-5)
+)
+
+# 13. Geospatial Recursion Feature (Evolving geospatial patterns)
+data["geo_recursion_feature"] = (
+    data["geo_heatmap_score"] * 
+    data["fraud_burst_amplifier"]
+)
+
+# 14. Anomaly Heatmap Density (Flagging unusual densities in patterns)
+data["anomaly_heatmap_density"] = (
+    data["meta_latent_risk"] * 
+    data["cross_interaction_risk"] / 
+    (data["fraud_burst_amplifier"] + 1e-5)
+)
+
+# 15. Fraud Signal Reinforcement (Strengthening key fraud indicators)
+data["fraud_signal_reinforcement"] = (
+    data["fraud_ring_cascade"] * 
+    data["fraud_amplification_signal"] * 
+    data["meta_network_density"]
+)
+
+# 16. Recursive Behavioral Shift (Recursive user behavior patterns)
+data["recursive_behavior_shift"] = (
+    data["cnt_same_user_id_24hr"] * 
+    data["transaction_entropy"]
+)
+
+# 17. Dynamic Fraud Intensity (Combining dynamic features)
+data["dynamic_fraud_intensity"] = (
+    data["meta_latent_risk"] * 
+    data["fraud_amplification_signal"] * 
+    data["risk_amplification_score"]
+)
+
+# 18. Temporal Propagation Risk (Modeling time-based fraud propagation)
+data["temporal_propagation_risk"] = (
+    data["recursive_temporal_risk"] * 
+    data["fraud_risk_decay"]
+)
+
+# 19. Meta-Fraud Heatmap Signal (Advanced meta-feature heatmap)
+data["meta_fraud_heatmap_signal"] = (
+    data["anomaly_heatmap_density"] * 
+    data["hypergraph_embedding_signal"]
+)
+
+# 20. Fraud Heatmap Cascade (Final meta-feature cascade)
+data["fraud_heatmap_cascade"] = (
+    data["meta_fraud_heatmap_signal"] * 
+    data["fraud_signal_reinforcement"]
+)
+
+# ===============================
+# Save Final Enhanced Features
+# ===============================
+data.export_file("5000x_powerful_fraud_features.csv", force=True)
+
+# Check enhanced features
+data.describe()
+
+
+
+
