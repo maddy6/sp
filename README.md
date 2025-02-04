@@ -1,5 +1,129 @@
 # sp
 
+To analyze score-bin-wise performance, you can follow this structured approach:
+
+Approach:
+
+1. Create Score Bins: Divide score1 and score2 into bins (e.g., 0-99, 100-199, …, 900-999).
+
+
+2. Aggregate Performance Metrics: Calculate fraud rate (fraud_ind mean), count of transactions, and percentage contribution within each bin.
+
+
+3. Compare Performance Across Bins: Show how fraud rates change between score1 and score2 for each bin.
+
+
+
+
+---
+
+Python Code for Score Bin-Wise Performance Analysis
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Sample Data
+np.random.seed(42)
+df = pd.DataFrame({
+    'score1': np.random.randint(0, 1000, 10000),  # New model score
+    'score2': np.random.randint(0, 1000, 10000),  # Old model score
+    'fraud_ind': np.random.choice([0, 1], size=10000, p=[0.98, 0.02]),  # Fraud indicator
+    'count': np.random.randint(1, 10, 10000)  # Transaction count
+})
+
+# Define Score Bins (0-99, 100-199, ..., 900-999)
+bins = list(range(0, 1100, 100))
+labels = [f"{i}-{i+99}" for i in bins[:-1]]
+
+df['bin_score1'] = pd.cut(df['score1'], bins=bins, labels=labels)
+df['bin_score2'] = pd.cut(df['score2'], bins=bins, labels=labels)
+
+# Aggregation: Count & Fraud Rate Calculation for Each Bin
+performance1 = df.groupby('bin_score1').agg(
+    total_txn=('count', 'sum'),
+    fraud_txn=('fraud_ind', 'sum'),
+    fraud_rate=('fraud_ind', 'mean')
+).reset_index()
+performance1['model'] = 'New Model'
+
+performance2 = df.groupby('bin_score2').agg(
+    total_txn=('count', 'sum'),
+    fraud_txn=('fraud_ind', 'sum'),
+    fraud_rate=('fraud_ind', 'mean')
+).reset_index()
+performance2['model'] = 'Old Model'
+
+# Combine Both Models' Performance
+performance = pd.concat([performance1, performance2])
+
+# Plot Fraud Rate Across Score Bins
+plt.figure(figsize=(12, 6))
+sns.lineplot(data=performance, x='bin_score1', y='fraud_rate', hue='model', marker='o')
+plt.xticks(rotation=45)
+plt.title("Fraud Rate Across Score Bins")
+plt.xlabel("Score Bins")
+plt.ylabel("Fraud Rate")
+plt.grid(True)
+plt.legend()
+plt.show()
+
+# Print Score Bin-Wise Performance Table
+print(performance.pivot(index='bin_score1', columns='model', values=['total_txn', 'fraud_txn', 'fraud_rate']))
+
+
+---
+
+Insights from This Analysis
+
+1. Fraud Rate Comparison: Understand how well the new model ranks fraudulent transactions in different score bins.
+
+
+2. Transaction Distribution: Check if the new model assigns fraud cases more effectively to high-risk bins.
+
+
+3. Table Output: Provides a side-by-side performance view of the old and new models.
+
+
+4. Line Plot Visualization: Shows trends in fraud rates across score bins for both models.
+
+
+
+Would you like any additional insights, such as KS statistics or cumulative fraud capture rates?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 To perform an overlap analysis between score1 (new model) and score2 (old model), you can use the following approach:
 
