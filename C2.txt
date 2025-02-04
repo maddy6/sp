@@ -1,0 +1,114 @@
+import h2o
+import h2o.frame
+import h2o.transforms
+from h2o.estimators import H2OGradientBoostingEstimator
+
+# Initialize H2O
+h2o.init()
+
+# Load dataset
+data = h2o.import_file("transformed_dataset.csv")
+
+# Feature Engineering
+data["pct_amt_same_mcc_24hr_by_60days"] = data["amt_same_mcc_24hr"] / (data["avg_trxn_amt_60days"] + 1)
+data["pct_cnt_same_pos_amt_24hr_by_60days"] = data["cnt_same_pos_amt_24hr"] / (data["cnt_same_amt_cnt_60days"] + 1)
+data["pct_amt_same_merc_id_6hr_by_30days"] = data["amt_same_merc_id_6hr"] / (data["avg_trxn_amt_60days"] + 1)
+data["trxn_util_x_auth_ecom"] = data["tran_util"] * data["auth_ecom_ind"]
+data["avg_trxn_amt_24hr_x_foreign_ind"] = data["avg_amt_24hr"] * data["foreign_ind"]
+data["cnt_same_merc_id_24hr_x_avs_mismatch"] = data["cnt_same_merc_id_24hr"] * data["avs_mismatch_ind"]
+data["cnt_same_amt_2hr_x_cvv2_mismatch"] = data["cnt_same_amt_2hr"] * data["cvv2_mismatch_ind"]
+
+# Save the transformed dataset
+h2o.export_file(data, "enhanced_features_dataset.csv", force=True)
+
+# Train a Model with New Features
+target = "fraud_block_ind"
+features = [col for col in data.columns if col != target]
+
+gbm_model = H2OGradientBoostingEstimator(ntrees=100, max_depth=5)
+gbm_model.train(x=features, y=target, training_frame=data)
+
+# Print Feature Importance
+print(gbm_model.varimp(use_pandas=True))
+
+
+
+
+
+
+import h2o
+import pandas as pd
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load the dataset
+data = h2o.import_file("your_dataset.csv")
+
+# Creating new features
+data["pct_swipe_amt_24hr_by_60days_tran_util"] = data["pct_swipe_amt_24hr_by_60days"] * data["tran_util"]
+data["pct_tot_amt_24hr_by_60day_ucc_atc_card_num"] = data["pct_tot_amt_24hr_by_60day"] / (data["ucc_atc_card_num"] + 1)
+data["c_cnt_trnxs_ge200_3hr_ratio"] = data["c_cnt_trnxs_ge200_3hr"] / (data["tot_cnt_24hr"] + 1)
+
+data["amt_same_pos_ratio"] = data["amt_same_pos_24hr"] / (data["tot_amt_cnt_24hr"] + 1)
+data["same_amt_cnt_ratio"] = data["same_amt_cnt_1hr"] / (data["same_amt_cnt_6hr"] + 1)
+
+data["cnt_same_merc_id_30min_ratio"] = data["cnt_same_merc_id_30min"] / (data["cnt_same_merc_id_24hr"] + 1)
+data["cnt_same_amt_30min_ratio"] = data["cnt_same_amt_30min"] / (data["same_amt_cnt_1day"] + 1)
+
+# Bayesian Encoding (example using Merchant MCC)
+merchant_fraud_rates = data.group_by("hct_mer_mcc_baysian_encoded_1").mean("fraud_block_ind")
+data = data.merge(merchant_fraud_rates, all_x=True)
+
+# Save transformed dataset
+h2o.export_file(data, "transformed_dataset.csv", force=True)
+
+
+
+
+import h2o
+import h2o.frame
+import h2o.transforms
+from h2o.estimators import H2OGradientBoostingEstimator
+
+# Initialize H2O
+h2o.init()
+
+# Load dataset
+data = h2o.import_file("enhanced_features_dataset.csv")
+
+# Feature Engineering
+data["cnt_same_pos_24hr_by_tot_cnt_24hr"] = data["cnt_same_pos_24hr"] / (data["tot_cnt_24hr"] + 1)
+data["cnt_same_merc_id_6hr_by_avg_6days"] = data["cnt_same_merc_id_6hr"] / (data["avg_amt_6days"] + 1)
+data["cnt_same_amt_1hr_by_tot_cnt_24hr"] = data["same_amt_cnt_1hr"] / (data["tot_cnt_24hr"] + 1)
+data["amt_same_pos_24hr_x_zero_auth_ind"] = data["amt_same_pos_24hr"] * data["zero_auth_ind"]
+data["high_risk_country_score"] = data["hct_term_country_code_baysian_encoded_1"] * data["hct_term_country_code_baysian_encoded_2"]
+data["mcc_cluster_risk_score"] = data["hct_mer_mcc_baysian_encoded_1"] * data["hct_mer_mcc_baysian_encoded_2"]
+data["cvv_avs_fail_rate"] = (data["cvv2_mismatch_ind"] + data["avs_mismatch_ind"]) / (data["avs_match_ind"] + 1)
+data["time_since_last_trxn_x_trxn_hour"] = data["time_since_last_trxn"] * data["trxn_hour"]
+
+# Save the transformed dataset
+h2o.export_file(data, "fraud_features_v2.csv", force=True)
+
+# Train a Model with New Features
+target = "fraud_block_ind"
+features = [col for col in data.columns if col != target]
+
+
+
+
+
+
+
+# Feature Engineering
+data["graph_merch_conn_strength"] = data["cnt_same_merc_id_6hr"] * data["cnt_same_merc_id_24hr"] / (data["tot_cnt_24hr"] + 1)
+data["graph_pos_conn_strength"] = data["cnt_same_pos_24hr"] * data["cnt_same_pos_amt_24hr"] / (data["tot_cnt_24hr"] + 1)
+data["time_gap_between_top3_trxns"] = (data["time_since_last_trxn"] + data["time_since_last_trxn"].shift(1) + data["time_since_last_trxn"].shift(2)) / 3
+data["velocity_spike_6hr_vs_24hr"] = data["cnt_same_amt_6hr"] / (data["cnt_same_amt_24hr"] + 1)
+data["association_high_risk_merch_avs_cvv_fail"] = data["hct_mer_mcc_baysian_encoded_1"] * (data["cvv2_mismatch_ind"] + data["avs_mismatch_ind"])
+data["cnt_same_merc_id_30min_x_time_since_last_trxn"] = data["cnt_same_merc_id_30min"] * data["time_since_last_trxn"]
+data["fraud_risk_score_trxn_time"] = data["trxn_hour"] * data["fraud_block_ind"]
+
+
+
