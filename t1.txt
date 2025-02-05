@@ -1,0 +1,37 @@
+import h2o
+import shap
+import numpy as np
+import pandas as pd
+from h2o.estimators import H2OGradientBoostingEstimator
+import matplotlib.pyplot as plt
+
+# 🚀 Initialize H2O
+h2o.init()
+
+# 📂 Load Model & Data
+model = h2o.load_model("my_fraud_model")
+data = h2o.import_file("fraud_features_v5.csv")
+
+# 📊 Get Predictions
+predictions = model.predict(data)
+data["score"] = predictions["predict"]  # Add score column
+
+# 🎯 Filter Low-Scoring Fraud Transactions (<500)
+low_score_fraud = data[(data["score"] < 500) & (data["fraud_block_ind"] == 1)]
+
+# 🏆 Convert H2OFrame to Pandas for SHAP Analysis
+low_score_fraud_pd = low_score_fraud.as_data_frame()
+X_low = low_score_fraud_pd.drop(columns=["fraud_block_ind", "score"])  # Exclude target & score
+
+# 🧠 SHAP Explainer
+explainer = shap.Explainer(model.predict, X_low)
+shap_values = explainer(X_low)
+
+# 🔍 SHAP Summary Plot (Which Features Are Lowering Scores?)
+shap.summary_plot(shap_values, X_low)
+
+# 🔎 SHAP Dependence Plot for Swipe-Related Features
+shap.dependence_plot("avg_swipe_amt_24hr", shap_values, X_low)
+
+# 🔎 SHAP Dependence Plot for Another Swipe Feature
+shap.dependence_plot("pct_swipe_amt_24hr_by_60days", shap_values, X_low)
