@@ -1,3 +1,67 @@
+# Initialize PCA with 20 components (adjust based on explained variance)
+pca_model = H2OPrincipalComponentAnalysisEstimator(k=20, transform="STANDARDIZE", pca_method="GramSVD")
+pca_model.train(x=feature_cols, training_frame=train)
+
+# Transform datasets using PCA
+train_pca = pca_model.transform(train)
+test_pca = pca_model.transform(test)
+train_rs_pca = pca_model.transform(train_rs)
+oot_pca = pca_model.transform(oot)
+
+# Convert PCA-transformed frames to H2OFrame
+train_pca[target_col] = train[target_col]
+test_pca[target_col] = test[target_col]
+train_rs_pca[target_col] = train_rs[target_col]
+oot_pca[target_col] = oot[target_col]
+
+
+
+gbm_model = H2OGradientBoostingEstimator(
+    ntrees=500, 
+    learn_rate=0.05, 
+    max_depth=5, 
+    seed=42
+)
+
+# Train the GBM model
+gbm_model.train(x=train_pca.columns[:-1], y=target_col, training_frame=train_pca)
+
+# Predict on test and OOT sets
+y_pred_test = gbm_model.predict(test_pca)
+y_pred_oot = gbm_model.predict(oot_pca)
+
+# Compute AUC
+auc_test = H2OBinomialModelMetrics(y_pred_test, test[target_col]).auc()
+auc_oot = H2OBinomialModelMetrics(y_pred_oot, oot[target_col]).auc()
+
+print(f"Test AUC: {auc_test:.4f}")
+print(f"OOT AUC: {auc_oot:.4f}")
+
+
+
+
+
+# Get PCA importance
+pca_importance = pca_model.varimp(use_pandas=True)
+print(pca_importance)
+
+# Plot cumulative variance
+import matplotlib.pyplot as plt
+
+explained_variance = pca_importance['percentage'][:20].cumsum()
+plt.plot(range(1, 21), explained_variance, marker='o', linestyle='--')
+plt.xlabel("Number of Components")
+plt.ylabel("Cumulative Explained Variance")
+plt.title("PCA Explained Variance in H2O")
+plt.show()
+
+
+
+
+
+
+
+
 import h2o
 import shap
 import numpy as np
