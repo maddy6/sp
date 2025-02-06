@@ -1,3 +1,16 @@
+import h2o
+from h2o.estimators.pca import H2OPrincipalComponentAnalysisEstimator
+from h2o.estimators.gbm import H2OGradientBoostingEstimator
+from h2o.frame import H2OFrame
+from h2o.model.metrics import H2OBinomialModelMetrics
+
+# Initialize H2O
+h2o.init()
+
+
+
+
+
 # sp
 
 To analyze score-bin-wise performance, you can follow this structured approach:
