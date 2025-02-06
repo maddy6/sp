@@ -1,3 +1,182 @@
+1. Logarithmic Transformations
+When to use: Apply to features with a right-skewed distribution or exponential trends.
+Implementation:
+python
+Copy
+Edit
+data["log_high_density_swipe"] = (data["high_density_swipe_score"] + 1e-6).log()
+data["log_cnt_cnp_60days"] = (data["cnt_cnp_60days"] + 1).log()
+2. Square Root Transformations
+When to use: For moderately skewed data or to reduce feature magnitudes while retaining relative differences.
+Implementation:
+python
+Copy
+Edit
+data["sqrt_pct_cnp_amt_60days"] = data["pct_cnp_amt_60days"].sqrt()
+data["sqrt_auth_decline_ratio"] = data["auth_decline_ratio"].sqrt()
+3. Polynomial Transformations
+When to use: To model non-linear relationships by introducing squared or cubic terms.
+Implementation:
+python
+Copy
+Edit
+data["high_density_swipe_sq"] = data["high_density_swipe_score"] ** 2
+data["auth_decline_ratio_cubed"] = data["auth_decline_ratio"] ** 3
+4. Reciprocal Transformations
+When to use: For features where smaller values have higher significance (e.g., inverse distances).
+Implementation:
+python
+Copy
+Edit
+data["reciprocal_dist_miles_btw_swp"] = 1 / (data["dist_miles_btw_swp"] + 1e-6)
+5. Exponential Transformations
+When to use: To emphasize differences in small feature values.
+Implementation:
+python
+Copy
+Edit
+data["exp_high_density_swipe"] = data["high_density_swipe_score"].exp()
+6. Sigmoid Transformation
+When to use: For normalizing features to a [0, 1] range while emphasizing extremes.
+Formula: 
+sigmoid
+(
+𝑥
+)
+=
+1
+1
++
+𝑒
+−
+𝑥
+sigmoid(x)= 
+1+e 
+−x
+ 
+1
+​
+ 
+Implementation:
+python
+Copy
+Edit
+data["sigmoid_auth_decline_ratio"] = 1 / (1 + (-data["auth_decline_ratio"]).exp())
+7. Interactions Between Features
+Combine features to uncover complex relationships:
+Multiplicative Interaction:
+python
+Copy
+Edit
+data["interaction_1"] = data["high_density_swipe_score"] * data["cnt_cnp_60days"]
+data["interaction_2"] = data["auth_decline_ratio"] * data["pct_cnp_amt_60days"]
+Division Interaction:
+python
+Copy
+Edit
+data["interaction_3"] = data["pct_cnp_amt_60days"] / (data["dist_miles_btw_swp"] + 1e-6)
+8. Quantile Transformation
+When to use: To map feature values into quantile ranges (e.g., deciles or quartiles).
+Implementation:
+python
+Copy
+Edit
+data["high_density_swipe_quantile"] = data["high_density_swipe_score"].quantile([0.25, 0.5, 0.75])
+9. Weighted Decay
+When to use: For features where recent values are more important than older ones.
+Implementation:
+python
+Copy
+Edit
+alpha = 0.9  # Decay factor
+data["weighted_cnt_cnp_60days"] = data["cnt_cnp_60days"].ewm(alpha=alpha).mean()
+10. Radial Basis Function (RBF)
+When to use: To emphasize proximity to a certain value.
+Formula: 
+RBF
+(
+𝑥
+,
+𝑐
+)
+=
+𝑒
+−
+𝛾
+⋅
+(
+𝑥
+−
+𝑐
+)
+2
+RBF(x,c)=e 
+−γ⋅(x−c) 
+2
+ 
+ 
+Implementation:
+python
+Copy
+Edit
+gamma = 0.1
+center = 10  # Example center value
+data["rbf_high_density_swipe"] = (-gamma * (data["high_density_swipe_score"] - center) ** 2).exp()
+11. Feature Ranking (Rank Transformation)
+When to use: To capture relative importance rather than raw values.
+Implementation:
+python
+Copy
+Edit
+data["rank_pct_cnp_amt_60days"] = data["pct_cnp_amt_60days"].rank()
+12. Clipping Outliers
+Cap extreme values to reduce noise.
+Implementation:
+python
+Copy
+Edit
+data["clipped_high_density_swipe"] = data["high_density_swipe_score"].clip(upper=100)
+13. Square and Cube Root
+For smoothing extreme high values without drastic reductions.
+Implementation:
+python
+Copy
+Edit
+data["sqroot_dist_miles"] = data["dist_miles_btw_swp"] ** (1 / 2)
+data["cubroot_dist_miles"] = data["dist_miles_btw_swp"] ** (1 / 3)
+14. Density Normalization
+Normalize cnt_cnp_60days and pct_cnp_amt_60days by their respective averages for region or time:
+python
+Copy
+Edit
+data["norm_cnp_60days"] = data["cnt_cnp_60days"] / data["cnt_cnp_60days"].mean()
+Which Transformations to Focus On
+For High Variance/Skewed Features: Use log, square root, or sigmoid transformations.
+For Distance Features: Use reciprocal or radial basis transformations.
+For Complex Relationships: Use interaction terms, RBF, or polynomial terms.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Initialize PCA with 20 components (adjust based on explained variance)
 pca_model = H2OPrincipalComponentAnalysisEstimator(k=20, transform="STANDARDIZE", pca_method="GramSVD")
 pca_model.train(x=feature_cols, training_frame=train)
