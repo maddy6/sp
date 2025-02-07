@@ -1,1 +1,112 @@
+Here’s the H2O Isolation Forest implementation to generate anomaly scores and use them as a feature in your H2O GBM fraud detection model.
+
+
+---
+
+Steps in the Code
+
+1. Load datasets into H2O (train, test, oot, train_rs).
+
+
+2. Train an Isolation Forest model on train_rs (random sample of train).
+
+
+3. Generate anomaly scores for all datasets.
+
+
+4. Merge the anomaly scores as a new feature in each dataset.
+
+
+5. Train the H2O GBM fraud model with the new feature.
+
+
+6. Evaluate performance.
+
+
+
+
+---
+
+H2O Python Code for Isolation Forest & GBM Model
+
+import h2o
+from h2o.estimators import H2OIsolationForestEstimator, H2OGradientBoostingEstimator
+
+# Initialize H2O
+h2o.init()
+
+# Load datasets into H2O
+train = h2o.import_file("train.csv")
+test = h2o.import_file("test.csv")
+oot = h2o.import_file("oot.csv")
+train_rs = h2o.import_file("train_rs.csv")  # Random sample for IF training
+
+# Select features for IF (exclude label, non-numeric features, and high-cardinality categorical features)
+features = [col for col in train.columns if col not in ["fraud_ind"]]
+
+# Train Isolation Forest on train_rs
+iso_forest = H2OIsolationForestEstimator(
+    ntrees=100,        # Number of trees (higher = better anomalies detection)
+    sample_size=256,   # Sub-sample size per tree (smaller = better for fraud detection)
+    max_depth=10,
+    seed=42
+)
+iso_forest.train(x=features, training_frame=train_rs)
+
+# Function to add anomaly scores to datasets
+def add_anomaly_scores(df, model, dataset_name):
+    anomaly_scores = model.predict(df)["anomaly_score"]
+    df["iso_anomaly_score"] = anomaly_scores
+    print(f"Added Isolation Forest anomaly score to {dataset_name}")
+
+# Add anomaly scores to all datasets
+add_anomaly_scores(train, iso_forest, "train")
+add_anomaly_scores(test, iso_forest, "test")
+add_anomaly_scores(oot, iso_forest, "oot")
+
+# Define features for GBM
+gbm_features = features + ["iso_anomaly_score"]
+
+# Train H2O GBM Fraud Model
+gbm_model = H2OGradientBoostingEstimator(
+    ntrees=200,
+    max_depth=6,
+    learn_rate=0.05,
+    sample_rate=0.8,
+    col_sample_rate=0.8,
+    seed=42
+)
+gbm_model.train(x=gbm_features, y="fraud_ind", training_frame=train)
+
+# Model Evaluation
+print("Train AUC:", gbm_model.auc(train=True))
+print("Test AUC:", gbm_model.auc(valid=True))
+print("OOT AUC:", gbm_model.model_performance(oot).auc())
+
+
+---
+
+Key Points
+
+Why use train_rs for IF training?
+
+To prevent overfitting and ensure the IF model captures general fraud patterns.
+
+
+Why add anomaly scores as a feature?
+
+Fraud model (GBM) will learn from IF’s anomaly score while using other features to distinguish fraud from generic anomalies.
+
+
+Why anomaly_score and not predict?
+
+anomaly_score is a continuous measure useful for ranking fraud risk, unlike a binary anomaly flag.
+
+
+
+
+---
+
+This approach will enhance your fraud model by integrating IF-based anomaly detection while ensuring regulatory robustness. Let me know if you need optimizations!
+
 
