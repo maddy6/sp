@@ -135,6 +135,52 @@ Expected Outcome
 ✔ Robust Model Performance: It can capture evolving fraud patterns without manual rule creation.
 
 
+
+
+
+
+
+
+
+
+ Clustering-Based Rule Extraction (Best for Behavioral Analysis)
+
+Why It Works
+
+Groups transactions into normal vs. fraudulent clusters.
+
+Flags transactions far from normal behavior as fraud indicators.
+
+Works well for behavioral profiling.
+
+
+How It Works
+
+Apply K-Means clustering.
+
+Identify fraud-dense clusters.
+
+Convert fraud-dense clusters into binary fraud indicators.
+
+
+Implementation
+
+from sklearn.cluster import KMeans
+
+# Train K-Means with 5 clusters
+kmeans = KMeans(n_clusters=5, random_state=42)
+df_pandas["cluster"] = kmeans.fit_predict(df_pandas[x])
+
+# Identify the most fraud-heavy cluster
+fraud_cluster = df_pandas.groupby("cluster")["fraud_ind"].mean().idxmax()
+
+# Create binary indicator for transactions in the fraud-prone cluster
+df_pandas["fraud_cluster_flag"] = (df_pandas["cluster"] == fraud_cluster).astype(int)
+
+# Convert back to H2O frame
+df_h2o = h2o.H2OFrame(df_pandas)
+
+🚀 Why It’s Powerful: Captures hidden fraud groups based on transaction patterns.
 ---
 
 Final Thoughts
