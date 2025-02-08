@@ -1,0 +1,68 @@
+import h2o
+from h2o.frame import H2OFrame
+
+def derive_monotonicity(h2o_frame: H2OFrame, target: str, feature: str, bins: int = 10):
+    """
+    Derive monotonicity for a given feature with respect to the target in an H2O frame.
+
+    Args:
+        h2o_frame (H2OFrame): The H2O DataFrame.
+        target (str): The target column name (binary classification target).
+        feature (str): The feature column name for which to derive monotonicity.
+        bins (int): Number of bins for binning the feature.
+
+    Returns:
+        int: Monotonicity constraint value (1 for increasing, -1 for decreasing, 0 for no clear trend).
+    """
+    # Bin the feature into equal-width bins
+    h2o_frame[f"{feature}_bin"] = h2o_frame[feature].cut(bins=bins)
+    
+    # Group by the binned feature and calculate the mean target for each bin
+    group_stats = h2o_frame.group_by(f"{feature}_bin").mean(target).get_frame()
+    
+    # Sort bins by the feature value to ensure order
+    group_stats = group_stats.sort(f"{feature}_bin")
+    
+    # Extract target mean values for each bin
+    target_means = group_stats[target].as_data_frame(use_pandas=False)[1:]  # Skip header row
+    
+    # Detect monotonic trend
+    increasing = all(float(target_means[i]) <= float(target_means[i+1]) for i in range(len(target_means)-1))
+    decreasing = all(float(target_means[i]) >= float(target_means[i+1]) for i in range(len(target_means)-1))
+    
+    # Assign monotonicity value
+    if increasing:
+        return 1  # Monotonically increasing
+    elif decreasing:
+        return -1  # Monotonically decreasing
+    else:
+        return 0  # No clear monotonic trend
+
+# Example Usage:
+h2o.init()
+data = h2o.import_file("your_dataset.csv")  # Replace with your dataset path
+
+# Define target and features
+target_column = "fraud_label"  # Replace with your target column
+features = ["high_density_swipe_score", "cnt_cnp_60days", "pct_cnp_amt_60days", "auth_decline_ratio", "dist_miles_btw_swp"]
+
+# Derive monotonicity constraints for all features
+monotonic_constraints = {}
+for feature in features:
+    monotonicity = derive_monotonicity(data, target_column, feature)
+    monotonic_constraints[feature] = monotonicity
+
+print("Monotonic Constraints Derived:", monotonic_constraints)
+
+# Use the derived constraints in the GBM model
+from h2o.estimators.gbm import H2OGradientBoostingEstimator
+
+gbm_model = H2OGradientBoostingEstimator(
+    monotone_constraints=monotonic_constraints,
+    ntrees=500,
+    max_depth=10,
+    learn_rate=0.01
+)
+
+# Train the GBM model
+gbm_model.train(x=features, y=target_column, training_frame=data)
