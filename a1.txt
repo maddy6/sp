@@ -1,0 +1,37 @@
+import h2o
+from h2o.estimators import H2OXGBoostEstimator
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
+import numpy as np
+
+# 🚀 Initialize H2O
+h2o.init()
+
+# ✅ Load Your Dataset
+df = h2o.import_file("your_data.csv")
+
+# ✅ Train XGBoost Model
+xgb_model = H2OXGBoostEstimator(distribution="bernoulli", ntrees=100, max_depth=6)
+xgb_model.train(x=["feature_1", "feature_2", "feature_3"], y="fraud_label", training_frame=df)
+
+# ✅ Get Raw Model Scores
+df["xgb_raw_score"] = xgb_model.predict(df)["p1"]  # Raw probability from XGBoost
+
+# Convert to Pandas for Calibration
+df_pandas = df.as_data_frame()
+xgb_preds = df_pandas["xgb_raw_score"].values.reshape(-1, 1)
+y_true = df_pandas["fraud_label"].values
+
+# 1️⃣ **Platt Scaling (Logistic Regression)**
+platt_model = LogisticRegression()
+platt_model.fit(xgb_preds, y_true)
+df_pandas["calibrated_platt"] = platt_model.predict_proba(xgb_preds)[:, 1] * 999  # Scale to 0-999
+
+# 2️⃣ **Isotonic Regression (Non-Parametric Calibration)**
+iso_reg = IsotonicRegression(out_of_bounds="clip")  
+iso_reg.fit(xgb_preds.ravel(), y_true)
+df_pandas["calibrated_iso"] = iso_reg.transform(xgb_preds.ravel()) * 999  # Scale to 0-999
+
+# Convert back to H2O Frame & Save
+df_h2o = h2o.H2OFrame(df_pandas)
+h2o.export_file(df_h2o, "calibrated_scores.csv", force=True)
