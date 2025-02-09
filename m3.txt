@@ -1,0 +1,98 @@
+import h2o
+import h2o.frame
+
+# Initialize H2O
+h2o.init()
+
+# Assuming df is your H2O DataFrame
+df["tca_1000_1500"]  = ((df["TCA_MOD_AMT"] > 1000) & (df["TCA_MOD_AMT"] < 1500)).ifelse(1, 0)
+df["tca_1500_2000"]  = ((df["TCA_MOD_AMT"] > 1500) & (df["TCA_MOD_AMT"] < 2000)).ifelse(1, 0)
+df["tca_2000_2500"]  = ((df["TCA_MOD_AMT"] > 2000) & (df["TCA_MOD_AMT"] < 2500)).ifelse(1, 0)
+df["tca_2500_3000"]  = ((df["TCA_MOD_AMT"] > 2500) & (df["TCA_MOD_AMT"] < 3000)).ifelse(1, 0)
+df["tca_3000_3500"]  = ((df["TCA_MOD_AMT"] > 3000) & (df["TCA_MOD_AMT"] < 3500)).ifelse(1, 0)
+df["tca_3500_4000"]  = ((df["TCA_MOD_AMT"] > 3500) & (df["TCA_MOD_AMT"] < 4000)).ifelse(1, 0)
+
+# Convert to H2OFrame
+df = h2o.H2OFrame(df)
+
+# View Summary
+df.describe()
+
+
+
+
+import h2o
+import h2o.frame
+
+# Initialize H2O
+h2o.init()
+
+# Assume df is your H2O DataFrame
+
+# 1. Interaction Features - Combining SHAP Features (x1-x5) with TCA_MOD_AMT Flags
+df["x1_tca_1000_1500"] = df["x1"] * df["tca_1000_1500"]
+df["x2_tca_1500_2000"] = df["x2"] * df["tca_1500_2000"]
+df["x3_tca_2000_2500"] = df["x3"] * df["tca_2000_2500"]
+df["x4_tca_2500_3000"] = df["x4"] * df["tca_2500_3000"]
+df["x5_tca_3000_3500"] = df["x5"] * df["tca_3000_3500"]
+
+# 2. Weighted Impact Feature
+df["x1_weighted"] = df["x1"] * (df["TCA_MOD_AMT"] + 1).log()
+
+# 3. Risk Amplifier Feature - Stronger Signal in High-Fraud Bins
+df["risk_amplifier"] = (df["x2"] + df["x3"]) * (df["tca_2000_2500"] + df["tca_2500_3000"])
+
+# 4. Normalized Contribution Feature - Ensures Stability of SHAP Importance
+df["shap_adjusted_x1"] = df["x1"] / (df["x1"] + df["x2"] + df["x3"] + df["x4"] + df["x5"] + 0.0001)
+
+# 5. Exponential Scaling for Extreme Fraud Cases
+df["x4_exp"] = (df["x4"].exp()) * df["tca_3000_3500"]
+
+# 6. SHAP-Derived Log Ratio - Boosts Score for Fraud Cases
+df["log_ratio_x5_x3"] = (df["x5"] + 1).log() - (df["x3"] + 1).log()
+
+# Convert to H2OFrame
+df = h2o.H2OFrame(df)
+
+# View Summary
+df.describe()
+
+
+
+
+
+
+
+import h2o
+import h2o.frame
+
+# Initialize H2O
+h2o.init()
+
+# Assume df is your H2O DataFrame
+
+# 🔹 1. Higher-Order Feature Interactions (3-Way Multiplications)
+df["x1_x2_tca_1000_1500"] = df["x1"] * df["x2"] * df["tca_1000_1500"]
+df["x3_x4_tca_2000_2500"] = df["x3"] * df["x4"] * df["tca_2000_2500"]
+df["x5_x1_x2_tca_3000_3500"] = df["x5"] * df["x1"] * df["x2"] * df["tca_3000_3500"]
+
+# 🔹 2. Polynomial & Exponential Scaling
+df["poly_x1_x2"] = (df["x1"] ** 2) + (df["x2"] ** 2)  # Quadratic fraud patterns
+df["exp_x4_tca_2500_3000"] = (df["x4"].exp()) * df["tca_2500_3000"]  # Exponential fraud signals
+df["log_x3_x5"] = (df["x3"] + 1).log() * (df["x5"] + 1).log()  # Logarithmic scaling
+
+# 🔹 3. Fraud Cluster Encoding (Mean & Median of High-Risk Bins)
+df["tca_median_2000_4000"] = df["TCA_MOD_AMT"].ifelse(df["TCA_MOD_AMT"] > 2000, df["TCA_MOD_AMT"].median(), 0)
+df["tca_mean_1000_2000"] = df["TCA_MOD_AMT"].ifelse(df["TCA_MOD_AMT"] > 1000, df["TCA_MOD_AMT"].mean(), 0)
+
+# 🔹 4. Adaptive Risk Score Scaling (SHAP Score Weighted Adjustments)
+df["adaptive_risk_x1"] = df["x1"] / (df["x1"].abs().sum() + 0.0001)
+df["adaptive_risk_x2_x4"] = (df["x2"] * df["x4"]) / (df["x2"].abs().sum() + df["x4"].abs().sum() + 0.0001)
+
+# Convert to H2OFrame
+df = h2o.H2OFrame(df)
+
+# View Summary
+df.describe()
+
+
