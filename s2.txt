@@ -1,0 +1,533 @@
+import h2o
+import numpy as np
+from h2o.frame import H2OFrame
+from scipy.stats import entropy
+
+# Initialize H2O
+h2o.init()
+
+# Load your transaction dataset
+df = h2o.import_file("your_transactions.csv")  # Replace with your dataset file
+
+# Convert necessary columns to numeric types
+num_cols = ["same_pos_amt_24hr", "cvv_verf_magn_ind", "trxn_hour", "tot_cnt_7days",
+            "amt_ge500_ind", "zero_auth_ind", "cnt_same_amt_6days", "cnt_same_merc_id_30min"]
+df[num_cols] = df[num_cols].asnumeric()
+
+# 1️⃣ Fraud-Risk Weighted Transaction Velocity
+df["fraud_risk_velocity"] = (df["high_density_swipe_score"] * df["cvv_verf_magn_ind"]) / \
+                            (df["trxn_hour"] * df["same_pos_amt_24hr"] + 1)
+
+# 2️⃣ Bayesian MCC-Terminal Risk Score
+df["mcc_terminal_risk"] = (df["hct_mer_mcc_bayesian_encoded_7_24hr"] + df["hct_term_cntry_code_bayesian_encoded_1"]) / 2
+
+# 3️⃣ High Dollar Fraud Ratio with MCC Risk
+df["high_dollar_mcc_fraud"] = (df["high_dollar_fraud_mer_ratio"] * df["hct_mer_mcc_bayesian_encoded_5_24hr"]) / \
+                              (df["same_mcc_cnt_30min"] + 1)
+
+# 4️⃣ Entropy-Based Same POS Amount Score
+pos_amounts = df["same_pos_amt_24hr"].as_data_frame().values.flatten()
+df["pos_entropy"] = entropy(pos_amounts, base=2)
+
+# 5️⃣ Chip-Based Transaction Risk Scoring
+df["chip_risk"] = (df["same_mcc_amt_24hr"] * df["tot_cnt_7days"]) / (df["tot_cnt_30days"] + 1)
+
+# 6️⃣ High-Dollar Transaction Spike Detection
+df["spike_ratio"] = (df["amt_ge500_ind"] - df["avg_amt_swipe_24hr"]) / (df["avg_amt_6days"] + 1)
+
+# 7️⃣ Fraud Signature Clustering (Isolation-Based)
+df["fraud_signature"] = (df["cnt_same_amt_6days"] * df["cnt_same_pos_amt_24hr"]) / \
+                        (df["cnt_same_merc_id_30min"] + 1)
+
+# 8️⃣ Even Dollar Transaction Risk
+df["even_dollar_fraud"] = (df["even_dollar_ind"] * df["tot_cnt_24hr"]) / (df["same_pos_amt_24hr"] + 1)
+
+# 9️⃣ Zero Auth + CVV Mismatch Frequency
+df["zero_auth_cvv_risk"] = (df["zero_auth_cvv2_mismatch_ind"] * df["zero_auth_ind"]) / \
+                           (df["cnt_same_amt_2hr"] + 1)
+
+# 🔟 Card-Present Fraud Risk Factor
+df["card_present_fraud_score"] = (df["cvv2_mismatch_ind"] + df["avs_mismatch_1day"]) / \
+                                 (df["same_mcc_cnt_30min"] + 1)
+
+# Save the transformed dataset
+h2o.export_file(df, "enhanced_fraud_features.csv", force=True)
+
+# Shutdown H2O
+h2o.shutdown(prompt=False)
+
+
+
+
+
+
+import h2o
+import numpy as np
+import pandas as pd
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load your dataset into H2OFrame
+df = h2o.import_file("your_dataset.csv")
+
+# Avoid division by zero by adding a small constant
+EPSILON = 1e-6
+
+# Feature 1: High-Value Merchant Anomaly Score
+df["high_val_merch_anom"] = (
+    df["high_density_swipe_score"] * df["high_dollar_fraud_mer_ratio"]
+) / (df["cnt_same_merc_id_24hr"] + 1)
+
+# Feature 2: Variance of Swipe Amount in Short vs. Long Window
+df["swipe_amt_var_ratio"] = (
+    df["std_dev_amt_same_pos_24hr"] / (df["std_dev_amt_same_pos_72hr"] + EPSILON)
+)
+
+# Feature 3: High Dollar Transaction Concentration Ratio
+df["high_dollar_conc_ratio"] = (
+    df["amt_ge500_1hr_ind"] + df["amt_ge200_lt500_1hr_ind"]
+) / (df["tot_cnt_1hr"] + 1)
+
+# Feature 4: Bayesian Encoded Merchant MCC Fraud Score (Combining Bayesian Encoded Scores)
+df["hct_mer_mcc_bayesian_fraud_score"] = (
+    df["hct_mer_mcc_bayesian_encoded_1"] + df["hct_mer_mcc_bayesian_encoded_7_24hr"]
+) / 2
+
+# Feature 5: POS Cluster Anomaly Score
+df["pos_cluster_anom"] = (
+    df["same_pos_amt_24hr"] - df["avg_amt_swipe_24hr"]
+) / (df["std_dev_amt_same_pos_24hr"] + EPSILON)
+
+# Feature 6: Zero Auth + High Dollar Fraud Indicator
+df["zero_auth_high_dollar"] = df["zero_auth_ind"] * df["high_dollar_fraud_mer_ratio"]
+
+# Feature 7: Fraudulent Swipe Sequence Ratio
+df["fraud_swipe_seq_ratio"] = df["cnt_same_amt_30min"] / (df["tot_cnt_30min"] + 1)
+
+# Feature 8: Cross-Validation Merchant POS Usage Score
+df["cv_merch_pos_score"] = df["cnt_same_merc_id_6hr"] / (df["cnt_same_pos_24hr"] + 1)
+
+# Feature 9: Velocity-Based High-Value Transaction Risk Score
+df["high_val_trx_velocity_score"] = (
+    df["high_val_trx_velocity"] * df["cnt_same_pos_amt_24hr"]
+) / (df["tot_cnt_24hr"] + 1)
+
+# Convert H2OFrame back to Pandas (if needed)
+df_pandas = df.as_data_frame()
+
+# Save the new dataset
+df.export_file("processed_dataset.csv")
+
+
+
+
+
+
+import h2o
+import numpy as np
+import pandas as pd
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load your dataset into H2OFrame
+df = h2o.import_file("your_dataset.csv")
+
+# Avoid division by zero errors
+EPSILON = 1e-6
+
+# Feature 1: Merchant Risk-Weighted Fraud Probability
+df["merch_risk_weighted_prob"] = (
+    df["hct_merch_fraud_prob"] * df["cnt_same_merc_id_24hr"]
+) / (df["tot_cnt_24hr"] + 1)
+
+# Feature 2: POS Terminal Fraud Density Score
+df["pos_fraud_density"] = (
+    df["cnt_same_pos_6hr"] / (df["cnt_same_pos_24hr"] + EPSILON)
+)
+
+# Feature 3: Rare MCC High-Dollar Fraud Score
+df["rare_mcc_high_dollar_score"] = (
+    df["rare_mcc_indicator"] * df["high_dollar_fraud_mer_ratio"]
+)
+
+# Feature 4: Recent High-Dollar Fraud Ratio
+df["recent_high_dollar_fraud_ratio"] = (
+    df["amt_ge500_1hr_ind"] + df["amt_ge200_lt500_6hr_ind"]
+) / (df["tot_cnt_6hr"] + 1)
+
+# Feature 5: Step-Up Authentication Trigger Score
+df["step_up_auth_score"] = df["zero_auth_ind"] * df["pos_auth_decline_ind"]
+
+# Feature 6: Cross-Time Window Transaction Ratio
+df["cross_window_trx_ratio"] = (
+    df["tot_cnt_6hr"] / (df["tot_cnt_24hr"] + EPSILON)
+)
+
+# Feature 7: Low-Frequency Merchant Swipe Anomaly Score
+df["low_freq_merch_anom"] = df["cnt_same_merc_id_6hr"] / (df["cnt_same_merc_id_72hr"] + 1)
+
+# Feature 8: MCC + POS Terminal Fraud Indicator
+df["mcc_pos_fraud_ind"] = df["hct_mer_mcc_fraud_score"] * df["pos_fraud_density"]
+
+# Feature 9: Cardholder Spending Deviation Score
+df["spend_dev_score"] = (
+    df["txn_amt"] - df["avg_amt_swipe_72hr"]
+) / (df["std_dev_amt_same_pos_72hr"] + EPSILON)
+
+# Feature 10: Rapid Transaction Cluster Detection
+df["rapid_trx_cluster_score"] = (
+    df["cnt_same_amt_30min"] / (df["tot_cnt_30min"] + 1)
+)
+
+# Convert back to Pandas (if needed)
+df_pandas = df.as_data_frame()
+
+# Save the new dataset
+df.export_file("processed_dataset_set3.csv")
+
+
+
+
+
+
+
+
+
+--------------------------------
+--------------------------------
+
+
+import h2o
+import numpy as np
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load your dataset into H2OFrame
+df = h2o.import_file("your_dataset.csv")
+
+# Avoid division by zero errors
+EPSILON = 1e-6
+
+# Feature 1: Weekend Transaction Risk Indicator
+df["wkend_trx_risk"] = df["trxn_wkend_ind"] * df["tot_cnt_24hr"]
+
+# Feature 2: Foreign Transaction Risk Score
+df["foreign_trx_risk"] = df["foreign_ind"] * df["cnt_same_merc_id_24hr"]
+
+# Feature 3: High-Value Transaction Risk Factor
+df["high_value_risk"] = df["amt_ge500_ind"] / (df["avg_trxn_amt_6days"] + EPSILON)
+
+# Feature 4: Repeated MCC Usage Deviation
+df["mcc_reuse_anomaly"] = (
+    df["same_mcc_24hr"] / (df["tot_cnt_24hr"] + EPSILON)
+)
+
+# Feature 5: Same Merchant Reuse Frequency
+df["same_merchant_freq"] = (
+    df["cnt_same_merc_id_24hr"] / (df["cnt_same_merc_id_6hr"] + EPSILON)
+)
+
+# Feature 6: Velocity-Based Even Dollar Transaction Indicator
+df["even_dollar_velocity"] = (
+    df["even_dollar_ind"] * df["cnt_same_amt_30min"]
+)
+
+# Feature 7: Decline Recovery Risk Indicator
+df["decline_recovery_risk"] = (
+    df["time_since_last_trxn"] * df["fraud_block_ind"]
+)
+
+# Feature 8: CVV Mismatch Fraud Risk
+df["cvv_mismatch_risk"] = (
+    df["cvv2_mismatch_ind"] / (df["tot_cnt_24hr"] + EPSILON)
+)
+
+# Feature 9: AVS Mismatch High-Risk Score
+df["avs_mismatch_risk"] = (
+    df["avs_mismatch_ind"] / (df["tot_cnt_24hr"] + EPSILON)
+)
+
+# Feature 10: Zero Authorization Suspicious Activity
+df["zero_auth_risk"] = (
+    df["zero_auth_ind"] * df["zero_auth_avs_mismatch_ind"]
+)
+
+# Feature 11: Geographic Merchant Bayesian Risk Encoding
+df["geo_merch_risk"] = (
+    df["hct_term_country_code_baysian_encoded_1"] * df["hct_mer_mcc_baysian_encoded_2"]
+)
+
+# Feature 12: Payment Velocity Score for Subscription Billing
+df["subscription_velocity"] = (
+    df["token_recur_bill_ind"] * df["cnt_same_merc_id_30min"]
+)
+
+# Feature 13: Last Transaction Time Sensitivity
+df["time_sensitivity_score"] = (
+    df["time_since_last_trxn"] / (df["avg_amt_6days"] + EPSILON)
+)
+
+# Feature 14: Short-Term High Frequency Transactions
+df["short_term_high_freq"] = (
+    df["cnt_same_amt_30min"] / (df["cnt_same_amt_6hr"] + EPSILON)
+)
+
+# Feature 15: Repeated Swipe Anomaly Detection
+df["swipe_anomaly"] = (
+    df["avg_swipe_amt_24hr"] / (df["avg_swipe_amt"] + EPSILON)
+)
+
+# Convert back to Pandas (if needed)
+df_pandas = df.as_data_frame()
+
+# Save the new dataset
+df.export_file("processed_dataset_set5.csv")
+
+
+
+
+
+
+------------------------------------------
+----------------------------------------------
+
+
+
+import h2o
+from h2o.estimators import H2OGradientBoostingEstimator
+from h2o.frame import H2OFrame
+
+# Initialize H2O cluster
+h2o.init()
+
+# Assuming you already have your dataset loaded as h2o_frame
+# Let's define your raw features and create the interaction features
+
+# Create interaction features
+h2o_frame['amt_ge500_ind_amt_same_merc_id_24hr'] = h2o_frame['amt_ge500_ind'] * h2o_frame['same_merc_id_24hr']
+h2o_frame['trxn_hour_amt_ge500_ind'] = h2o_frame['trxn_hour'] * h2o_frame['amt_ge500_ind']
+h2o_frame['same_merc_id_24hr_same_pos_amt_24hr'] = h2o_frame['same_merc_id_24hr'] * h2o_frame['same_pos_amt_24hr']
+h2o_frame['amt_same_mcc_24hr_amt_same_pos_cnt_24hr'] = h2o_frame['amt_same_mcc_24hr'] * h2o_frame['amt_same_pos_cnt_24hr']
+h2o_frame['amt_ge500_ind_token_recur_bill_ind'] = h2o_frame['amt_ge500_ind'] * h2o_frame['token_recur_bill_ind']
+h2o_frame['hct_mer_mcc_baysian_encoded_1_auth_ecom_ind'] = h2o_frame['hct_mer_mcc_baysian_encoded_1'] * h2o_frame['auth_ecom_ind']
+h2o_frame['amt_same_pos_24hr_time_since_last_trxn'] = h2o_frame['amt_same_pos_24hr'] * h2o_frame['time_since_last_trxn']
+h2o_frame['recur_bill_ind_amt_ge500_ind'] = h2o_frame['recur_bill_ind'] * h2o_frame['amt_ge500_ind']
+h2o_frame['cvv2_mismatch_ind_avs_mismatch_ind'] = h2o_frame['cvv2_mismatch_ind'] * h2o_frame['avs_mismatch_ind']
+h2o_frame['amt_same_merc_id_6hr_avg_amt_24hr'] = h2o_frame['amt_same_merc_id_6hr'] * h2o_frame['avg_amt_24hr']
+h2o_frame['time_since_last_forg_cnp_same_amt_cnt_24hr'] = h2o_frame['time_since_last_forg_cnp'] * h2o_frame['same_amt_cnt_24hr']
+h2o_frame['hct_term_country_code_baysian_encoded_1_amt_ge500_ind'] = h2o_frame['hct_term_country_code_baysian_encoded_1'] * h2o_frame['amt_ge500_ind']
+h2o_frame['cnt_same_amt_30min_amt_same_merc_id_6hr'] = h2o_frame['cnt_same_amt_30min'] * h2o_frame['amt_same_merc_id_6hr']
+h2o_frame['amt_same_pos_24hr_time_since_last_trxn'] = h2o_frame['amt_same_pos_24hr'] * h2o_frame['time_since_last_trxn']
+h2o_frame['zero_auth_ind_amt_same_pos_cnt_24hr'] = h2o_frame['zero_auth_ind'] * h2o_frame['amt_same_pos_cnt_24hr']
+h2o_frame['same_merc_id_ind_amt_same_pos_24hr'] = h2o_frame['same_merc_id_ind'] * h2o_frame['amt_same_pos_24hr']
+
+# View the interaction features
+print(h2o_frame.columns)
+
+# Train-test split
+train, test = h2o_frame.split_frame(ratios=[0.8])
+
+# Define the response and predictors
+response = 'fraud'  # replace with your actual fraud column name
+predictors = h2o_frame.columns
+predictors.remove(response)
+
+# Initialize the H2O model (e.g., GBM for this case)
+model = H2OGradientBoostingEstimator(ntrees=50, max_depth=5, learn_rate=0.1)
+model.train(x=predictors, y=response, training_frame=train)
+
+# Model performance on test data
+performance = model.model_performance(test_data=test)
+print(performance)
+
+# Feature importance
+feature_importance = model.varimp()
+print("Feature Importance: ", feature_importance)
+
+# Saving model (optional)
+model.save_model(path="model.h2o")
+
+# Shutdown H2O instance
+h2o.shutdown(prompt=False)
+
+
+
+
+
+# Additional interaction features
+h2o_frame['amt_ge200_lt500_ind_cust_present_ind'] = h2o_frame['amt_ge200_lt500_ind'] * h2o_frame['cust_present_ind']
+h2o_frame['amt_same_pos_cnt_24hr_token_recur_bill_ind'] = h2o_frame['amt_same_pos_cnt_24hr'] * h2o_frame['token_recur_bill_ind']
+h2o_frame['recur_bill_ind_amt_same_mcc_24hr'] = h2o_frame['recur_bill_ind'] * h2o_frame['amt_same_mcc_24hr']
+h2o_frame['time_since_last_trxn_amt_ge200_lt500_ind'] = h2o_frame['time_since_last_trxn'] * h2o_frame['amt_ge200_lt500_ind']
+h2o_frame['avg_trxn_amt_6days_amt_same_merc_id_24hr'] = h2o_frame['avg_trxn_amt_6days'] * h2o_frame['amt_same_merc_id_24hr']
+h2o_frame['same_merc_id_1day_amt_same_pos_cnt_24hr'] = h2o_frame['same_merc_id_1day'] * h2o_frame['amt_same_pos_cnt_24hr']
+h2o_frame['amt_same_pos_24hr_zero_auth_ind'] = h2o_frame['amt_same_pos_24hr'] * h2o_frame['zero_auth_ind']
+h2o_frame['amt_same_pos_24hr_amt_same_merc_id_24hr'] = h2o_frame['amt_same_pos_24hr'] * h2o_frame['amt_same_merc_id_24hr']
+h2o_frame['same_amt_cnt_24hr_amt_same_pos_24hr'] = h2o_frame['same_amt_cnt_24hr'] * h2o_frame['amt_same_pos_24hr']
+h2o_frame['same_merc_id_24hr_amt_same_pos_amt_24hr'] = h2o_frame['same_merc_id_24hr'] * h2o_frame['amt_same_pos_amt_24hr']
+h2o_frame['cvv2_mismatch_ind_time_since_avs_mismatch'] = h2o_frame['cvv2_mismatch_ind'] * h2o_frame['time_since_avs_mismatch']
+h2o_frame['avg_trxn_amt_60days_same_pos_amt_24hr'] = h2o_frame['avg_trxn_amt_60days'] * h2o_frame['same_pos_amt_24hr']
+h2o_frame['amt_same_merc_id_6hr_avg_trxn_amt_6days'] = h2o_frame['amt_same_merc_id_6hr'] * h2o_frame['avg_trxn_amt_6days']
+h2o_frame['same_amt_1day_time_since_cvv2_mismatch'] = h2o_frame['same_amt_1day'] * h2o_frame['time_since_cvv2_mismatch']
+h2o_frame['amt_same_pos_24hr_amt_same_pos_cnt_24hr'] = h2o_frame['amt_same_pos_24hr'] * h2o_frame['amt_same_pos_cnt_24hr']
+h2o_frame['amt_same_merc_id_24hr_amt_same_pos_cnt_24hr'] = h2o_frame['amt_same_merc_id_24hr'] * h2o_frame['amt_same_pos_cnt_24hr']
+h2o_frame['time_since_last_trxn_avg_amt_6days'] = h2o_frame['time_since_last_trxn'] * h2o_frame['avg_amt_6days']
+h2o_frame['amt_same_merc_id_24hr_cnt_same_pos_amt_24hr'] = h2o_frame['amt_same_merc_id_24hr'] * h2o_frame['cnt_same_pos_amt_24hr']
+h2o_frame['same_amt_cnt_24hr_amt_same_merc_id_6hr'] = h2o_frame['same_amt_cnt_24hr'] * h2o_frame['amt_same_merc_id_6hr']
+h2o_frame['same_pos_amt_24hr_token_recur_bill_ind'] = h2o_frame['same_pos_amt_24hr'] * h2o_frame['token_recur_bill_ind']
+h2o_frame['amt_same_pos_cnt_24hr_time_since_last_forg_cnp'] = h2o_frame['amt_same_pos_cnt_24hr'] * h2o_frame['time_since_last_forg_cnp']
+
+# View the new interaction features
+print(h2o_frame.columns)
+
+# Train-test split again for updated features
+train, test = h2o_frame.split_frame(ratios=[0.8])
+
+# Define the response and predictors
+response = 'fraud'  # replace with your actual fraud column name
+predictors = h2o_frame.columns
+predictors.remove(response)
+
+# Reinitialize the H2O model (e.g., GBM for this case)
+model = H2OGradientBoostingEstimator(ntrees=50, max_depth=5, learn_rate=0.1)
+model.train(x=predictors, y=response, training_frame=train)
+
+# Model performance on test data
+performance = model.model_performance(test_data=test)
+print(performance)
+
+# Feature importance
+feature_importance = model.varimp()
+print("Feature Importance: ", feature_importance)
+
+# Saving model (optional)
+model.save_model(path="model_updated.h2o")
+
+# Shutdown H2O instance
+h2o.shutdown(prompt=False)
+
+
+
+
+
+
+# Interaction Features Set 2
+h2o_frame['amt_ge500_1hr_ind_same_pos_cnt_24hr'] = h2o_frame['amt_ge500_1hr_ind'] * h2o_frame['same_pos_cnt_24hr']
+h2o_frame['recur_bill_ind_amt_same_pos_24hr'] = h2o_frame['recur_bill_ind'] * h2o_frame['amt_same_pos_24hr']
+h2o_frame['same_merc_id_24hr_amt_same_mcc_24hr'] = h2o_frame['same_merc_id_24hr'] * h2o_frame['amt_same_mcc_24hr']
+h2o_frame['amt_ge500_ind_time_since_last_trxn'] = h2o_frame['amt_ge500_ind'] * h2o_frame['time_since_last_trxn']
+h2o_frame['same_pos_amt_24hr_time_since_last_forg_cnp'] = h2o_frame['same_pos_amt_24hr'] * h2o_frame['time_since_last_forg_cnp']
+h2o_frame['amt_same_pos_cnt_24hr_avg_amt_6days'] = h2o_frame['amt_same_pos_cnt_24hr'] * h2o_frame['avg_amt_6days']
+h2o_frame['same_amt_cnt_24hr_zero_auth_ind'] = h2o_frame['same_amt_cnt_24hr'] * h2o_frame['zero_auth_ind']
+h2o_frame['hct_mer_mcc_baysian_encoded_2_amt_same_merc_id_24hr'] = h2o_frame['hct_mer_mcc_baysian_encoded_2'] * h2o_frame['amt_same_merc_id_24hr']
+h2o_frame['same_amt_cnt_6hr_amt_ge500_ind'] = h2o_frame['same_amt_cnt_6hr'] * h2o_frame['amt_ge500_ind']
+h2o_frame['same_pos_cnt_24hr_cvv2_mismatch_ind'] = h2o_frame['same_pos_cnt_24hr'] * h2o_frame['cvv2_mismatch_ind']
+h2o_frame['amt_same_merc_id_30min_time_since_last_trxn'] = h2o_frame['amt_same_merc_id_30min'] * h2o_frame['time_since_last_trxn']
+h2o_frame['time_since_exp_date_mismatch_same_merc_id_24hr'] = h2o_frame['time_since_exp_date_mismatch'] * h2o_frame['same_merc_id_24hr']
+h2o_frame['token_recur_bill_1hr_ind_same_amt_cnt_1hr'] = h2o_frame['token_recur_bill_1hr_ind'] * h2o_frame['same_amt_cnt_1hr']
+h2o_frame['amt_same_merc_id_6hr_time_since_last_forg_cnp'] = h2o_frame['amt_same_merc_id_6hr'] * h2o_frame['time_since_last_forg_cnp']
+h2o_frame['time_since_avs_mismatch_amt_same_merc_id_24hr'] = h2o_frame['time_since_avs_mismatch'] * h2o_frame['amt_same_merc_id_24hr']
+h2o_frame['amt_same_pos_24hr_same_amt_cnt_24hr'] = h2o_frame['amt_same_pos_24hr'] * h2o_frame['same_amt_cnt_24hr']
+h2o_frame['same_merc_id_24hr_token_recur_bill_ind'] = h2o_frame['same_merc_id_24hr'] * h2o_frame['token_recur_bill_ind']
+h2o_frame['same_amt_cnt_1hr_same_amt_cnt_6hr'] = h2o_frame['same_amt_cnt_1hr'] * h2o_frame['same_amt_cnt_6hr']
+h2o_frame['amt_same_pos_cnt_24hr_amt_same_merc_id_24hr'] = h2o_frame['amt_same_pos_cnt_24hr'] * h2o_frame['amt_same_merc_id_24hr']
+h2o_frame['avg_trxn_amt_6days_amt_same_pos_24hr'] = h2o_frame['avg_trxn_amt_6days'] * h2o_frame['amt_same_pos_24hr']
+h2o_frame['same_amt_1hr_same_pos_cnt_24hr'] = h2o_frame['same_amt_1hr'] * h2o_frame['same_pos_cnt_24hr']
+h2o_frame['amt_same_pos_24hr_zero_auth_avs_mismatch_ind'] = h2o_frame['amt_same_pos_24hr'] * h2o_frame['zero_auth_avs_mismatch_ind']
+h2o_frame['same_pos_amt_24hr_amt_same_merc_id_6hr'] = h2o_frame['same_pos_amt_24hr'] * h2o_frame['amt_same_merc_id_6hr']
+
+# View the new interaction features
+print(h2o_frame.columns)
+
+# Train-test split
+train, test = h2o_frame.split_frame(ratios=[0.8])
+
+# Define the response and predictors
+response = 'fraud'  # replace with your actual fraud column name
+predictors = h2o_frame.columns
+predictors.remove(response)
+
+# Initialize the H2O model (e.g., GBM for this case)
+model = H2OGradientBoostingEstimator(ntrees=50, max_depth=5, learn_rate=0.1)
+model.train(x=predictors, y=response, training_frame=train)
+
+# Model performance on test data
+performance = model.model_performance(test_data=test)
+print(performance)
+
+# Feature importance
+feature_importance = model.varimp()
+print("Feature Importance: ", feature_importance)
+
+# Saving model (optional)
+model.save_model(path="model.h2o")
+
+# Shutdown H2O instance
+h2o.shutdown(prompt=False)
+
+
+
+
+
+# Swipe-Based Interaction Features
+h2o_frame['avg_swipe_amt_1hr_same_pos_amt_24hr'] = h2o_frame['avg_swipe_amt_1hr'] * h2o_frame['same_pos_amt_24hr']
+h2o_frame['avg_amt_swipe_24hr_same_amt_24hr'] = h2o_frame['avg_amt_swipe_24hr'] * h2o_frame['same_amt_24hr']
+h2o_frame['avg_swipe_amt_24hr_same_pos_24hr'] = h2o_frame['avg_swipe_amt_24hr'] * h2o_frame['same_pos_24hr']
+h2o_frame['avg_swipe_amt_24hr_same_amt_1hr'] = h2o_frame['avg_swipe_amt_24hr'] * h2o_frame['same_amt_1hr']
+h2o_frame['avg_swipe_amt_1hr_amt_same_merc_id_6hr'] = h2o_frame['avg_swipe_amt_1hr'] * h2o_frame['amt_same_merc_id_6hr']
+h2o_frame['avg_trxn_amt_same_pos_24hr_avg_swipe_amt_1hr'] = h2o_frame['avg_trxn_amt'] * h2o_frame['avg_swipe_amt_1hr']
+h2o_frame['avg_amt_6days_avg_swipe_amt_1hr'] = h2o_frame['avg_amt_6days'] * h2o_frame['avg_swipe_amt_1hr']
+h2o_frame['same_amt_1hr_avg_swipe_amt_24hr'] = h2o_frame['same_amt_1hr'] * h2o_frame['avg_swipe_amt_24hr']
+h2o_frame['avg_amt_6days_avg_amt_swipe_1hr'] = h2o_frame['avg_amt_6days'] * h2o_frame['avg_amt_swipe_1hr']
+h2o_frame['same_pos_cnt_24hr_avg_swipe_amt_1hr'] = h2o_frame['same_pos_cnt_24hr'] * h2o_frame['avg_swipe_amt_1hr']
+h2o_frame['same_amt_1hr_avg_amt_swipe_24hr'] = h2o_frame['same_amt_1hr'] * h2o_frame['avg_amt_swipe_24hr']
+h2o_frame['amt_ge200_lt500_1hr_avg_swipe_amt_24hr'] = h2o_frame['amt_ge200_lt500_1hr_ind'] * h2o_frame['avg_amt_swipe_24hr']
+h2o_frame['same_pos_amt_24hr_avg_swipe_amt_1hr'] = h2o_frame['same_pos_amt_24hr'] * h2o_frame['avg_swipe_amt_1hr']
+h2o_frame['amt_same_pos_cnt_24hr_avg_amt_swipe_1hr'] = h2o_frame['amt_same_pos_cnt_24hr'] * h2o_frame['avg_amt_swipe_1hr']
+h2o_frame['same_pos_cnt_24hr_avg_amt_swipe_1hr'] = h2o_frame['same_pos_cnt_24hr'] * h2o_frame['avg_amt_swipe_1hr']
+h2o_frame['same_amt_cnt_1hr_avg_amt_swipe_1hr'] = h2o_frame['same_amt_cnt_1hr'] * h2o_frame['avg_amt_swipe_1hr']
+h2o_frame['same_merc_id_24hr_avg_amt_swipe_24hr'] = h2o_frame['same_merc_id_24hr'] * h2o_frame['avg_amt_swipe_24hr']
+h2o_frame['same_amt_24hr_avg_swipe_amt_1hr'] = h2o_frame['same_amt_24hr'] * h2o_frame['avg_swipe_amt_1hr']
+h2o_frame['amt_ge200_lt500_1hr_avg_swipe_amt_1hr'] = h2o_frame['amt_ge200_lt500_1hr_ind'] * h2o_frame['avg_swipe_amt_1hr']
+h2o_frame['same_pos_cnt_24hr_same_amt_cnt_1hr'] = h2o_frame['same_pos_cnt_24hr'] * h2o_frame['same_amt_cnt_1hr']
+h2o_frame['amt_same_pos_cnt_24hr_avg_trxn_amt_24hr'] = h2o_frame['amt_same_pos_cnt_24hr'] * h2o_frame['avg_trxn_amt_24hr']
+h2o_frame['same_amt_1hr_avg_trxn_amt_6days'] = h2o_frame['same_amt_1hr'] * h2o_frame['avg_trxn_amt_6days']
+h2o_frame['same_amt_cnt_24hr_avg_amt_swipe_1hr'] = h2o_frame['same_amt_cnt_24hr'] * h2o_frame['avg_amt_swipe_1hr']
+h2o_frame['avg_amt_swipe_1hr_avg_amt_6days'] = h2o_frame['avg_amt_swipe_1hr'] * h2o_frame['avg_amt_6days']
+h2o_frame['same_amt_1hr_amt_same_pos_24hr'] = h2o_frame['same_amt_1hr'] * h2o_frame['amt_same_pos_24hr']
+h2o_frame['amt_same_merc_id_24hr_same_amt_24hr'] = h2o_frame['amt_same_merc_id_24hr'] * h2o_frame['same_amt_24hr']
+
+# View the new swipe-based features
+print(h2o_frame.columns)
+
+# Train-test split
+train, test = h2o_frame.split_frame(ratios=[0.8])
+
+# Define the response and predictors
+response = 'fraud'  # replace with your actual fraud column name
+predictors = h2o_frame.columns
+predictors.remove(response)
+
+# Initialize the H2O model (e.g., GBM for this case)
+model = H2OGradientBoostingEstimator(ntrees=50, max_depth=5, learn_rate=0.1)
+model.train(x=predictors, y=response, training_frame=train)
+
+# Model performance on test data
+performance = model.model_performance(test_data=test)
+print(performance)
+
+# Feature importance
+feature_importance = model.varimp()
+print("Feature Importance: ", feature_importance)
+
+# Saving model (optional)
+model.save_model(path="model.h2o")
+
+# Shutdown H2O instance
+h2o.shutdown(prompt=False)
