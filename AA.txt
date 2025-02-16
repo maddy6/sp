@@ -1,0 +1,132 @@
+
+import h2o
+h2o.init()
+
+# Load your dataset
+df = h2o.import_file("path_to_your_dataset.csv")
+
+# Create interaction features
+df['trxn_freq_anomaly'] = df['tot_cnt_24hr'] / df['avg_trxn_cnt_30days']
+df['time_since_last_trxn_anomaly'] = df['time_since_last_trxn'] / df['avg_time_between_trxns_30days']
+df['wkend_wkday_ratio'] = df['tot_cnt_30days_wkend'] / df['tot_cnt_30days_wkday']
+df['large_amt_anomaly'] = df['amt_swipe_ge_1000_24hr'] / df['avg_swipe_amt_24hr']
+df['swipe_cnp_amt_ratio'] = df['amt_swipe_24hr'] / df['amt_cnp_24hr']
+df['zero_auth_ratio'] = df['tot_zero_auth_cnt_24hr'] / df['tot_cnt_24hr']
+df['dist_btw_swp_anomaly'] = df['dist_miles_btw_swp'] / df['avg_dist_btw_swp_30days']
+df['foreign_trxn_ratio'] = df['cnt_fore_swipe_24hr'] / df['tot_cnt_24hr']
+df['new_merch_ratio'] = df['new_merch_ind'] / df['tot_cnt_24hr']
+df['mcc_anomaly_score'] = df['same_mcc_cnt_24hr'] / df['avg_same_mcc_cnt_30days']
+df['cvv_mismatch_ratio'] = df['cnt_cvv2_mismatch_24hr'] / df['tot_cnt_24hr']
+df['avs_mismatch_ratio'] = df['cnt_avs_mismatch_24hr'] / df['tot_cnt_24hr']
+df['swipe_cnp_ratio'] = df['cnt_swipe_24hr'] / df['cnt_cnp_24hr']
+df['visa_mastercard_ratio'] = df['visa_ind'] / df['mastercard_ind']
+df['fraud_risk_score'] = df['cvv_mismatch_ratio'] * df['avs_mismatch_ratio'] * df['new_merch_ratio']
+df['geo_temp_anomaly_score'] = df['dist_btw_swp_anomaly'] * df['time_since_last_trxn_anomaly']
+
+# Save the updated dataset
+df.save("path_to_updated_dataset.csv")
+
+
+
+
+
+
+# Create interaction features
+df['trxn_velocity_anomaly'] = df['tot_cnt_24hr'] / df['tot_cnt_30days']
+df['zero_auth_time_gap_anomaly'] = df['mins_since_zero_auth'] / df['avg_mins_between_zero_auth_30days']
+df['same_merc_cluster_score'] = df['same_merc_cnt_24hr'] / df['same_merc_cnt_30days']
+df['cvv_mismatch_time_gap'] = df['time_since_cvv2_mismatch'] / df['avg_time_between_cvv_mismatch_30days']
+df['avs_mismatch_time_gap'] = df['time_since_avs_mismatch'] / df['avg_time_between_avs_mismatch_30days']
+df['exp_mismatch_ratio'] = df['cnt_exp_date_mismatch_24hr'] / df['tot_cnt_24hr']
+df['high_risk_mcc_ratio'] = df['cnt_5310_5411_24hr'] / df['tot_cnt_24hr']
+df['new_mcc_ratio'] = df['new_mcc_ind'] / df['tot_cnt_24hr']
+df['merch_id_cluster_anomaly'] = df['same_merc_cnt_24hr'] / df['same_merc_cnt_30days']
+df['cross_state_anomaly'] = df['diff_state_swp_24hr_ind'] / df['tot_cnt_24hr']
+df['time_btw_swp_anomaly'] = df['time_btw_swp'] / df['avg_time_btw_swp_30days']
+df['foreign_trxn_time_gap'] = df['time_since_last_foreign_cnp'] / df['avg_time_between_foreign_trxns_30days']
+df['fraud_risk_score_2'] = df['cvv_mismatch_ratio'] * df['avs_mismatch_ratio'] * df['exp_mismatch_ratio'] * df['new_merch_ratio']
+df['geo_mcc_anomaly_score'] = df['cross_state_anomaly'] * df['high_risk_mcc_ratio']
+
+# Save the updated dataset
+df.save("path_to_updated_dataset.csv")
+
+
+
+
+
+# Create interaction features
+df['zero_auth_to_auth_ratio'] = df['tot_zero_auth_cnt_24hr'] / df['tot_cnt_24hr']
+df['small_amt_testing_score'] = df['cnt_sameamt_auth_6h'] / df['tot_cnt_24hr']
+df['cvv_mismatch_after_zero_auth'] = df['cnt_cvv2_mismatch_24hr'] / df['tot_zero_auth_cnt_24hr']
+df['trxn_burst_score'] = df['tot_cnt_30min'] / df['tot_cnt_24hr']
+df['same_merc_velocity_anomaly'] = df['same_merc_cnt_30min'] / df['same_merc_cnt_24hr']
+df['mcc_velocity_anomaly'] = df['same_mcc_cnt_30min'] / df['same_mcc_cnt_24hr']
+df['dist_to_last_trxn_anomaly'] = df['dist_miles_btw_swp'] / df['avg_dist_btw_swp_30days']
+df['cross_country_ratio'] = df['cnt_cntry_24hr'] / df['tot_cnt_24hr']
+df['time_btw_geo_hops'] = df['time_btw_swp'] / df['dist_miles_btw_swp']
+df['same_merc_to_term_ratio'] = df['cnt_same_mid_termid_24hr'] / df['same_merc_cnt_24hr']
+df['new_merc_to_term_ratio'] = df['new_merch_id'] / df['cnt_same_mid_termid_24hr']
+df['high_risk_merc_cluster'] = (df['same_merc_cnt_24hr'] / df['tot_cnt_24hr']) * df['high_risk_mcc_ratio']
+df['fraud_risk_score_3'] = df['zero_auth_to_auth_ratio'] * df['small_amt_testing_score'] * df['cvv_mismatch_after_zero_auth'] * df['trxn_burst_score']
+df['geo_velocity_anomaly_score'] = df['dist_to_last_trxn_anomaly'] * df['trxn_burst_score']
+
+# Save the updated dataset
+df.save("path_to_updated_dataset.csv")
+
+
+
+
+
+# Create interaction features
+df['swipe_amt_deviation'] = (df['amt_swipe_24hr'] - df['avg_swipe_amt_24hr']) / df['std_swipe_amt_24hr']
+df['trxn_hour_anomaly'] = (df['trxn_hour'] - df['avg_trxn_hour_30days']) / df['std_trxn_hour_30days']
+df['swipe_cnp_ratio_deviation'] = (df['swipe_cnp_ratio'] - df['avg_swipe_cnp_ratio_30days']) / df['std_swipe_cnp_ratio_30days']
+df['high_risk_mcc_bayesian_interaction'] = df['hct_term_mcc_bayesian_encoded_5'] * df['hct_term_mcc_bayesian_encoded_7']
+df['new_merch_risk_score'] = df['new_mech_ind'] * (1 + df['cnt_same_merc_id_24hr'] / df['tot_cnt_24hr'])
+df['mcc_risk_weighted_cnt'] = df['same_mcc_cnt_24hr'] * df['hct_term_mcc_bayesian_encoded_5']
+df['geo_dispersion_score'] = (df['cnt_dom_states_24hr'] / df['tot_cnt_24hr']) * df['dist_miles_btw_swp']
+df['time_btw_swp_cvv_mismatch'] = df['time_since_last_swipe'] / df['time_since_cvv2_mismatch']
+df['foreign_trxn_risk_score'] = df['foreign_ind'] * (1 + df['cnt_fore_swipe_24hr'] / df['tot_cnt_24hr'])
+df['cvv_verf_magn_interaction'] = df['cvv_verf_magn_ind'] * (1 + df['cnt_cvv2_mismatch_24hr'] / df['tot_cnt_24hr'])
+df['avs_mismatch_risk_score'] = df['avs_addr_mismatch_ind'] * (1 + df['cnt_avs_mismatch_24hr'] / df['tot_cnt_24hr'])
+df['exp_mismatch_risk_score'] = df['exp_date_mismatch_ind'] * (1 + df['cnt_exp_date_mismatch_24hr'] / df['tot_cnt_24hr'])
+df['fraud_risk_score_4'] = df['swipe_amt_deviation'] * df['trxn_hour_anomaly'] * df['high_risk_mcc_bayesian_interaction'] * df['new_merch_risk_score']
+df['geo_temp_anomaly_score_2'] = df['geo_dispersion_score'] * df['time_btw_swp_cvv_mismatch']
+
+# Save the updated dataset
+df.save("path_to_updated_dataset.csv")
+
+
+
+
+
+
+
+
+
+
+GPT
+
+
+import h2o
+import h2o.frame
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load dataset
+df = h2o.import_file("your_fraud_data.csv")
+
+# Creating advanced interaction features
+df["risk_weighted_swipe_intensity"] = (df["cnt_swipe_24hr"] * (1 + df["cvv_verf_magn_ind"])) / (df["cnt_swipe_60days"] + 1)
+df["mcc_velocity_risk"] = df["same_mcc_cnt_24hr"] / (df["same_mcc_cnt_60days"] + 1)
+df["terminal_deviation"] = (df["cnt_same_mid_termid_24hr"] - df["cnt_same_mid_termid_60days"]) / (df["cnt_same_mid_termid_60days"] + 1)
+df["swipe_dist_time_anomaly"] = df["dist_miles_btw_swp"] / (df["time_btw_swp"] + 1)
+df["fraud_amt_scaling"] = (df["amt_swipe_24hr"] / (df["amt_swipe_60days"] + 1)) * (1 / (df["pct_swipe_amt_60days"] + 0.01))
+df["avs_exp_mismatch_score"] = (df["cnt_avs_mismatch_24hr"] + df["cnt_exp_date_mismatch_24hr"]) / (df["cnt_avs_mismatch_60days"] + df["cnt_exp_date_mismatch_60days"] + 1)
+df["card_testing_ratio"] = df["cnt_zero_auth_24hr"] / (df["cnt_zero_auth_60days"] + 1)
+df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_60days"] + 1)
+
+# Save the enhanced dataset
+h2o.export_file(df, "fraud_data_with_interaction_features.csv")
