@@ -1,0 +1,156 @@
+import h2o
+h2o.init()
+
+# Load your dataset
+df = h2o.import_file("path_to_your_dataset.csv")
+
+# 1. Transaction Frequency Relative to Historical Behavior
+df['interaction_tot_cnt_24hr_by_avg_trxn_amt_30days'] = df['tot_cnt_24hr'] / df['avg_trxn_amt_30days']
+
+# 2. Transaction Amount Relative to Historical Average
+df['interaction_tot_amt_24hr_by_avg_trxn_amt_30days'] = df['tot_amt_24hr'] / df['avg_trxn_amt_30days']
+
+# 3. Time Since Last Transaction Relative to Average Time Between Transactions
+df['interaction_time_since_last_trxn_by_avg_gap'] = df['time_since_last_trxn'] / (df['avg_trxn_amt_30days'] / df['tot_cnt_30days'])
+
+# 4. Distance Between Swipe Locations Relative to Time
+df['interaction_dist_miles_by_time_btw_swp'] = df['dist_miles_btw_swp'] / df['time_btw_swp']
+
+# 5. Foreign Transaction Indicator Relative to Historical Foreign Transactions
+df['interaction_foreign_ind_by_cnt_fore_swipe_24hr'] = df['foreign_ind'] * df['cnt_fore_swipe_24hr']
+
+# 6. New Merchant Indicator Relative to Transaction Amount
+df['interaction_new_merch_ind_by_tot_amt_24hr'] = df['new_merch_ind'] * df['tot_amt_24hr']
+
+# 7. CVV Mismatch Count Relative to Transaction Count
+df['interaction_cvv_mismatch_rate'] = df['cnt_cvv2_mismatch_24hr'] / df['tot_cnt_24hr']
+
+# 8. AVS Mismatch Count Relative to Transaction Amount
+df['interaction_avs_mismatch_by_tot_amt_24hr'] = df['cnt_avs_mismatch_24hr'] / df['tot_amt_24hr']
+
+# 9. Expiration Date Mismatch Relative to Time Since Last Mismatch
+df['interaction_exp_mismatch_rate'] = df['cnt_exp_date_mismatch_24hr'] / df['time_since_exp_date_mismatch']
+
+# 10. Swipe Count Relative to Total Transaction Count
+df['interaction_swipe_rate'] = df['cnt_swipe_24hr'] / df['tot_cnt_24hr']
+
+# 11. High-Value Swipe Transactions Relative to Historical Swipe Amounts
+df['interaction_high_value_swipe'] = df['amt_swipe_ge_1000_24hr'] / df['avg_swipe_amt_24hr']
+
+# 12. Same MCC Count Relative to Total Transaction Count
+df['interaction_same_mcc_rate'] = df['same_mcc_cnt_24hr'] / df['tot_cnt_24hr']
+
+# 13. Same Merchant Count Relative to Transaction Amount
+df['interaction_same_merc_rate'] = df['same_merc_cnt_24hr'] / df['tot_amt_24hr']
+
+# 14. Zero-Auth Count Relative to Total Transaction Count
+df['interaction_zero_auth_rate'] = df['tot_zero_auth_cnt_24hr'] / df['tot_cnt_24hr']
+
+# 15. Time Since Last Zero-Auth Relative to Transaction Amount
+df['interaction_zero_auth_time_by_amt'] = df['mins_since_zero_auth'] / df['tot_amt_24hr']
+
+# 16. Swipe Amount Ratio Relative to Historical Swipe Amounts
+df['interaction_swipe_amt_ratio'] = df['pct_swipe_amt_24hr_by_60days'] * df['ratio_avg_swipe_amt_24hr']
+
+# 17. CVV Mismatch Rate Relative to AVS Mismatch Rate
+df['interaction_cvv_avs_mismatch_rate'] = (df['cnt_cvv2_mismatch_24hr'] / df['tot_cnt_24hr']) * (df['cnt_avs_mismatch_24hr'] / df['tot_cnt_24hr'])
+
+# 18. Ratio of Swipe Transactions to CNP Transactions
+df['interaction_swipe_to_cnp_ratio'] = df['cnt_swipe_24hr'] / df['cnt_cnp_24hr']
+
+# 19. Ratio of High-Value Transactions to Average Transaction Amount
+df['interaction_high_value_ratio'] = df['amt_ge500_ind'] / df['avg_trxn_amt_24hr']
+
+# 20. Ratio of Zero-Auth Transactions to Total Transactions
+df['interaction_zero_auth_to_total_ratio'] = df['tot_zero_auth_cnt_24hr'] / df['tot_cnt_24hr']
+
+# 21. Ratio of Same Merchant Transactions to Total Transactions
+df['interaction_same_merc_to_total_ratio'] = df['same_merc_cnt_24hr'] / df['tot_cnt_24hr']
+
+# 22. Ratio of Same MCC Transactions to Total Transactions
+df['interaction_same_mcc_to_total_ratio'] = df['same_mcc_cnt_24hr'] / df['tot_cnt_24hr']
+
+# 23. Ratio of Foreign Transactions to Total Transactions
+df['interaction_foreign_to_total_ratio'] = df['cnt_fore_swipe_24hr'] / df['tot_cnt_24hr']
+
+# 24. Ratio of AVS Mismatches to Total Transactions
+df['interaction_avs_mismatch_to_total_ratio'] = df['cnt_avs_mismatch_24hr'] / df['tot_cnt_24hr']
+
+# 25. Ratio of Expiration Date Mismatches to Total Transactions
+df['interaction_exp_mismatch_to_total_ratio'] = df['cnt_exp_date_mismatch_24hr'] / df['tot_cnt_24hr']
+
+# 26. Ratio of CVV Mismatches to Total Transactions
+df['interaction_cvv_mismatch_to_total_ratio'] = df['cnt_cvv2_mismatch_24hr'] / df['tot_cnt_24hr']
+
+# 27. Ratio of Swipe Transactions to Total Transactions
+df['interaction_swipe_to_total_ratio'] = df['cnt_swipe_24hr'] / df['tot_cnt_24hr']
+
+# 28. Ratio of CNP Transactions to Total Transactions
+df['interaction_cnp_to_total_ratio'] = df['cnt_cnp_24hr'] / df['tot_cnt_24hr']
+
+# 29. Ratio of High-Value Swipe Transactions to Total Swipe Transactions
+df['interaction_high_value_swipe_to_total_swipe_ratio'] = df['amt_swipe_ge_1000_24hr'] / df['tot_amt_24hr']
+
+# 30. Ratio of Same Merchant Transactions to Total Swipe Transactions
+df['interaction_same_merc_to_swipe_ratio'] = df['same_merc_cnt_24hr'] / df['cnt_swipe_24hr']
+
+# Save the new dataset with interaction features
+df.save("path_to_save_interaction_features.csv")
+
+
+
+
+
+import h2o
+h2o.init()
+
+# Load your dataset
+df = h2o.import_file("path_to_your_dataset.csv")
+
+# 1. Transaction Count and Amount Interaction
+df['interaction_tot_cnt_24hr_times_tot_amt_24hr'] = df['tot_cnt_24hr'] * df['tot_amt_24hr']
+
+# 2. Time Since Last Transaction and Transaction Amount Interaction
+df['interaction_time_since_last_trxn_times_tot_amt_24hr'] = df['time_since_last_trxn'] * df['tot_amt_24hr']
+
+# 3. Transaction Hour and Transaction Amount Interaction
+df['interaction_trxn_hour_times_tot_amt_24hr'] = df['trxn_hour'] * df['tot_amt_24hr']
+
+# 4. Foreign Transaction Indicator and Transaction Amount Interaction
+df['interaction_foreign_ind_times_tot_amt_24hr'] = df['foreign_ind'] * df['tot_amt_24hr']
+
+# 5. Distance Between Swipe Locations and Transaction Amount Interaction
+df['interaction_dist_miles_btw_swp_times_tot_amt_24hr'] = df['dist_miles_btw_swp'] * df['tot_amt_24hr']
+
+# 6. New Merchant Indicator and Transaction Amount Interaction
+df['interaction_new_merch_ind_times_tot_amt_24hr'] = df['new_merch_ind'] * df['tot_amt_24hr']
+
+# 7. CVV Mismatch Count and Transaction Amount Interaction
+df['interaction_cvv_mismatch_times_tot_amt_24hr'] = df['cnt_cvv2_mismatch_24hr'] * df['tot_amt_24hr']
+
+# 8. AVS Mismatch Count and Transaction Amount Interaction
+df['interaction_avs_mismatch_times_tot_amt_24hr'] = df['cnt_avs_mismatch_24hr'] * df['tot_amt_24hr']
+
+# 9. Expiration Date Mismatch Count and Transaction Amount Interaction
+df['interaction_exp_mismatch_times_tot_amt_24hr'] = df['cnt_exp_date_mismatch_24hr'] * df['tot_amt_24hr']
+
+# 10. Swipe Count and Transaction Amount Interaction
+df['interaction_cnt_swipe_24hr_times_tot_amt_24hr'] = df['cnt_swipe_24hr'] * df['tot_amt_24hr']
+
+# 11. High-Value Swipe Transactions and Swipe Count Interaction
+df['interaction_amt_swipe_ge_1000_24hr_times_cnt_swipe_24hr'] = df['amt_swipe_ge_1000_24hr'] * df['cnt_swipe_24hr']
+
+# 12. Same MCC Count and Transaction Amount Interaction
+df['interaction_same_mcc_cnt_24hr_times_tot_amt_24hr'] = df['same_mcc_cnt_24hr'] * df['tot_amt_24hr']
+
+# 13. Same Merchant Count and Transaction Amount Interaction
+df['interaction_same_merc_cnt_24hr_times_tot_amt_24hr'] = df['same_merc_cnt_24hr'] * df['tot_amt_24hr']
+
+# 14. Zero-Auth Count and Transaction Amount Interaction
+df['interaction_zero_auth_cnt_times_tot_amt_24hr'] = df['tot_zero_auth_cnt_24hr'] * df['tot_amt_24hr']
+
+# 15. Time Since Last Zero-Auth and Transaction Amount Interaction
+df['interaction_mins_since_zero_auth_times_tot_amt_24hr'] = df['mins_since_zero_auth'] * df['tot_amt_24hr']
+
+# Save the new dataset with interaction features
+df.save("path_to_save_multiplicative_interaction_features.csv")

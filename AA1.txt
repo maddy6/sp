@@ -1,0 +1,304 @@
+Top Interaction Features with Formulas & Explanations
+1. Velocity-Based Fraud Indicators
+(i) Transaction Count Acceleration
+Formula: \text{trxn_acceleration} = \frac{\text{c_tot_cnt_24hr} - \text{c_tot_cnt_2hr}}{\text{c_tot_cnt_2hr} + 1}
+Explanation: Measures how quickly transaction counts are increasing in the last 24 hours compared to 2 hours. Fraudsters often perform burst transactions within a short period.
+(ii) Sudden Surge in Swipe Transaction Amount
+Formula: \text{swipe_surge_ratio} = \frac{\text{amt_swipe_24hr} - \text{amt_swipe_tdy}}{\text{amt_swipe_tdy} + 1}
+Explanation: If a fraudster suddenly starts performing high-value swipe transactions compared to their previous transactions, this feature will capture the surge.
+2. Ratio-Based Indicators
+(iii) Fraudulent Behavioral Shift in Amounts
+Formula: \text{high_value_trxn_risk} = \frac{\text{amt_ge500_ind} + \text{amt_swipe_ge_1000_24hr}}{\text{cnt_trxns_30days} + 1}
+Explanation: Calculates how many high-value transactions are occurring in comparison to total transactions. Fraudsters often test with small transactions before making a high-value purchase.
+(iv) Transaction Frequency at Risky MCCs
+Formula: \text{risky_mcc_freq} = \frac{\text{cnt_5310_5411_24hr}}{\text{c_tot_cnt_24hr} + 1}
+Explanation: Certain Merchant Category Codes (MCCs) are high-risk for fraud (e.g., gambling, electronics). This feature captures the ratio of transactions occurring in risky MCCs.
+3. Fraudulent Terminal Usage Patterns
+(v) Terminal & Merchant ID Switching
+Formula: \text{termid_switch_ratio} = \frac{\text{cnt_same_mid_termid_24hr}}{\text{cnt_same_mid_termid_6hr} + 1}
+Explanation: Measures how frequently a user is transacting at different terminals within 24 hours. Fraudsters frequently switch terminals to avoid detection.
+(vi) New Merchant & MCC Interaction
+Formula: \text{new_merch_risk} = \frac{\text{new_merch_ind} + \text{new_mcc_ind}}{\text{c_tot_cnt_30days} + 1}
+Explanation: Fraudsters often target new merchants and new MCCs to exploit security gaps.
+4. CVV & Address Verification Fraud Indicators
+(vii) Mismatch Ratio
+Formula: \text{avs_cvv_mismatch_risk} = \frac{\text{cnt_avs_mismatch_24hr} + \text{cnt_cvv2_mismatch_24hr}}{\text{c_tot_cnt_24hr} + 1}
+Explanation: If a high number of transactions have AVS (Address Verification System) and CVV mismatches, the likelihood of fraud increases.
+(viii) Time Since Last AVS Mismatch
+Formula: \text{avs_mismatch_recurrence} = \frac{1}{\text{time_since_avs_mismatch} + 1}
+Explanation: Fraudsters who continuously fail AVS verification might be using stolen cards with incorrect address details.
+5. Geographic Risk Factors
+(ix) Distance Between Swipe Transactions
+Formula: \text{swipe_dist_speed} = \frac{\text{dist_miles_btw_swp}}{\text{time_btw_swp} + 1}
+Explanation: If a transaction occurs far from the previous transaction in an unrealistically short time, it's likely fraud.
+(x) Multi-State Transactions within Short Time
+Formula: \text{diff_state_swp_risk} = \frac{\text{diff_state_swp_24hr_ind} + \text{diff_state_swp_6hr_ind}}{\text{c_tot_cnt_24hr} + 1}
+Explanation: Fraudsters often make transactions from different states to avoid detection.
+
+
+
+
+import h2o
+import h2o.frame
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load transaction dataset
+df = h2o.import_file("transaction_data.csv")
+
+# Creating powerful interaction features
+df["trxn_acceleration"] = (df["c_tot_cnt_24hr"] - df["c_tot_cnt_2hr"]) / (df["c_tot_cnt_2hr"] + 1)
+df["swipe_surge_ratio"] = (df["amt_swipe_24hr"] - df["amt_swipe_tdy"]) / (df["amt_swipe_tdy"] + 1)
+df["high_value_trxn_risk"] = (df["amt_ge500_ind"] + df["amt_swipe_ge_1000_24hr"]) / (df["cnt_trxns_30days"] + 1)
+df["risky_mcc_freq"] = df["cnt_5310_5411_24hr"] / (df["c_tot_cnt_24hr"] + 1)
+df["termid_switch_ratio"] = df["cnt_same_mid_termid_24hr"] / (df["cnt_same_mid_termid_6hr"] + 1)
+df["new_merch_risk"] = (df["new_merch_ind"] + df["new_mcc_ind"]) / (df["c_tot_cnt_30days"] + 1)
+df["avs_cvv_mismatch_risk"] = (df["cnt_avs_mismatch_24hr"] + df["cnt_cvv2_mismatch_24hr"]) / (df["c_tot_cnt_24hr"] + 1)
+df["avs_mismatch_recurrence"] = 1 / (df["time_since_avs_mismatch"] + 1)
+df["swipe_dist_speed"] = df["dist_miles_btw_swp"] / (df["time_btw_swp"] + 1)
+df["diff_state_swp_risk"] = (df["diff_state_swp_24hr_ind"] + df["diff_state_swp_6hr_ind"]) / (df["c_tot_cnt_24hr"] + 1)
+
+# Save the new dataset with additional features
+h2o.export_file(df, "enhanced_transaction_data.csv")
+
+
+
+
+
+----------------------------------
+
+
+
+1. Swipe Anomaly Ratio
+💡 Why? Fraudsters often swipe multiple times in a short period with increasing amounts to test limits. This feature detects anomalies in swipe behavior.
+
+Formula:
+
+\text{swipe_anomaly_ratio} = \frac{\text{cnt_swipe_24hr}}{\text{cnt_swipe_60days} + 1}
+Interpretation:
+
+Higher values → Sudden spike in swipe transactions → Potential fraud.
+2. High-Risk MCC Ratio
+💡 Why? Some MCCs (e.g., gambling, crypto) have a higher fraud rate.
+
+Formula:
+
+\text{high_risk_mcc_ratio} = \frac{\text{cnt_5310_5411_24hr}}{\text{cnt_swipe_24hr} + 1}
+Interpretation:
+
+If most transactions in 24 hours belong to high-risk MCCs, it's likely fraudulent.
+3. MCC-Amount Concentration
+💡 Why? Fraudsters often target specific MCCs with similar amounts.
+
+Formula:
+
+\text{mcc_amt_concentration} = \frac{\text{avg_same_mcc_amt_24hr}}{\text{avg_trxn_amt_24hr} + 1}
+Interpretation:
+
+If most transactions have similar amounts at the same MCC, it suggests structured fraud.
+4. Merchant-Transaction Velocity
+💡 Why? If a customer transacts at the same merchant too frequently in a short period, it may indicate fraud.
+
+Formula:
+
+\text{merchant_trxn_velocity} = \frac{\text{cnt_same_merc_id_6hr}}{\text{cnt_same_merc_id_24hr} + 1}
+Interpretation:
+
+High value → Frequent transactions at the same merchant in a short period → Potential fraud.
+5. Swipe-Amount Spike Detection
+💡 Why? Fraudsters often attempt large transactions after small test transactions.
+
+Formula:
+
+\text{swipe_amt_spike} = \frac{\text{amt_swipe_tdy} - \text{avg_swipe_amt_24hr}}{\text{avg_swipe_amt_24hr} + 1}
+Interpretation:
+
+Large positive value → Recent swipe is much higher than the average → Fraud risk.
+6. CVV Mismatch Frequency Weighted by Time
+💡 Why? If a CVV mismatch happened recently and frequently, it’s a red flag.
+
+Formula:
+
+\text{cvv_mismatch_weighted} = \frac{\text{cnt_cvv2_mismatch_24hr}}{\text{time_since_cvv2_mismatch} + 1}
+Interpretation:
+
+Higher value → Frequent and recent CVV mismatches → Suspicious activity.
+7. Foreign Swipe Transaction Ratio
+💡 Why? If a customer suddenly starts swiping in foreign locations after no such history, it’s unusual.
+
+Formula:
+
+\text{foreign_swipe_ratio} = \frac{\text{cnt_fore_swipe_24hr}}{\text{cnt_swipe_24hr} + 1}
+Interpretation:
+
+Higher value → Most swipes are foreign transactions → Likely fraud.
+8. Zero Authorization Fraud Indicator
+💡 Why? Fraudsters often use zero authorization transactions to validate stolen cards.
+
+Formula:
+
+\text{zero_auth_fraud_score} = \frac{\text{zero_auth_24hr_ind} \times \text{cnt_sameamt_auth_6h}}{\text{mins_since_zero_auth} + 1}
+Interpretation:
+
+High score → Zero authorization used multiple times recently → Suspicious.
+9. Location-Based Swipe Deviation
+💡 Why? Rapid state/country switching is a strong fraud indicator.
+
+Formula:
+
+\text{location_swipe_deviation} = \frac{\text{diff_state_swp_24hr_ind} + \text{diff_state_swp_6hr_ind}}{\text{cnt_swipe_24hr} + 1}
+Interpretation:
+
+High value → Many transactions across different states/countries → Possible fraud.
+10. Transaction Hour Risk Score
+💡 Why? Fraudsters often transact at unusual hours.
+
+Formula:
+
+\text{trxn_hour_risk} = \frac{\text{trxn_hour} \times \text{cnt_trxns_24hr}}{\text{cnt_trxns_60days} + 1}
+Interpretation:
+
+Higher values → Increased transaction frequency during specific hours → Fraud risk.
+H2O Python Code for Interaction Features
+This code generates the above interaction features using H2O Python Dataframe.
+
+python
+Copy
+Edit
+import h2o
+import h2o.frame
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Load your data (replace with actual dataset)
+df = h2o.import_file("your_data.csv")
+
+# Creating powerful interaction features
+df["swipe_anomaly_ratio"] = df["cnt_swipe_24hr"] / (df["cnt_swipe_60days"] + 1)
+df["high_risk_mcc_ratio"] = df["cnt_5310_5411_24hr"] / (df["cnt_swipe_24hr"] + 1)
+df["mcc_amt_concentration"] = df["avg_same_mcc_amt_24hr"] / (df["avg_trxn_amt_24hr"] + 1)
+df["merchant_trxn_velocity"] = df["cnt_same_merc_id_6hr"] / (df["cnt_same_merc_id_24hr"] + 1)
+df["swipe_amt_spike"] = (df["amt_swipe_tdy"] - df["avg_swipe_amt_24hr"]) / (df["avg_swipe_amt_24hr"] + 1)
+df["cvv_mismatch_weighted"] = df["cnt_cvv2_mismatch_24hr"] / (df["time_since_cvv2_mismatch"] + 1)
+df["foreign_swipe_ratio"] = df["cnt_fore_swipe_24hr"] / (df["cnt_swipe_24hr"] + 1)
+df["zero_auth_fraud_score"] = (df["zero_auth_24hr_ind"] * df["cnt_sameamt_auth_6h"]) / (df["mins_since_zero_auth"] + 1)
+df["location_swipe_deviation"] = (df["diff_state_swp_24hr_ind"] + df["diff_state_swp_6hr_ind"]) / (df["cnt_swipe_24hr"] + 1)
+df["trxn_hour_risk"] = (df["trxn_hour"] * df["cnt_trxns_24hr"]) / (df["cnt_trxns_60days"] + 1)
+
+# Convert to H2OFrame
+df = H2OFrame(df)
+
+# Save transformed dataset
+h2o.export_file(df, "transformed_data.csv", force=True)
+
+
+
+
+
+
+
+--------------------------------------------------------
+--------------------------------------------------------
+--------------------------------------------------------
+
+
+
+import h2o
+from h2o.frame import H2OFrame
+
+# Initialize H2O
+h2o.init()
+
+# Assuming h2o_df is your existing H2OFrame with necessary columns
+# Define the feature interactions
+multiplicative_features = {
+    "tot_cnt_24hr_x_tot_amt_24hr": ["tot_cnt_24hr", "tot_amt_24hr"],
+    "cnt_trxns_30days_x_amt_trxns_30days": ["cnt_trxns_30days", "amt_trxns_30days"],
+    "same_merc_cnt_24hr_x_same_merc_amt_24hr": ["same_merc_cnt_24hr", "same_merc_amt_24hr"],
+    "cnt_cnp_amt_60days_x_avg_cnp_amt_60days": ["cnt_cnp_amt_60days", "avg_cnp_amt_60days"],
+    "cnt_swipe_24hr_x_amt_swipe_24hr": ["cnt_swipe_24hr", "amt_swipe_24hr"],
+    "cnt_avs_mismatch_24hr_x_cnt_cvv2_mismatch_24hr": ["cnt_avs_mismatch_24hr", "cnt_cvv2_mismatch_24hr"],
+    "cnt_fore_swipe_24hr_x_amt_fore_swipe_24hr": ["cnt_fore_swipe_24hr", "amt_fore_swipe_24hr"],
+    "tot_cnt_7days_x_tot_amt_7days": ["tot_cnt_7days", "tot_amt_7days"],
+    "cnt_same_mid_termid_24hr_x_cnt_same_mid_termid_6hr": ["cnt_same_mid_termid_24hr", "cnt_same_mid_termid_6hr"],
+    "cnt_cnp_24hr_x_amt_cnp_24hr": ["cnt_cnp_24hr", "amt_cnp_24hr"],
+    "amt_trxns_60days_x_avg_trxn_amt_60days": ["amt_trxns_60days", "avg_trxn_amt_60days"],
+    "cnt_dom_states_24hr_x_cnt_cntry_24hr": ["cnt_dom_states_24hr", "cnt_cntry_24hr"],
+    "same_mcc_cnt_24hr_x_avg_same_mcc_amt_24hr": ["same_mcc_cnt_24hr", "avg_same_mcc_amt_24hr"],
+    "tot_zero_auth_cnt_24hr_x_cnt_exp_date_mismatch_24hr": ["tot_zero_auth_cnt_24hr", "cnt_exp_date_mismatch_24hr"],
+    "cnt_swipe_60days_x_pct_swipe_amt_60days": ["cnt_swipe_60days", "pct_swipe_amt_60days"],
+    "cnt_cnp_tdy_x_time_since_last_cnp_trxn": ["cnt_cnp_tdy", "time_since_last_cnp_trxn"],
+    "cnt_sameamt_auth_6h_x_cnt_sameerc_auth_6h": ["cnt_sameamt_auth_6h", "cnt_sameerc_auth_6h"],
+    "cnt_zal_miss_15days_x_ratio_cnt_zal_miss_15days": ["cnt_zal_miss_15days", "ratio_cnt_zal_miss_15days"],
+    "c_tot_cnt_24hr_x_c_tot_zero_auth_cnt_24hr": ["c_tot_cnt_24hr", "c_tot_zero_auth_cnt_24hr"],
+    "cnt_same_aid_diff_termid_24hr_x_cnt_same_mid_termid_24hr": ["cnt_same_aid_diff_termid_24hr", "cnt_same_mid_termid_24hr"]
+}
+
+# Generate the new features
+for new_col, (col1, col2) in multiplicative_features.items():
+    if col1 in h2o_df.columns and col2 in h2o_df.columns:
+        h2o_df[new_col] = h2o_df[col1] * h2o_df[col2]
+
+# Display updated frame
+h2o_df.describe()
+
+
+
+
+
+
+📌 Step 3: Create High-Capture Fraud Features
+1️⃣ Velocity-Based Features
+python
+Copy
+Edit
+h2o_df["ratio_trxn_cnt_24hr_7days"] = h2o_df["tot_cnt_24hr"] / (h2o_df["tot_cnt_7days"] + 1)
+h2o_df["diff_trxn_cnt_30min_24hr"] = h2o_df["tot_cnt_30min"] - h2o_df["tot_cnt_24hr"]
+h2o_df["ratio_foreign_trxns"] = h2o_df["time_since_last_foreign_cnp"] / (h2o_df["tot_cnt_7days"] + 1)
+2️⃣ Merchant & MCC Features
+python
+Copy
+Edit
+h2o_df["ratio_same_mcc_24hr_7days"] = h2o_df["same_mcc_cnt_24hr"] / (h2o_df["same_mcc_cnt_7days"] + 1)
+h2o_df["pct_same_merch_24hr"] = h2o_df["same_merc_cnt_24hr"] / (h2o_df["tot_cnt_24hr"] + 1)
+h2o_df["diff_same_mcc_same_merc_24hr"] = h2o_df["same_mcc_cnt_24hr"] - h2o_df["same_merc_cnt_24hr"]
+3️⃣ Amount-Based Features
+python
+Copy
+Edit
+h2o_df["pct_high_amt_24hr"] = h2o_df["amt_ge500_ind"] / (h2o_df["tot_cnt_24hr"] + 1)
+h2o_df["diff_avg_amt_24hr_7days"] = h2o_df["avg_trxn_amt_24hr"] - h2o_df["avg_trxn_amt_7days"]
+h2o_df["pct_zero_auth_24hr"] = h2o_df["tot_zero_auth_cnt_24hr"] / (h2o_df["tot_cnt_24hr"] + 1)
+4️⃣ CVV/AVS Mismatch Features
+python
+Copy
+Edit
+h2o_df["ratio_cvv_mismatch_24hr"] = h2o_df["cnt_cvv2_mismatch_24hr"] / (h2o_df["tot_cnt_24hr"] + 1)
+h2o_df["avg_time_btw_cvv_mismatch"] = h2o_df["time_since_cvv2_mismatch"] / (h2o_df["cnt_cvv2_mismatch_7days"] + 1)
+h2o_df["ratio_avs_mismatch_24hr_7days"] = h2o_df["cnt_avs_mismatch_24hr"] / (h2o_df["cnt_avs_mismatch_7days"] + 1)
+5️⃣ Geographic Features
+python
+Copy
+Edit
+h2o_df["pct_diff_countries_24hr"] = h2o_df["cnt_cntry_24hr"] / (h2o_df["tot_cnt_24hr"] + 1)
+h2o_df["time_per_state_change"] = h2o_df["time_since_last_trxn"] / (h2o_df["cnt_dom_states_24hr"] + 1)
+h2o_df["speed_btw_swipes"] = h2o_df["dist_miles_btw_swp"] / (h2o_df["time_btw_swp"] + 1)
+6️⃣ POS-Based Features
+python
+Copy
+Edit
+h2o_df["pct_same_pos_24hr"] = h2o_df["same_pos_cnt_24hr"] / (h2o_df["tot_cnt_24hr"] + 1)
+h2o_df["diff_same_pos_same_merc_24hr"] = h2o_df["same_pos_cnt_24hr"] - h2o_df["same_merc_cnt_24hr"]
+h2o_df["pct_new_merch_24hr"] = h2o_df["new_merch_ind"] / (h2o_df["tot_cnt_24hr"] + 1)
+7️⃣ Bayesian Encoded Risk Features
+python
+Copy
+Edit
+h2o_df["bayesian_mcc_risk"] = h2o_df["hct_term_mcc_bayesian_encoded_5"] / (h2o_df["tot_cnt_7days"] + 1)
+h2o_df["bayesian_avs_risk"] = h2o_df["ucm_avs_resp_bayesian_encoded_5"] / (h2o_df["tot_cnt_7days"] + 1)
+
+
