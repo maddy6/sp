@@ -1,3 +1,44 @@
+import os
+import xlsxwriter
+
+# Define paths for PDP and Bivariate plots
+pdp_folder = "pdp_plot"
+bvp_folder = "bvp_plot"
+output_excel = "Combined_Plots.xlsx"
+
+# Get the list of feature names (assuming both folders have same naming convention)
+feature_names = sorted([f.replace(".png", "") for f in os.listdir(pdp_folder) if f.endswith(".png")])
+
+# Create an Excel workbook
+workbook = xlsxwriter.Workbook(output_excel)
+
+# Loop through each feature and add PDP + BVP to the sheet
+for feature in feature_names:
+    worksheet = workbook.add_worksheet(feature)  # Create a new sheet for each feature
+    
+    # Define image paths
+    pdp_path = os.path.join(pdp_folder, feature + ".png")
+    bvp_path = os.path.join(bvp_folder, feature + ".png")
+    
+    # Insert images into the worksheet
+    worksheet.insert_image("A1", pdp_path, {'x_scale': 0.5, 'y_scale': 0.5})  # Adjust size if needed
+    worksheet.insert_image("J1", bvp_path, {'x_scale': 0.5, 'y_scale': 0.5})  # Insert BVP next to PDP
+
+# Close and save the Excel file
+workbook.close()
+
+print(f"✅ Excel file '{output_excel}' created successfully with 36 sheets!")
+
+
+
+
+
+
+
+
+
+
+
 import h2o
 import pandas as pd
 import numpy as np
