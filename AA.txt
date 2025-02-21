@@ -1,3 +1,72 @@
+import h2o
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from pdpbox import pdp
+from h2o.estimators.gbm import H2OGradientBoostingEstimator
+
+# Initialize H2O
+h2o.init()
+
+# Load H2O DataFrames (Replace with actual files)
+train = h2o.import_file("train.csv")
+train_rs = h2o.import_file("train_rs.csv")
+test = h2o.import_file("test.csv")
+oot = h2o.import_file("oot.csv")
+
+# Convert to Pandas
+train_df = train.as_data_frame()
+train_rs_df = train_rs.as_data_frame()
+test_df = test.as_data_frame()
+oot_df = oot.as_data_frame()
+
+# Define Target and Feature List
+target = "fraud_label"  # Replace with your actual target column
+features = ["feature_1", "feature_2", ..., "feature_30"]  # Replace with your selected variables
+
+# Train H2O GBM Model
+gbm_model = H2OGradientBoostingEstimator(ntrees=50, max_depth=5, learn_rate=0.1)
+gbm_model.train(x=features, y=target, training_frame=train)
+
+# Convert Data for PDPBox
+train_df["dataset"] = "Train"
+train_rs_df["dataset"] = "Train_RS"
+test_df["dataset"] = "Test"
+oot_df["dataset"] = "OOT"
+
+# Combine All Datasets for Analysis
+combined_df = pd.concat([train_df, train_rs_df, test_df, oot_df], axis=0)
+
+### 📌 Generate Plots for Each Feature ###
+for feature in features:
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+
+    # 1️⃣ PDP Plot
+    pdp_goals = pdp.pdp_isolate(model=gbm_model, dataset=train_df, model_features=features, feature=feature)
+    pdp.pdp_plot(pdp_goals, feature, plot_lines=False, ax=ax1)
+    ax1.set_title(f"PDP & Fraud Rate Trend - {feature}")
+    ax1.set_ylabel("Partial Dependence")
+    
+    # 2️⃣ Bivariate Plot (Fraud Rate per bin across datasets)
+    ax2 = ax1.twinx()
+    combined_df["bin"] = pd.qcut(combined_df[feature], q=10, duplicates="drop")  # Binning
+    fraud_rates = combined_df.groupby(["bin", "dataset"])[target].mean().unstack()
+    fraud_rates.plot(marker="o", ax=ax2)
+    
+    ax2.set_ylabel("Fraud Rate")
+    ax2.legend(title="Dataset")
+
+    plt.show()
+
+
+
+
+
+
+
+
+
 
 import h2o
 h2o.init()
