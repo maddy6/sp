@@ -1,3 +1,59 @@
+import numpy as np
+import pandas as pd
+from scipy.interpolate import interp1d
+from scipy.special import expit
+import matplotlib.pyplot as plt
+
+# 🔹 Generate synthetic fraud detection dataset
+np.random.seed(42)
+n_samples = 5000
+scores = np.random.randint(0, 1000, n_samples)
+amounts = np.random.exponential(scale=500, size=n_samples)  
+probabilities = scores / 999  
+labels = np.random.binomial(1, probabilities)
+
+# 🔹 Create DataFrame
+df = pd.DataFrame({"score": scores, "amount": amounts, "label": labels})
+
+# 🔹 Compute all percentiles dynamically
+percentile_values = np.percentile(df["score"], np.arange(0, 101, 5))  # Every 5% step
+
+# 🔹 Define dynamic alpha scaling based on percentiles
+alpha_values = 1 + 0.4 * np.linspace(0, 1, len(percentile_values))  # Smooth α increase
+
+# 🔹 Create a smooth function to assign alpha values based on score percentiles
+alpha_function = interp1d(percentile_values, alpha_values, kind="cubic", fill_value="extrapolate")
+
+# 🔹 Apply adaptive α to each score
+df["alpha"] = df["score"].apply(lambda x: alpha_function(x))
+
+# 🔹 Apply Transformation: Scale + Logistic Smoothing
+df["adjusted_score"] = df["score"] * df["alpha"]  # Direct Scaling
+df["adjusted_score"] = 999 * expit((df["adjusted_score"] / 999 - 0.5) * 1.2)  # Smooth Shift
+
+# 🔹 Clip values to ensure scores remain within valid range [0, 999]
+df["adjusted_score"] = np.clip(df["adjusted_score"], 0, 999)
+
+# 🔹 Visualization: Before vs After Score Shift
+plt.figure(figsize=(10, 5))
+plt.hist(df["score"], bins=30, alpha=0.5, label="Original Scores", color="blue")
+plt.hist(df["adjusted_score"], bins=30, alpha=0.5, label="Adjusted Scores", color="red")
+plt.xlabel("Score")
+plt.ylabel("Frequency")
+plt.title("Score Distribution Before & After Adjustment")
+plt.legend()
+plt.show()
+
+# 🔹 Display Impact
+print(df[["score", "alpha", "adjusted_score"]].head(10))
+
+
+
+
+
+
+
+
 🔹 Step 1: Compute Adaptive Scaling Factor (α)
 We will define α dynamically based on the z-score of the original scores, ensuring that the shift is justified statistically.
 
