@@ -444,6 +444,698 @@ Green = New Model (Calibrated)
 🚀 When to Use?
 ✔ If your new model has a shifted or scaled distribution.
 ✔ If vendor models (like SAS) use logistic transformation for calibration.
+
+
+
+
+
+Vendor Method
+
+
+
+
+
+
+📌 Understanding How the Vendor Model Might Have Decided the Calibration Rules
+Since the vendor model's calibration formula has threshold-based conditions, let’s break it down into logical steps to reverse-engineer their approach.
+
+1️⃣ How Might the Vendor Have Determined the Calibration Conditions?
+To determine the cutoff values (thresholds) like:
+
+rrr_score_4 > 0
+
+tca_mod_amt >= 1000
+
+ucm_pos = '01'
+
+ucm_scheme = 'I'
+
+They likely followed one or more of these data-driven methodologies:
+
+📊 (A) Statistical Analysis of Historical Fraud vs. Non-Fraud
+Look at Past Fraud Cases
+
+Analyze tca_mod_amt, rrr_score_4, ucm_pos, and ucm_scheme distributions for fraud and non-fraud transactions.
+
+Find natural thresholds where fraud is disproportionately high.
+
+Determine Where Scores Differ Significantly
+
+If fraud transactions have a median tca_mod_amt of 1000+, they might set tca_mod_amt >= 1000.
+
+If fraud is concentrated in ucm_pos = '01' or ucm_scheme = 'I', they select these as risk factors.
+
+📌 How to Implement?
+
+python
+Copy
+Edit
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Boxplot for fraud vs non-fraud transactions on tca_mod_amt
+sns.boxplot(x=df["fraud_flag"], y=df["tca_mod_amt"])
+plt.title("Transaction Amount Distribution by Fraud/Non-Fraud")
+plt.show()
+👉 This helps visualize cutoff points for tca_mod_amt or rrr_score_4.
+
+🧠 (B) Percentile-Based Threshold Selection
+Compute percentiles of tca_mod_amt and rrr_score_4 for fraud transactions.
+
+Pick a high-percentile cutoff (e.g., 90th percentile) for rule setting.
+
+📌 How to Implement?
+
+python
+Copy
+Edit
+fraud_90p = df[df["fraud_flag"] == 1]["tca_mod_amt"].quantile(0.90)
+print(f"📌 90th Percentile Fraud Transaction Amount: {fraud_90p}")
+👉 If fraud_90p is close to 1000, that might be why the vendor chose tca_mod_amt >= 1000.
+
+📈 (C) KS Statistic for Optimal Threshold
+The Kolmogorov-Smirnov (KS) statistic finds the best split point for distinguishing fraud vs. non-fraud.
+
+📌 How to Implement?
+
+python
+Copy
+Edit
+from scipy.stats import ks_2samp
+
+# Compute KS Statistic for tca_mod_amt
+fraud_values = df[df["fraud_flag"] == 1]["tca_mod_amt"]
+nonfraud_values = df[df["fraud_flag"] == 0]["tca_mod_amt"]
+
+ks_stat, p_value = ks_2samp(fraud_values, nonfraud_values)
+print(f"📌 KS Statistic: {ks_stat}, p-value: {p_value}")
+👉 A high KS value means tca_mod_amt is a strong fraud indicator.
+
+2️⃣ How Might They Have Chosen min/max Values?
+The formula:
+
+python
+Copy
+Edit
+min(
+    round(
+        (rrr_score_4 / (rrr_score_4 + (1000 - rrr_score_4) * (150 / min(tca_mod_amt, 10000))**0.5)) * 998 + 1
+    ), 
+    999
+)
+Contains min() and max() to cap extreme values.
+
+📌 Why Use min() and max()?
+max(1, ...) ensures scores never drop below 1.
+
+min(..., 999) ensures scores never exceed 999.
+
+The min(tca_mod_amt, 10000) prevents large transactions from overpowering the score.
+
+📊 (A) Examining Score Distributions to Set Caps
+Check the highest and lowest scores in historical data
+
+Decide on reasonable bounds (e.g., 1-999 for scores)
+
+📌 How to Implement?
+
+python
+Copy
+Edit
+sns.histplot(df["rrr_score_4"], bins=50, kde=True)
+plt.title("Distribution of rrr_score_4")
+plt.show()
+👉 If rrr_score_4 rarely exceeds 999, they cap it at 999.
+
+📈 (B) Checking the Relationship Between tca_mod_amt and Score
+If tca_mod_amt significantly impacts score, they might adjust it using a transformation.
+
+📌 How to Implement?
+
+python
+Copy
+Edit
+sns.scatterplot(x=df["tca_mod_amt"], y=df["rrr_score_4"])
+plt.title("Relationship between Transaction Amount and Score")
+plt.show()
+👉 If tca_mod_amt has an upper bound effect, they cap it with min(tca_mod_amt, 10000).
+
+3️⃣ How Can You Get the Calibrated Scores for Your New Model?
+Now that we understand the vendor approach, let’s derive calibrated scores for your new model.
+
+📌 Python Code for New Model Calibration
+
+python
+Copy
+Edit
+def calibrate_new_model(row):
+    """Calibrates new model scores using vendor-style logic."""
+    # Define fraud-prone conditions (Replace these with statistically derived cutoffs)
+    if row["rrr_score_4"] > 50 and row["tca_mod_amt"] >= 1000 and row["ucm_pos"] == "01" and row["ucm_scheme"] == "I":
+        calibrated_score = max(
+            1, 
+            min(
+                round(
+                    (row["new_model_score"] / (row["new_model_score"] + (1000 - row["new_model_score"]) * 
+                    (150 / min(row["tca_mod_amt"], 10000))**0.5)) * 998 + 1
+                ), 
+                999
+            )
+        )
+    else:
+        calibrated_score = row["new_model_score"]  # Default to original new model score
+
+    return calibrated_score
+
+# Apply the function
+df["calibrated_new_model_score"] = df.apply(calibrate_new_model, axis=1)
+
+# Display Sample Results
+print(df[["new_model_score", "rrr_score_4", "tca_mod_amt", "ucm_pos", "ucm_scheme", "calibrated_new_model_score"]].head(10))
+🚀 Summary: How the Vendor Might Have Done It
+✔ Used Fraud Analysis → Checked tca_mod_amt, rrr_score_4, etc., for fraud concentration.
+✔ Used KS/Percentile Analysis → Chose tca_mod_amt >= 1000 as a cutoff.
+✔ Applied min/max Thresholds → Capped values to prevent score explosion.
+✔ Created a Non-Linear Score Formula → Scaled risk scores based on fraud-prone attributes.
+
+📢 Next Steps
+🔹 Want me to fine-tune cutoffs using real data?
+🔹 Need help with automated calibration optimization (e.g., grid search)?
+
+Let me know, and I’ll refine the approach! 🚀🔥
+
+
+
+
+
+
+
+You said:
+here min(
+            round(
+                (rrr_score_4 / (rrr_score_4 + (1000 - rrr_score_4) * (150 / min(tca_mod_amt, 10000))**0.5)) * 998 + 1
+            ),
+
+What is 150 and 10000 are . Think more please. What are these values ? and how to get those ?
+
+
+ChatGPT said:
+🔍 Understanding the Constants (150 and 10,000) in the Vendor Model Calibration
+The constants 150 and 10,000 in the vendor model calibration formula must have been determined empirically based on historical fraud patterns. Let's break it down logically:
+
+📌 1️⃣ What Does 10,000 Represent?
+The expression:
+
+python
+Copy
+Edit
+min(tca_mod_amt, 10000)
+suggests that 10,000 is an upper cap for tca_mod_amt in the formula.
+
+🔎 Possible Reasons for Using 10,000
+Capping Large Transactions to Avoid Overweighting
+
+If a transaction amount is too high, it may artificially inflate the score.
+
+By capping at 10,000, the model prevents extremely high amounts from dominating fraud scores.
+
+Empirical Upper Bound on Transaction Amounts
+
+The vendor likely analyzed historical transactions and found that most fraud happens below $10,000.
+
+Beyond this value, fraud rates may not increase significantly (i.e., diminishing returns in fraud detection).
+
+📌 How to Verify?
+Run a percentile analysis to see if 10,000 is a reasonable cap:
+
+python
+Copy
+Edit
+percentile_99 = df["tca_mod_amt"].quantile(0.99)  # Get the 99th percentile of transaction amounts
+print(f"99th Percentile of Transaction Amounts: {percentile_99}")
+👉 If the 99th percentile is close to 10,000, it justifies the vendor’s cap!
+
+📌 2️⃣ What Does 150 Represent?
+The formula uses:
+
+python
+Copy
+Edit
+(150 / min(tca_mod_amt, 10000))**0.5
+This adjusts the weight of transaction amounts in the denominator.
+
+🔎 Possible Interpretations of 150
+Scaling Factor for Transaction Impact
+
+Larger values of tca_mod_amt reduce the denominator’s impact (i.e., high transaction amounts make the denominator smaller).
+
+150 is likely a normalization factor to prevent extremely high or low impact from tca_mod_amt.
+
+Derived from Fraud Rate Analysis
+
+The vendor might have found that for fraud transactions:
+
+scss
+Copy
+Edit
+Median(tca_mod_amt) ≈ 150 * sqrt(Threshold)
+This would mean 150 scales the denominator so that it aligns with real-world fraud trends.
+
+📌 How to Verify?
+Compare fraud and non-fraud distributions to see if 150 is a meaningful divisor.
+
+python
+Copy
+Edit
+import numpy as np
+fraud_median = df[df["fraud_flag"] == 1]["tca_mod_amt"].median()
+nonfraud_median = df[df["fraud_flag"] == 0]["tca_mod_amt"].median()
+
+print(f"Median Fraud Transaction Amount: {fraud_median}")
+print(f"Median Non-Fraud Transaction Amount: {nonfraud_median}")
+print(f"Ratio (Fraud / Non-Fraud): {fraud_median / nonfraud_median}")
+👉 If the ratio is close to 150, it validates this as a scaling factor.
+
+📢 How Can We Derive These Constants for Our New Model?
+📌 (A) Find the Right Cap for tca_mod_amt
+Compute the 99th percentile and use that instead of 10,000.
+
+python
+Copy
+Edit
+new_tca_cap = df["tca_mod_amt"].quantile(0.99)
+print(f"Recommended Cap for tca_mod_amt: {new_tca_cap}")
+📌 (B) Find the Best Scaling Factor Instead of 150
+Use fraud-to-non-fraud median ratio as an alternative.
+
+python
+Copy
+Edit
+new_scaling_factor = fraud_median / nonfraud_median
+print(f"Recommended Scaling Factor: {new_scaling_factor}")
+👉 If this ratio is close to 150, then 150 was based on fraud scaling.
+
+🚀 Final Thoughts
+✔ 10,000 is likely the 99th percentile cap for transaction amounts to prevent over-weighting.
+✔ 150 is a scaling factor derived from fraud-to-non-fraud transaction ratios.
+✔ We can replace these values using percentile analysis and fraud ratio calculations.
+
+📌 Next Steps
+🔹 Do you want to implement automated tuning to find the best constants dynamically?
+🔹 Would you like me to optimize the formula based on your new model’s fraud distribution?
+
+Let me know, and I’ll fine-tune the approach! 🚀🔥
+
+
+
+
+
+
+
+You said:
+here what about 
+
+here min(
+            round(
+                (rrr_score_4 / (rrr_score_4 + (1000 - rrr_score_4) * (150 / min(tca_mod_amt, 10000))**0.5)) * 998 + 1
+            ),
+
+(1000-rrr_score_4)...what is this might be and how to get or calculate it
+
+
+ChatGPT said:
+🔍 Understanding (1000 - rrr_score_4) in the Vendor Model Calibration Formula
+The expression:
+
+python
+Copy
+Edit
+(1000 - rrr_score_4)
+is adjusting the weight of rrr_score_4 dynamically in the fraud score computation.
+Let’s analyze what it represents and how it might have been derived.
+
+📌 1️⃣ What is rrr_score_4?
+In most fraud models, a feature like rrr_score_4 could be:
+
+A Risk Score from an External Vendor Model
+
+A Pre-Existing Risk Score (e.g., from a previous fraud detection model)
+
+A Machine Learning Output Score
+
+Since the formula treats it as an input score, it is already providing some fraud probability or risk estimation.
+
+📌 2️⃣ What Does (1000 - rrr_score_4) Represent?
+rrr_score_4 ranges from 0 to 1000 (assuming it follows a similar scale to your new model).
+
+(1000 - rrr_score_4) acts as an inverse weight, meaning:
+
+If rrr_score_4 is high (closer to 1000) → (1000 - rrr_score_4) is small, reducing its impact.
+
+If rrr_score_4 is low (closer to 0) → (1000 - rrr_score_4) is large, increasing its impact.
+
+🔎 Possible Explanations
+Balancing Effect
+
+It downweights the contribution of rrr_score_4 when it is already high.
+
+It increases the impact of other factors when rrr_score_4 is low.
+
+Dynamic Score Smoothing
+
+If rrr_score_4 is too strong (i.e., near 1000), this term reduces overconfidence in fraud detection.
+
+If rrr_score_4 is weak, (1000 - rrr_score_4) amplifies the impact of transaction characteristics.
+
+Empirical Score Adjustment
+
+The vendor might have tested different thresholds and found that subtracting from 1000 provided optimal fraud capture rates.
+
+📌 3️⃣ How to Find the Correct Equivalent for Your New Model?
+To determine whether (1000 - rrr_score_4) is an optimal transformation, you can experiment with different transformations:
+
+🔹 Option A: Check the Distribution of rrr_score_4
+See if it’s skewed and whether subtracting from 1000 makes sense.
+
+python
+Copy
+Edit
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.histplot(df["rrr_score_4"], bins=50, kde=True)
+plt.title("Distribution of rrr_score_4")
+plt.show()
+👉 If rrr_score_4 is already well-distributed, subtraction from 1000 may be unnecessary.
+
+🔹 Option B: Validate with Fraud/Non-Fraud Ratio
+We can check whether (1000 - rrr_score_4) differentiates fraud vs. non-fraud transactions.
+
+python
+Copy
+Edit
+import numpy as np
+
+df["adjusted_rrr"] = 1000 - df["rrr_score_4"]
+fraud_median = df[df["fraud_flag"] == 1]["adjusted_rrr"].median()
+nonfraud_median = df[df["fraud_flag"] == 0]["adjusted_rrr"].median()
+
+print(f"Median Adjusted rrr_score_4 for Fraud: {fraud_median}")
+print(f"Median Adjusted rrr_score_4 for Non-Fraud: {nonfraud_median}")
+👉 If fraud transactions have a significantly different median than non-fraud, this transformation is useful.
+
+🔹 Option C: Try Other Transformations
+Instead of (1000 - rrr_score_4), test alternatives:
+
+Log Transform
+
+python
+Copy
+Edit
+df["rrr_log"] = np.log1p(1000 - df["rrr_score_4"])
+Power Transform
+
+python
+Copy
+Edit
+df["rrr_power"] = (1000 - df["rrr_score_4"])**0.5
+Min-Max Scaling
+
+python
+Copy
+Edit
+from sklearn.preprocessing import MinMaxScaler
+scaler = MinMaxScaler()
+df["rrr_scaled"] = scaler.fit_transform(df[["rrr_score_4"]])
+📌 Compare fraud capture rates using different transformations.
+
+📢 Summary
+✔ (1000 - rrr_score_4) is a dynamic balancing factor, reducing the weight of rrr_score_4 when it is high.
+✔ This transformation was likely chosen empirically based on fraud patterns.
+✔ We can verify its effectiveness by testing different transformations.
+✔ Alternative methods like log-scaling or power transforms might improve calibration.
+
+🚀 Next Steps
+🔹 Do you want me to run an automated grid search to find the best transformation?
+🔹 Or should I help tune your calibration formula based on your new model’s fraud data?
+
+Let me know, and I'll tailor the solution for you! 🚀🔥
+
+
+
+
+
+
+
+You said:
+rrr_score_4 ranges from 0 to 999. 
+
+What Does (1000 - rrr_score_4) Represent?
+
+So question is still what is 1000 and what might this is . Can you please think deeply
+
+
+ChatGPT said:
+You're asking a very precise and insightful question: What exactly is "1000" in (1000 - rrr_score_4), and why is it used?
+
+Let's break it down systematically and uncover the reasoning behind this choice.
+
+🔍 Step 1: Understanding rrr_score_4 Range
+rrr_score_4 ranges from 0 to 999.
+
+Since rrr_score_4 is a fraud risk score, higher values likely indicate higher fraud risk.
+
+In many models, scores are scaled between 0-999 or 0-1000 for standardization.
+
+🔍 Step 2: What Does (1000 - rrr_score_4) Do?
+Mathematically:
+
+If rrr_score_4 = 0, then 1000 - 0 = 1000 (Maximum weight applied)
+
+If rrr_score_4 = 999, then 1000 - 999 = 1 (Minimal weight applied)
+
+🧠 Key Observations:
+
+This transformation inverts the scale:
+
+Higher rrr_score_4 (higher fraud risk) → Lower weight
+
+Lower rrr_score_4 (lower fraud risk) → Higher weight
+
+The formula dynamically scales down high scores and boosts lower scores in some way.
+
+🔍 Step 3: Why 1000?
+Possibilities:
+1️⃣ 1000 is a Theoretical Maximum Risk Score
+Some vendor models use a "max risk score" concept.
+
+1000 might be the absolute risk limit (even though rrr_score_4 is capped at 999).
+
+This means (1000 - rrr_score_4) is a complementary risk adjustment.
+
+2️⃣ It Creates a More Balanced Scaling
+In many risk models, score distributions are skewed.
+
+Subtracting from a fixed upper bound (like 1000) can stabilize score distributions.
+
+This is especially useful for fraud detection, where scores tend to cluster toward higher values.
+
+3️⃣ It May Have Been Chosen Empirically
+Vendors likely tested different maximum values (e.g., 900, 950, 1000, 1100) and found 1000 worked best.
+
+This could be based on:
+
+Fraud capture rates
+
+Score stability over time
+
+Business thresholds
+
+4️⃣ 1000 Keeps Scores in a Standardized Range
+Many fraud scoring systems use a 0-999 or 0-1000 scale.
+
+Using 1000 ensures output scores remain within expected ranges.
+
+This helps in downstream model compatibility.
+
+🔍 Step 4: How Can You Verify This for Your New Model?
+You can test whether 1000 is the right threshold for your new model.
+
+1️⃣ Try Different Max Score Adjustments
+Test different values like 950, 1000, 1050, or 1100 and see which gives better fraud capture.
+
+python
+Copy
+Edit
+import numpy as np
+
+df["adjusted_950"] = 950 - df["rrr_score_4"]
+df["adjusted_1000"] = 1000 - df["rrr_score_4"]
+df["adjusted_1100"] = 1100 - df["rrr_score_4"]
+
+print(df[["adjusted_950", "adjusted_1000", "adjusted_1100"]].describe())
+2️⃣ Check Fraud vs. Non-Fraud Score Distributions
+python
+Copy
+Edit
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+sns.kdeplot(df[df["fraud_flag"] == 1]["adjusted_1000"], label="Fraud", fill=True)
+sns.kdeplot(df[df["fraud_flag"] == 0]["adjusted_1000"], label="Non-Fraud", fill=True)
+plt.legend()
+plt.title("Fraud vs. Non-Fraud Adjusted Scores")
+plt.show()
+👉 If 1000 works best at differentiating fraud vs. non-fraud, it’s the right choice!
+
+📢 Final Answer: Why 1000?
+✔ 1000 is likely the theoretical maximum score in the vendor’s fraud model.
+✔ It inverts the fraud risk, making high scores contribute less and low scores contribute more.
+✔ It was probably tested empirically to maximize fraud capture while keeping scores balanced.
+✔ You can experiment with alternative values (like 950 or 1100) to see if a different max score improves results.
+
+🚀 Next Steps
+💡 Do you want a Python script that automatically finds the best max-score threshold for your model?
+💡 Or do you need calibration formulas adjusted for your new fraud model?
+
+Let me know, and I’ll generate the best approach for your case! 🔥
+
+
+
+
+
+
+
+You said:
+give me both
+
+
+ChatGPT said:
+I'll provide two solutions:
+
+1️⃣ Python Script to Find the Best Max-Score Threshold (950, 1000, 1100, etc.)
+2️⃣ Calibrated Score Formula Based on Your New Model
+
+1️⃣ Python Script: Automatically Find Best Max-Score Threshold
+This script will:
+
+Test different max-score values (950, 1000, 1050, 1100)
+
+Compare fraud vs. non-fraud score distributions
+
+Find the optimal value that best separates fraud and non-fraud cases.
+
+python
+Copy
+Edit
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from scipy.stats import ks_2samp
+
+# Simulated fraud detection dataset
+np.random.seed(42)
+df = pd.DataFrame({
+    "rrr_score_4": np.random.randint(0, 1000, 10000),
+    "tca_mod_amt": np.random.uniform(10, 5000, 10000),
+    "fraud_flag": np.random.choice([0, 1], size=10000, p=[0.97, 0.03])  # 3% fraud rate
+})
+
+# Define different max-score thresholds
+max_scores = [950, 1000, 1050, 1100]
+
+# Store KS values to find the best threshold
+ks_results = {}
+
+plt.figure(figsize=(12, 6))
+
+for max_score in max_scores:
+    df[f"adjusted_{max_score}"] = max_score - df["rrr_score_4"]
+    
+    # KS Test to measure how well fraud and non-fraud distributions separate
+    ks_stat, _ = ks_2samp(df[df["fraud_flag"] == 1][f"adjusted_{max_score}"],
+                          df[df["fraud_flag"] == 0][f"adjusted_{max_score}"])
+    
+    ks_results[max_score] = ks_stat
+    
+    # Plot distributions
+    sns.kdeplot(df[df["fraud_flag"] == 1][f"adjusted_{max_score}"], label=f"Fraud (Max={max_score})", fill=True)
+    sns.kdeplot(df[df["fraud_flag"] == 0][f"adjusted_{max_score}"], label=f"Non-Fraud (Max={max_score})", fill=True)
+
+plt.legend()
+plt.title("Fraud vs. Non-Fraud Score Distributions for Different Max Thresholds")
+plt.show()
+
+# Find the best max-score threshold
+best_max_score = max(ks_results, key=ks_results.get)
+print(f"Best max-score threshold based on KS separation: {best_max_score}")
+🔹 What This Code Does
+Tests multiple values (950, 1000, 1050, 1100) for (max - rrr_score_4).
+
+Uses the Kolmogorov-Smirnov (KS) test to measure how well fraud and non-fraud distributions separate.
+
+Plots fraud vs. non-fraud KDE distributions.
+
+Selects the best threshold based on KS-statistic (higher = better separation).
+
+2️⃣ New Model Score Calibration Formula
+Now, let's create a similar calibration formula for your new model.
+
+Assumptions:
+rrr_score_4 still ranges 0-999.
+
+tca_mod_amt is used as a risk factor.
+
+ucm_pos, ucm_scheme, and other conditions need to be found through data analysis.
+
+We'll dynamically learn the best transformation factors.
+
+Python Function for Calibrating Scores
+python
+Copy
+Edit
+def calibrated_score(rrr_score_4, tca_mod_amt, ucm_pos, ucm_scheme, best_max_score=1000):
+    """
+    Calibrates the new model score using a vendor-like transformation.
+    """
+    # Check fraud conditions (modify based on real fraud patterns)
+    if rrr_score_4 > 0 and tca_mod_amt >= 1000 and ucm_pos == '01' and ucm_scheme == 'I':
+        return max(1, min(
+            round(
+                (rrr_score_4 / (rrr_score_4 + (best_max_score - rrr_score_4) * (150 / min(tca_mod_amt, 10000))**0.5)) * 998 + 1
+            ),
+            999
+        ))
+    else:
+        return rrr_score_4  # No transformation if conditions are not met
+
+# Example usage
+df["calibrated_score"] = df.apply(lambda row: calibrated_score(row["rrr_score_4"], row["tca_mod_amt"], "01", "I"), axis=1)
+🔹 Explanation of This Formula
+Uses best_max_score (found in Step 1) instead of hardcoded 1000.
+
+Uses a fraud condition (modify as per data insights).
+
+Applies a transformation similar to the vendor model.
+
+Ensures scores remain between 1-999.
+
+🚀 Next Steps
+✅ 1️⃣ Run the first script to determine the best max_score value.
+✅ 2️⃣ Use the calibrated function with the best max-score threshold from Step 1.
+✅ 3️⃣ Verify Calibration Performance:
+Compare new vs. old calibrated scores.
+
+Check fraud vs. non-fraud separation.
+
+Fine-tune 150 and 10000 if needed.
+
+Would you like a full automated calibration pipeline with plots + performance metrics? 🚀
+
+
+
+
 ✔ When quantile mapping isn’t smooth enough.
 
 
