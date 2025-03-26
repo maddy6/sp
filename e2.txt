@@ -4,44 +4,49 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import QuantileTransformer
 
-# Generate synthetic fraud scores (range 0-999)
+# 🔹 Generate synthetic dataset (columns: score, amount, label)
 np.random.seed(42)
 n_samples = 5000
-scores = np.random.randint(0, 1000, n_samples)
+df = pd.DataFrame({
+    "score": np.random.randint(0, 1000, n_samples),  # Scores (0-999)
+    "amount": np.random.exponential(scale=500, size=n_samples),  # Transaction Amounts
+    "label": np.random.binomial(1, 0.1, n_samples)  # Fraud Labels (10% fraud)
+})
 
-# Step 1️⃣: Quantile Transformation to Uniform Distribution
+# 🔹 Step 1: Quantile Transformation to Uniform Distribution
 qt = QuantileTransformer(output_distribution="uniform")
-scores_uniform = qt.fit_transform(scores.reshape(-1, 1)).flatten()
+df["score_uniform"] = qt.fit_transform(df[["score"]])  # Maps to [0,1]
 
-# Step 2️⃣: Exponential Scaling (Push scores up while preserving ranking)
-alpha = 1.5  # Adjust for stronger or weaker shift
-scores_transformed = 999 * (scores_uniform ** alpha)
+# 🔹 Step 2: Exponential Scaling to Shift Scores Upwards
+alpha = 1.5  # Controls how aggressively scores increase
+df["shifted_score"] = 999 * (df["score_uniform"] ** alpha)
 
-# Step 3️⃣: Ensure scores stay within [0, 999]
-scores_transformed = np.clip(scores_transformed, 0, 999)
+# 🔹 Step 3: Ensure scores stay within [0, 999]
+df["shifted_score"] = np.clip(df["shifted_score"], 0, 999)
 
-# Convert to DataFrame
-df = pd.DataFrame({"original_score": scores, "transformed_score": scores_transformed})
-
-# 🔷 Visualization - Score Shift
+# 🔹 Visualization - Score Shift
 plt.figure(figsize=(12, 6))
-sns.histplot(df["original_score"], bins=30, label="Original Scores", color="blue", kde=True, alpha=0.5)
-sns.histplot(df["transformed_score"], bins=30, label="Shifted Scores", color="red", kde=True, alpha=0.5)
+sns.histplot(df["score"], bins=30, label="Original Scores", color="blue", kde=True, alpha=0.5)
+sns.histplot(df["shifted_score"], bins=30, label="Shifted Scores", color="red", kde=True, alpha=0.5)
 plt.legend()
 plt.title("Distribution Shift: Original vs. Transformed Scores")
 plt.xlabel("Score")
 plt.ylabel("Density")
 plt.show()
 
-# 🔷 Scatter Plot: Original vs. Shifted Scores
+# 🔹 Scatter Plot: Original vs. Shifted Scores
 plt.figure(figsize=(12, 5))
-plt.scatter(df["original_score"], df["transformed_score"], alpha=0.5, label="Quantile+Exponential", color="red")
+plt.scatter(df["score"], df["shifted_score"], alpha=0.5, color="red", label="Shifted Score")
 plt.plot([0, 1000], [0, 1000], "--", color="black", alpha=0.7, label="Reference Line")
 plt.xlabel("Original Score")
 plt.ylabel("Transformed Score")
 plt.legend()
 plt.title("Quantile-Based Score Shifting: Before vs. After")
 plt.show()
+
+# 🔹 Print sample output
+print(df[["score", "shifted_score", "amount", "label"]].head())
+
 
 
 
