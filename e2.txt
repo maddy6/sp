@@ -15,12 +15,12 @@ labels = np.random.binomial(1, probabilities)
 # 🔹 Create DataFrame
 df = pd.DataFrame({"score": scores, "amount": amounts, "label": labels})
 
-# 🔹 Compute Percentiles & Adaptive Scaling Factors
-percentiles = np.percentile(df["score"], np.linspace(0, 100, 20))  # More granularity (20 points)
+# 🔹 Compute Unique Percentile Values
+percentiles = np.unique(np.percentile(df["score"], np.linspace(0, 100, 20)))  # Ensure uniqueness
 scaling_factors = np.linspace(1.05, 1.35, len(percentiles))  # Controlled adaptive increase
 
 # 🔹 Create smooth percentile-based scaling function
-scaling_function = interp1d(percentiles, scaling_factors, kind="cubic", fill_value="extrapolate")
+scaling_function = interp1d(percentiles, scaling_factors, kind="linear", fill_value="extrapolate")
 
 # 🔹 Apply Adaptive Scaling Factor
 df["alpha"] = df["score"].apply(lambda x: scaling_function(x))
@@ -53,6 +53,7 @@ plt.show()
 
 # 🔹 Display Impact
 print(df[["score", "alpha", "final_score"]].head(10))
+
 
 
 
