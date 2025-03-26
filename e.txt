@@ -454,6 +454,82 @@ Vendor Method
 
 
 
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from scipy.stats import ks_2samp
+
+# 1️⃣ Generate Dummy Data
+np.random.seed(42)
+num_samples = 10000
+
+df = pd.DataFrame({
+    "rrr_score_4": np.random.randint(0, 1000, num_samples),  # Model Score (0-999)
+    "tca_mod_amt": np.random.uniform(10, 5000, num_samples),  # Transaction Amount
+    "ucm_pos": np.random.choice(["01", "02", "03"], size=num_samples),  # POS Code
+    "ucm_scheme": np.random.choice(["I", "V", "M"], size=num_samples),  # Payment Scheme
+    "fraud_flag": np.random.choice([0, 1], size=num_samples, p=[0.97, 0.03])  # 3% Fraud Rate
+})
+
+# 2️⃣ Find the Best Max-Score Threshold
+max_scores = [950, 1000, 1050, 1100]
+ks_results = {}
+
+plt.figure(figsize=(12, 6))
+
+for max_score in max_scores:
+    df[f"adjusted_{max_score}"] = max_score - df["rrr_score_4"]
+    
+    # KS Test: Measures fraud vs. non-fraud separation
+    ks_stat, _ = ks_2samp(df[df["fraud_flag"] == 1][f"adjusted_{max_score}"],
+                          df[df["fraud_flag"] == 0][f"adjusted_{max_score}"])
+    
+    ks_results[max_score] = ks_stat
+    
+    # Plot distributions
+    sns.kdeplot(df[df["fraud_flag"] == 1][f"adjusted_{max_score}"], label=f"Fraud (Max={max_score})", fill=True)
+    sns.kdeplot(df[df["fraud_flag"] == 0][f"adjusted_{max_score}"], label=f"Non-Fraud (Max={max_score})", fill=True)
+
+plt.legend()
+plt.title("Fraud vs. Non-Fraud Score Distributions for Different Max Thresholds")
+plt.show()
+
+# Select the best max-score threshold
+best_max_score = max(ks_results, key=ks_results.get)
+print(f"Best max-score threshold based on KS separation: {best_max_score}")
+
+# 3️⃣ Define the Score Calibration Function
+def calibrated_score(rrr_score_4, tca_mod_amt, ucm_pos, ucm_scheme, best_max_score):
+    """
+    Calibrates the new model score based on vendor-like transformation.
+    """
+    # Fraud condition (modify based on real data insights)
+    if rrr_score_4 > 0 and tca_mod_amt >= 1000 and ucm_pos == '01' and ucm_scheme == 'I':
+        return max(1, min(
+            round(
+                (rrr_score_4 / (rrr_score_4 + (best_max_score - rrr_score_4) * (150 / min(tca_mod_amt, 10000))**0.5)) * 998 + 1
+            ),
+            999
+        ))
+    else:
+        return rrr_score_4  # No transformation if conditions are not met
+
+# 4️⃣ Apply Calibration to Dataset
+df["calibrated_score"] = df.apply(lambda row: calibrated_score(row["rrr_score_4"], row["tca_mod_amt"], row["ucm_pos"], row["ucm_scheme"], best_max_score), axis=1)
+
+# 5️⃣ Compare Original vs. Calibrated Scores
+plt.figure(figsize=(12, 6))
+sns.kdeplot(df["rrr_score_4"], label="Original Score", fill=True)
+sns.kdeplot(df["calibrated_score"], label="Calibrated Score", fill=True)
+plt.title("Original vs. Calibrated Score Distributions")
+plt.legend()
+plt.show()
+
+
+
+
+
 
 
 📌 Understanding How the Vendor Model Might Have Decided the Calibration Rules
