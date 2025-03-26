@@ -1,1 +1,43 @@
 
+import numpy as np
+import pandas as pd
+from scipy.special import expit  # Sigmoid function
+from scipy.stats import gaussian_kde
+
+# Generate synthetic fraud detection dataset
+np.random.seed(42)
+n_samples = 5000
+scores = np.random.randint(0, 1000, n_samples)
+probabilities = scores / 999  
+labels = np.random.binomial(1, probabilities)
+
+# Create DataFrame
+df = pd.DataFrame({"score": scores, "label": labels})
+
+# Custom Sigmoid Score Transformation
+def sigmoid_transform(score, a=0.02, b=-5):
+    return expit(a * score + b)
+
+df["sigmoid_scaled"] = sigmoid_transform(df["score"])
+
+# Tail Boosting Using Fraud Quantiles
+gamma = 1.2  
+df["tail_boosted"] = df["score"] ** gamma  
+
+# Fraud Density Adjustment Using KDE
+fraud_scores = df[df["label"] == 1]["score"]
+kde = gaussian_kde(fraud_scores)
+df["density_adjusted"] = kde(df["score"])
+
+# Adaptive Mean Reversion (Bayesian Smoothing)
+fraud_mean = df[df["label"] == 1]["score"].mean()
+lambda_factor = 0.7  
+df["bayesian_smoothed"] = lambda_factor * df["score"] + (1 - lambda_factor) * fraud_mean
+
+# Dynamic Score Re-Weighting (Gradient-Based)
+eta = 0.1
+gradient = np.gradient(df["score"])
+df["gradient_scaled"] = df["score"] + eta * gradient
+
+# Display results
+print(df.head())
