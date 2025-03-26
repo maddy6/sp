@@ -2,6 +2,69 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.special import expit  # Sigmoid function
+
+# 🔹 Step 1: Generate Synthetic Data
+np.random.seed(42)
+n_samples = 5000
+scores = np.random.randint(0, 1000, n_samples)  # Original scores (0-999)
+probabilities = scores / 999  
+labels = np.random.binomial(1, probabilities)  # Fraud labels (0/1)
+amounts = np.random.uniform(10, 5000, n_samples)  # Random transaction amounts
+
+# Create DataFrame
+df = pd.DataFrame({"score": scores, "label": labels, "amount": amounts})
+
+# 🔹 Step 2: Compute Score Percentiles (Statistical Backing)
+df["percentile"] = df["score"].rank(pct=True)  # Get percentiles (0 to 1)
+
+# 🔹 Step 3: Define a Controlled Scaling Function
+def controlled_scaling(percentile):
+    """Smooth transformation that prevents extreme inflation."""
+    base_alpha = 1.2 + 0.5 * (percentile**1.2)  # Gradual scaling increase
+    sigmoid_adjustment = expit((percentile - 0.5) * 8)  # Smoothen transition
+    return 1 + (base_alpha - 1) * sigmoid_adjustment  # Ensures smooth uplift
+
+df["scaling_factor"] = df["percentile"].apply(controlled_scaling)  # Compute scaling
+
+# 🔹 Step 4: Adjust Scores with Clipping
+df["adjusted_score"] = df["score"] * df["scaling_factor"]
+df["adjusted_score"] = np.clip(df["adjusted_score"], df["score"], 999)  # Ensure monotonic increase
+
+# 🔹 Step 5: Visualization - Score Shift
+plt.figure(figsize=(10, 6))
+sns.lineplot(x=df["score"], y=df["adjusted_score"], label="Shifted Scores", color="blue")
+sns.lineplot(x=df["score"], y=df["score"], label="Original Scores", color="red", linestyle="dashed")
+plt.xlabel("Original Score")
+plt.ylabel("Adjusted Score")
+plt.title("Score Shifting Visualization")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# 🔹 Display Sample Results
+print(df[["score", "percentile", "scaling_factor", "adjusted_score"]].head(10))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # 🔹 Step 1: Generate Synthetic Data
 np.random.seed(42)
