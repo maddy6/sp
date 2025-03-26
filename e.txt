@@ -1,1 +1,373 @@
 
+What is Score Calibration?
+Score calibration is the process of adjusting the raw output scores of a model so that they are interpretable, comparable, and aligned with an existing standard (e.g., an older model, a vendor model, or real-world fraud probabilities).
+
+In your case, you have:
+
+A new model that assigns scores from 0 to 999.
+
+An old model that also assigns scores from 0 to 999.
+
+A need to calibrate the new model's scores so they match the scale of the old model or a vendor-provided model.
+
+Why is Score Calibration Needed?
+Consistency Across Models: If your fraud strategy relies on a score range (0-999), a new model with different distributions might not work well with existing thresholds. Calibration ensures smooth transitions.
+
+Interpretability: If a score of 850 in the old model meant high fraud risk, the new model’s 850 should mean the same thing.
+
+Regulatory & Business Requirements: Banks and financial institutions (like UBS) require stability in risk scores to avoid customer impact.
+
+Better Decision-Making: Business teams rely on scores for fraud blocking and risk analysis. If a new model has a different scale, decision-making might suffer.
+
+How Does Score Calibration Work?
+Calibration ensures that:
+
+𝑃
+(
+𝑓
+𝑟
+𝑎
+𝑢
+𝑑
+∣
+𝑠
+𝑐
+𝑜
+𝑟
+𝑒
+=
+𝑥
+)
+≈
+𝑃
+(
+𝑓
+𝑟
+𝑎
+𝑢
+𝑑
+∣
+𝑐
+𝑎
+𝑙
+𝑖
+𝑏
+𝑟
+𝑎
+𝑡
+𝑒
+𝑑
+_
+𝑠
+𝑐
+𝑜
+𝑟
+𝑒
+=
+𝑥
+)
+P(fraud∣score=x)≈P(fraud∣calibrated_score=x)
+This means that the probability of fraud for a given score should be consistent between models.
+
+There are two common approaches:
+
+1. Distribution Matching (Score-to-Score Calibration)
+Your old and new models may have different score distributions.
+
+If the old model assigns 10% of transactions a score > 900, the new model should do the same.
+
+Methods used:
+
+Isotonic Regression (non-linear mapping)
+
+Quantile Matching (matching percentile ranks)
+
+Polynomial Transformations (e.g., cubic or sigmoid functions)
+
+2. Probability-Based Calibration (Score-to-Probability Mapping)
+Convert scores to fraud probabilities.
+
+Use logistic regression (Platt Scaling) or Beta Calibration.
+
+If score = 800 in the old model had a 50% fraud probability, then 800 in the new model should have the same.
+
+Example: Score Mismatch Before Calibration
+Transaction ID	Old Model Score	New Model Score (Raw Output)
+TXN1	920	980
+TXN2	750	890
+TXN3	600	740
+Problem: The new model assigns higher scores than the old model.
+
+Solution: Apply calibration so that 920 in the old model corresponds to 920 in the new model.
+
+How to Perform Score Calibration?
+Here are the steps:
+
+1. Compare Score Distributions
+Plot the old model score distribution vs. the new model score distribution. If they differ, you need calibration.
+
+2. Choose a Calibration Method
+Quantile Mapping: If the rank ordering of scores is good, but the scale differs.
+
+Logistic Regression (Platt Scaling): If you need a probability-based transformation.
+
+Isotonic Regression: If you want a flexible mapping function.
+
+3. Apply Calibration
+Use one of the following:
+
+A. Quantile Mapping (Score Matching)
+python
+Copy
+Edit
+import numpy as np
+from scipy.stats import rankdata
+
+def quantile_calibration(new_scores, old_scores):
+    sorted_new = np.argsort(new_scores)
+    sorted_old = np.argsort(old_scores)
+    
+    calibrated_scores = np.zeros_like(new_scores)
+    calibrated_scores[sorted_new] = np.sort(old_scores)
+    
+    return calibrated_scores
+B. Logistic Regression Calibration (Probability Mapping)
+python
+Copy
+Edit
+from sklearn.linear_model import LogisticRegression
+from scipy.special import expit
+
+# Fit logistic regression on old scores
+X = old_model_scores.reshape(-1, 1)
+y = new_model_scores.reshape(-1, 1)
+
+log_reg = LogisticRegression()
+log_reg.fit(X, y)
+
+# Apply the calibration
+calibrated_scores = expit(log_reg.intercept_ + log_reg.coef_ * new_model_scores) * 999
+C. Isotonic Regression (Non-Parametric Mapping)
+python
+Copy
+Edit
+from sklearn.isotonic import IsotonicRegression
+
+iso_reg = IsotonicRegression()
+iso_reg.fit(new_model_scores, old_model_scores)
+calibrated_scores = iso_reg.predict(new_model_scores)
+Final Thoughts
+
+
+
+
+
+
+ Python Code for Comparing Score Distributions
+python
+Copy
+Edit
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Simulated scores (Replace these with actual scores from your models)
+np.random.seed(42)
+old_model_scores = np.random.normal(loc=500, scale=150, size=10000).clip(0, 999)  # Old Model Scores
+new_model_scores = np.random.normal(loc=550, scale=170, size=10000).clip(0, 999)  # New Model Scores
+
+# Create the histogram & KDE plot
+plt.figure(figsize=(12, 6))
+
+sns.histplot(old_model_scores, bins=50, kde=True, color='blue', alpha=0.5, label="Old Model Scores")
+sns.histplot(new_model_scores, bins=50, kde=True, color='red', alpha=0.5, label="New Model Scores")
+
+# Labels and title
+plt.xlabel("Score (0-999)", fontsize=14)
+plt.ylabel("Frequency", fontsize=14)
+plt.title("Score Distribution: Old Model vs. New Model", fontsize=16)
+plt.legend()
+
+# Show the plot
+plt.show()
+📊 What This Code Does
+Generates fake scores for testing (replace these with your real scores).
+
+Plots histograms to compare the frequency of scores.
+
+Uses Kernel Density Estimation (KDE) to show the probability distribution.
+
+Color Coding:
+
+Blue = Old Model
+
+Red = New Model
+
+
+
+🚀 Next Steps
+If both distributions overlap significantly, the new model might already be aligned.
+
+If the new model's scores are shifted, you might need quantile mapping or regression-based calibration.
+
+Would you like me to add statistical tests (e.g., KS-Test, Anderson-Darling) to quantify the difference?
+
+
+Here’s an enhanced Python script that compares the distributions of your old model and new model using visualization and statistical tests like:
+
+1️⃣ Kolmogorov-Smirnov (KS) Test → Checks if the two distributions are significantly different.
+2️⃣ Anderson-Darling Test → Measures how well the new model follows the old model’s distribution.
+3️⃣ Histogram & KDE Plot → Visualizes the distribution differences.
+
+📌 Python Code for Comparing Score Distributions with Statistical Tests
+python
+Copy
+Edit
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import ks_2samp, anderson_ksamp
+
+# Simulated scores (Replace these with actual scores from your models)
+np.random.seed(42)
+old_model_scores = np.random.normal(loc=500, scale=150, size=10000).clip(0, 999)  # Old Model Scores
+new_model_scores = np.random.normal(loc=550, scale=170, size=10000).clip(0, 999)  # New Model Scores
+
+# --- PLOTTING SCORE DISTRIBUTIONS ---
+plt.figure(figsize=(12, 6))
+sns.histplot(old_model_scores, bins=50, kde=True, color='blue', alpha=0.5, label="Old Model Scores")
+sns.histplot(new_model_scores, bins=50, kde=True, color='red', alpha=0.5, label="New Model Scores")
+
+plt.xlabel("Score (0-999)", fontsize=14)
+plt.ylabel("Frequency", fontsize=14)
+plt.title("Score Distribution: Old Model vs. New Model", fontsize=16)
+plt.legend()
+plt.show()
+
+# --- KOLMOGOROV-SMIRNOV (KS) TEST ---
+ks_stat, ks_p_value = ks_2samp(old_model_scores, new_model_scores)
+print(f"📌 KS Test Statistic: {ks_stat:.4f}, p-value: {ks_p_value:.4f}")
+
+if ks_p_value < 0.05:
+    print("⚠️ The distributions are significantly different (p < 0.05). Calibration is needed.")
+else:
+    print("✅ The distributions are similar (p >= 0.05). Calibration may not be necessary.")
+
+# --- ANDERSON-DARLING TEST ---
+anderson_stat, critical_values, significance = anderson_ksamp([old_model_scores, new_model_scores])
+print(f"\n📌 Anderson-Darling Statistic: {anderson_stat:.4f}")
+
+if anderson_stat > critical_values[2]:  # 5% significance level
+    print("⚠️ The distributions are significantly different (Anderson-Darling test). Calibration is needed.")
+else:
+    print("✅ The distributions are similar (Anderson-Darling test). Calibration may not be necessary.")
+📊 What This Code Does
+Plots histograms & KDE to visualize score distributions.
+
+Performs KS-Test to check if the two distributions differ significantly.
+
+Performs Anderson-Darling Test to confirm distribution similarity.
+
+Prints clear recommendations on whether calibration is needed.
+
+🚀 How to Interpret Results
+If KS-test p-value < 0.05 → Distributions are significantly different → Calibration is needed
+
+If Anderson-Darling stat > critical value → Distributions are different → Calibration is needed
+
+If both tests suggest similarity → Your new model is already well-calibrated! 🎯
+
+
+
+
+
+📌 How to Calibrate Scores of Your New Model?
+Since your old model (0-999) and new model (0-999) have different distributions, you need to calibrate the new model’s scores to align with the old model.
+
+✅ Common Score Calibration Techniques
+1️⃣ Quantile Mapping (Most Common for Score Alignment)
+
+Maps quantiles of the new model to the old model.
+
+Ensures that if 10% of scores were above 800 in the old model, 10% are above 800 in the new model too.
+
+2️⃣ Beta Scaling (Logistic Regression-Based Calibration)
+
+Fits a logistic function to align score distributions.
+
+Used in credit risk and fraud detection models.
+
+3️⃣ Isotonic Regression (Non-Parametric Calibration)
+
+Learns a monotonic function to transform scores.
+
+Works well when the relationship between old and new scores is unknown.
+
+📌 Python Code for Score Calibration (Using Quantile Mapping)
+python
+Copy
+Edit
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import rankdata
+
+# Simulated scores (Replace with actual scores from your models)
+np.random.seed(42)
+old_model_scores = np.random.normal(loc=500, scale=150, size=10000).clip(0, 999)  # Old Model Scores
+new_model_scores = np.random.normal(loc=550, scale=170, size=10000).clip(0, 999)  # New Model Scores
+
+# --- QUANTILE MAPPING FUNCTION ---
+def quantile_mapping(new_scores, old_scores):
+    """Maps new model scores to match the quantiles of the old model scores."""
+    old_sorted = np.sort(old_scores)
+    new_ranks = rankdata(new_scores, method="ordinal") / len(new_scores)
+    calibrated_scores = np.interp(new_ranks, np.linspace(0, 1, len(old_sorted)), old_sorted)
+    return calibrated_scores
+
+# Apply Quantile Mapping
+calibrated_scores = quantile_mapping(new_model_scores, old_model_scores)
+
+# --- PLOTTING DISTRIBUTIONS ---
+plt.figure(figsize=(12, 6))
+
+sns.histplot(old_model_scores, bins=50, kde=True, color='blue', alpha=0.5, label="Old Model Scores")
+sns.histplot(new_model_scores, bins=50, kde=True, color='red', alpha=0.5, label="New Model Scores (Uncalibrated)")
+sns.histplot(calibrated_scores, bins=50, kde=True, color='green', alpha=0.5, label="New Model Scores (Calibrated)")
+
+plt.xlabel("Score (0-999)", fontsize=14)
+plt.ylabel("Frequency", fontsize=14)
+plt.title("Score Calibration: Old Model vs. New Model vs. Calibrated", fontsize=16)
+plt.legend()
+plt.show()
+
+# Print Sample Scores
+print("📌 Sample Scores:")
+df = pd.DataFrame({"Old Model Score": old_model_scores[:10], 
+                   "New Model Score (Uncalibrated)": new_model_scores[:10], 
+                   "New Model Score (Calibrated)": calibrated_scores[:10]})
+print(df)
+📊 What This Code Does
+Quantile Mapping
+
+Ensures the percentile ranks of the new model’s scores match the old model.
+
+Score Comparison Plot
+
+Blue = Old Model
+
+Red = New Model (Uncalibrated)
+
+Green = New Model (Calibrated)
+
+Prints Sample Scores
+
+Shows how the new model’s scores change before & after calibration.
+
+🚀 Next Steps
+If you need regression-based calibration (like Beta Scaling), let me know!
+
+Do you want this applied to your real dataset instead of simulated scores? 
+
+
