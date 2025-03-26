@@ -90,3 +90,163 @@ print(df.head())
 
 
 
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.optimize import minimize
+
+# Generate synthetic fraud detection dataset
+np.random.seed(42)
+n_samples = 5000
+scores = np.random.randint(0, 1000, n_samples)
+probabilities = scores / 999  
+labels = np.random.binomial(1, probabilities)
+
+# Create DataFrame
+df = pd.DataFrame({"score": scores, "label": labels})
+
+# Compute means and variances
+fraud_scores = df[df["label"] == 1]["score"]
+all_scores = df["score"]
+
+mean_fraud = fraud_scores.mean()
+var_fraud = fraud_scores.var()
+var_all = all_scores.var()
+
+# 1️⃣ Variance Ratio Method
+lambda_var = var_all / (var_all + var_fraud)
+
+# 2️⃣ Maximum Likelihood Estimation (MLE)
+def mle_loss(lambda_factor):
+    smoothed_scores = lambda_factor * df["score"] + (1 - lambda_factor) * mean_fraud
+    residuals = df["score"] - smoothed_scores
+    return np.var(residuals)  # Minimize residual variance
+
+lambda_mle = minimize(mle_loss, x0=0.5, bounds=[(0, 1)]).x[0]
+
+# 3️⃣ Bayesian Smoothing with Optimal λ
+df["bayesian_smooth_var"] = lambda_var * df["score"] + (1 - lambda_var) * mean_fraud
+df["bayesian_smooth_mle"] = lambda_mle * df["score"] + (1 - lambda_mle) * mean_fraud
+
+# Display results
+print(f"Optimal Lambda (Variance Method): {lambda_var:.4f}")
+print(f"Optimal Lambda (MLE): {lambda_mle:.4f}")
+
+# 🔷 Visualization 1: Histogram of Original vs. Smoothed Scores
+plt.figure(figsize=(12, 5))
+sns.histplot(df["score"], bins=30, color="blue", label="Original Scores", kde=True, alpha=0.5)
+sns.histplot(df["bayesian_smooth_var"], bins=30, color="green", label="Smoothed (Variance Method)", kde=True, alpha=0.5)
+sns.histplot(df["bayesian_smooth_mle"], bins=30, color="red", label="Smoothed (MLE Method)", kde=True, alpha=0.5)
+plt.legend()
+plt.title("Histogram: Original vs. Bayesian Smoothed Scores")
+plt.xlabel("Score")
+plt.ylabel("Density")
+plt.show()
+
+# 🔷 Visualization 2: Scatter Plot - Original vs. Smoothed Scores
+plt.figure(figsize=(12, 5))
+plt.scatter(df["score"], df["bayesian_smooth_var"], alpha=0.5, label="Variance Method", color="green")
+plt.scatter(df["score"], df["bayesian_smooth_mle"], alpha=0.5, label="MLE Method", color="red")
+plt.plot([0, 1000], [0, 1000], "--", color="black", alpha=0.7, label="Reference Line")
+plt.xlabel("Original Score")
+plt.ylabel("Smoothed Score")
+plt.legend()
+plt.title("Scatter Plot: Score Distribution Before & After Smoothing")
+plt.show()
+
+# 🔷 Visualization 3: Lambda Impact - Smoothed Scores for Different Lambda Values
+lambda_values = np.linspace(0, 1, 10)
+plt.figure(figsize=(12, 5))
+for lam in lambda_values:
+    smoothed_scores = lam * df["score"] + (1 - lam) * mean_fraud
+    sns.kdeplot(smoothed_scores, label=f"λ = {lam:.2f}")
+
+plt.legend()
+plt.title("Effect of Different Lambda Values on Score Smoothing")
+plt.xlabel("Smoothed Score")
+plt.ylabel("Density")
+plt.show()
+
+
+
+
+
+
+
+
+Here's a visualization of different η (eta) methods to compare their effects on score re-weighting. The plots will show:
+
+1️⃣ Original Scores vs. Adjusted Scores
+2️⃣ Score Differences Across Methods
+
+📌 Python Code for Visualization
+python
+Copy
+Edit
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
+# Generate synthetic fraud detection dataset
+np.random.seed(42)
+n_samples = 5000
+scores = np.random.randint(0, 1000, n_samples)
+probabilities = scores / 999  
+labels = np.random.binomial(1, probabilities)
+
+# Create DataFrame
+df = pd.DataFrame({"score": scores, "label": labels})
+
+# Compute score gradient
+gradient = np.gradient(df["score"])
+
+# 1️⃣ Mean Absolute Gradient Method
+eta_mag = 1 / np.mean(np.abs(gradient))
+
+# 2️⃣ Variance Ratio Method
+fraud_scores = df[df["label"] == 1]["score"]
+std_fraud = fraud_scores.std()
+std_all = df["score"].std()
+eta_var = std_fraud / std_all
+
+# 3️⃣ Maximum Likelihood Estimation (MLE)
+def mle_loss(eta_factor):
+    adjusted_scores = df["score"] + eta_factor * gradient
+    return np.var(adjusted_scores - df["score"])  # Minimize variance shift
+
+eta_mle = minimize(mle_loss, x0=0.1, bounds=[(0, 1)]).x[0]
+
+# Apply computed eta values
+df["gradient_scaled_mag"] = df["score"] + eta_mag * gradient
+df["gradient_scaled_var"] = df["score"] + eta_var * gradient
+df["gradient_scaled_mle"] = df["score"] + eta_mle * gradient
+
+# 📊 Plot Original vs. Adjusted Scores
+plt.figure(figsize=(12, 6))
+plt.plot(df["score"], label="Original Score", color="black", alpha=0.6)
+plt.plot(df["gradient_scaled_mag"], label=f"Mean Abs Gradient (η={eta_mag:.4f})", linestyle="--")
+plt.plot(df["gradient_scaled_var"], label=f"Variance-Based (η={eta_var:.4f})", linestyle="-.")
+plt.plot(df["gradient_scaled_mle"], label=f"MLE Optimized (η={eta_mle:.4f})", linestyle="dotted")
+plt.legend()
+plt.title("Comparison of Score Re-Weighting Methods")
+plt.xlabel("Transaction Index")
+plt.ylabel("Adjusted Score")
+plt.show()
+
+# 📊 Plot Score Differences Across Methods
+plt.figure(figsize=(12, 6))
+plt.plot(df["gradient_scaled_mag"] - df["score"], label="Mean Abs Gradient Adjustment", linestyle="--")
+plt.plot(df["gradient_scaled_var"] - df["score"], label="Variance-Based Adjustment", linestyle="-.")
+plt.plot(df["gradient_scaled_mle"] - df["score"], label="MLE Optimized Adjustment", linestyle="dotted")
+plt.legend()
+plt.title("Score Adjustments Across Different η Methods")
+plt.xlabel("Transaction Index")
+plt.ylabel("Score Adjustment")
+plt.show()
+
+
+
+
