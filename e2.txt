@@ -8,6 +8,78 @@ import matplotlib.pyplot as plt
 np.random.seed(42)
 n_samples = 5000
 scores = np.random.randint(0, 1000, n_samples)
+amounts = np.random.exponential(scale=500, size=n_samples)
+probabilities = scores / 999
+labels = np.random.binomial(1, probabilities)
+
+# 🔹 Create DataFrame
+df = pd.DataFrame({"score": scores, "amount": amounts, "label": labels})
+
+# 🔹 Compute Percentiles & Adaptive Scaling Factors
+percentiles = np.percentile(df["score"], np.linspace(0, 100, 20))  # More granularity (20 points)
+scaling_factors = np.linspace(1.05, 1.35, len(percentiles))  # Controlled adaptive increase
+
+# 🔹 Create smooth percentile-based scaling function
+scaling_function = interp1d(percentiles, scaling_factors, kind="cubic", fill_value="extrapolate")
+
+# 🔹 Apply Adaptive Scaling Factor
+df["alpha"] = df["score"].apply(lambda x: scaling_function(x))
+
+# 🔹 Step 1: Controlled Inflation
+df["inflated_score"] = df["score"] * df["alpha"]
+
+# 🔹 Step 2: Quantile-Based Normalization (Ensures shifts follow actual distribution)
+sorted_scores = np.sort(df["score"].values)
+quantiles = np.linspace(0, 1, len(sorted_scores))
+quantile_function = interp1d(sorted_scores, quantiles, kind="linear", fill_value="extrapolate")
+
+df["normalized_score"] = quantile_function(df["inflated_score"]) * 999  # Rescale to [0,999]
+
+# 🔹 Step 3: Apply Soft Logistic Smoothing (Final Stabilization)
+df["final_score"] = 999 * expit((df["normalized_score"] / 999 - 0.5) * 1.1)
+
+# 🔹 Clip values to maintain [0, 999] range
+df["final_score"] = np.clip(df["final_score"], 0, 999)
+
+# 🔹 Visualization: Before vs After Score Shift
+plt.figure(figsize=(10, 5))
+plt.hist(df["score"], bins=30, alpha=0.5, label="Original Scores", color="blue")
+plt.hist(df["final_score"], bins=30, alpha=0.5, label="Final Adjusted Scores", color="red")
+plt.xlabel("Score")
+plt.ylabel("Frequency")
+plt.title("Score Distribution Before & After Adjustment")
+plt.legend()
+plt.show()
+
+# 🔹 Display Impact
+print(df[["score", "alpha", "final_score"]].head(10))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+from scipy.interpolate import interp1d
+from scipy.special import expit
+import matplotlib.pyplot as plt
+
+# 🔹 Generate synthetic fraud detection dataset
+np.random.seed(42)
+n_samples = 5000
+scores = np.random.randint(0, 1000, n_samples)
 amounts = np.random.exponential(scale=500, size=n_samples)  
 probabilities = scores / 999  
 labels = np.random.binomial(1, probabilities)
