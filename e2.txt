@@ -1,3 +1,62 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import QuantileTransformer
+
+# Generate synthetic fraud scores (range 0-999)
+np.random.seed(42)
+n_samples = 5000
+scores = np.random.randint(0, 1000, n_samples)
+
+# Step 1️⃣: Quantile Transformation to Uniform Distribution
+qt = QuantileTransformer(output_distribution="uniform")
+scores_uniform = qt.fit_transform(scores.reshape(-1, 1)).flatten()
+
+# Step 2️⃣: Exponential Scaling (Push scores up while preserving ranking)
+alpha = 1.5  # Adjust for stronger or weaker shift
+scores_transformed = 999 * (scores_uniform ** alpha)
+
+# Step 3️⃣: Ensure scores stay within [0, 999]
+scores_transformed = np.clip(scores_transformed, 0, 999)
+
+# Convert to DataFrame
+df = pd.DataFrame({"original_score": scores, "transformed_score": scores_transformed})
+
+# 🔷 Visualization - Score Shift
+plt.figure(figsize=(12, 6))
+sns.histplot(df["original_score"], bins=30, label="Original Scores", color="blue", kde=True, alpha=0.5)
+sns.histplot(df["transformed_score"], bins=30, label="Shifted Scores", color="red", kde=True, alpha=0.5)
+plt.legend()
+plt.title("Distribution Shift: Original vs. Transformed Scores")
+plt.xlabel("Score")
+plt.ylabel("Density")
+plt.show()
+
+# 🔷 Scatter Plot: Original vs. Shifted Scores
+plt.figure(figsize=(12, 5))
+plt.scatter(df["original_score"], df["transformed_score"], alpha=0.5, label="Quantile+Exponential", color="red")
+plt.plot([0, 1000], [0, 1000], "--", color="black", alpha=0.7, label="Reference Line")
+plt.xlabel("Original Score")
+plt.ylabel("Transformed Score")
+plt.legend()
+plt.title("Quantile-Based Score Shifting: Before vs. After")
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 If your goal is to shift all scores to higher bins, you need a transformation that pushes scores upward while preserving relative ranking and variance balance.
 
 🚀 Key Approach: Non-Linear Score Transformation
