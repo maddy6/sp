@@ -13,6 +13,73 @@ df = pd.DataFrame({
     "label": np.random.binomial(1, 0.1, n_samples)  # Fraud Labels (10% fraud)
 })
 
+# 🔹 Step 1: Compute Statistical Alpha (Data-Driven)
+percentile_90 = np.percentile(df["score"], 90)  # 90th percentile
+percentile_10 = np.percentile(df["score"], 10)  # 10th percentile
+mean_score = df["score"].mean()
+std_score = df["score"].std()
+
+# Compute α dynamically: Controls how much scores are lifted
+alpha = np.log(percentile_90 / percentile_10) / np.log(mean_score / std_score)
+alpha = max(1.1, min(alpha, 2.0))  # Keep α in reasonable range (1.1 to 2.0)
+
+print(f"🔹 Computed Alpha: {alpha:.4f}")
+
+# 🔹 Step 2: Apply Quantile Transformation
+qt = QuantileTransformer(output_distribution="uniform")
+df["score_uniform"] = qt.fit_transform(df[["score"]])  # Maps to [0,1]
+
+# 🔹 Step 3: Exponential Scaling using Dynamic Alpha
+df["shifted_score"] = 999 * (df["score_uniform"] ** alpha)
+
+# 🔹 Step 4: Ensure scores stay within [0, 999]
+df["shifted_score"] = np.clip(df["shifted_score"], 0, 999)
+
+# 🔹 Visualization - Score Shift
+plt.figure(figsize=(12, 6))
+sns.histplot(df["score"], bins=30, label="Original Scores", color="blue", kde=True, alpha=0.5)
+sns.histplot(df["shifted_score"], bins=30, label="Shifted Scores", color="red", kde=True, alpha=0.5)
+plt.legend()
+plt.title("Distribution Shift: Original vs. Transformed Scores")
+plt.xlabel("Score")
+plt.ylabel("Density")
+plt.show()
+
+# 🔹 Scatter Plot: Original vs. Shifted Scores
+plt.figure(figsize=(12, 5))
+plt.scatter(df["score"], df["shifted_score"], alpha=0.5, color="red", label="Shifted Score")
+plt.plot([0, 1000], [0, 1000], "--", color="black", alpha=0.7, label="Reference Line")
+plt.xlabel("Original Score")
+plt.ylabel("Transformed Score")
+plt.legend()
+plt.title("Quantile-Based Score Shifting: Before vs. After")
+plt.show()
+
+# 🔹 Print sample output
+print(df[["score", "shifted_score", "amount", "label"]].head())
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import QuantileTransformer
+
+# 🔹 Generate synthetic dataset (columns: score, amount, label)
+np.random.seed(42)
+n_samples = 5000
+df = pd.DataFrame({
+    "score": np.random.randint(0, 1000, n_samples),  # Scores (0-999)
+    "amount": np.random.exponential(scale=500, size=n_samples),  # Transaction Amounts
+    "label": np.random.binomial(1, 0.1, n_samples)  # Fraud Labels (10% fraud)
+})
+
 # 🔹 Step 1: Quantile Transformation to Uniform Distribution
 qt = QuantileTransformer(output_distribution="uniform")
 df["score_uniform"] = qt.fit_transform(df[["score"]])  # Maps to [0,1]
