@@ -1,0 +1,42 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.calibration import calibration_curve
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+
+# Sample DataFrame
+np.random.seed(42)
+df = pd.DataFrame({
+    'score': np.random.uniform(100, 900, 1000),  # Example fraud scores
+    'fraud_ind': np.random.choice([0, 1], size=1000, p=[0.95, 0.05])  # Binary fraud indicator
+})
+
+# Splitting into train and test
+X_train, X_test, y_train, y_test = train_test_split(df[['score']], df['fraud_ind'], test_size=0.2, random_state=42)
+
+# Logistic Regression Model for Calibration
+log_reg = LogisticRegression()
+log_reg.fit(X_train, y_train)
+
+# Predict fraud probability
+df['calibrated_prob'] = log_reg.predict_proba(df[['score']])[:, 1]
+
+# Visualization
+plt.figure(figsize=(12, 5))
+
+# Before Calibration: Raw Score Distribution
+plt.subplot(1, 2, 1)
+sns.histplot(df, x='score', hue='fraud_ind', bins=30, kde=True, alpha=0.6)
+plt.title('Raw Score Distribution')
+plt.xlabel('Fraud Score')
+
+# After Calibration: Probability Distribution
+plt.subplot(1, 2, 2)
+sns.histplot(df, x='calibrated_prob', hue='fraud_ind', bins=30, kde=True, alpha=0.6)
+plt.title('Calibrated Probability Distribution')
+plt.xlabel('Fraud Probability')
+
+plt.tight_layout()
+plt.show()
