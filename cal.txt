@@ -5,6 +5,7 @@ import seaborn as sns
 from sklearn.calibration import calibration_curve
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 
 # Sample DataFrame
 np.random.seed(42)
@@ -23,6 +24,10 @@ log_reg.fit(X_train, y_train)
 # Predict fraud probability
 df['calibrated_prob'] = log_reg.predict_proba(df[['score']])[:, 1]
 
+# Rescale to 0-999
+scaler = MinMaxScaler(feature_range=(0, 999))
+df['calibrated_score'] = scaler.fit_transform(df[['calibrated_prob']]) 
+
 # Visualization
 plt.figure(figsize=(12, 5))
 
@@ -32,11 +37,11 @@ sns.histplot(df, x='score', hue='fraud_ind', bins=30, kde=True, alpha=0.6)
 plt.title('Raw Score Distribution')
 plt.xlabel('Fraud Score')
 
-# After Calibration: Probability Distribution
+# After Calibration: Rescaled Score Distribution (0-999)
 plt.subplot(1, 2, 2)
-sns.histplot(df, x='calibrated_prob', hue='fraud_ind', bins=30, kde=True, alpha=0.6)
-plt.title('Calibrated Probability Distribution')
-plt.xlabel('Fraud Probability')
+sns.histplot(df, x='calibrated_score', hue='fraud_ind', bins=30, kde=True, alpha=0.6)
+plt.title('Calibrated Score Distribution (0-999)')
+plt.xlabel('Calibrated Fraud Score')
 
 plt.tight_layout()
 plt.show()
