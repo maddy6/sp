@@ -2,6 +2,86 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.special import expit  # Sigmoid function
+from scipy.optimize import minimize
+from sklearn.metrics import log_loss
+
+# Sample DataFrame
+np.random.seed(42)
+df = pd.DataFrame({
+    'score': np.random.uniform(100, 900, 1000),  # Example fraud scores
+    'fraud_ind': np.random.choice([0, 1], size=1000, p=[0.95, 0.05])  # Binary fraud indicator
+})
+
+# Define sigmoid-based calibration function
+def sigmoid_calibration(scores, alpha, beta):
+    """Applies sigmoid transformation to scores."""
+    probabilities = expit(alpha * (scores - beta))  # Sigmoid function
+    return probabilities
+
+# Objective function for optimization
+def optimize_sigmoid(params, scores, labels):
+    """Objective function to minimize log loss between fraud_ind and calibrated scores."""
+    alpha, beta = params
+    calibrated_probs = sigmoid_calibration(scores, alpha, beta)
+    return log_loss(labels, calibrated_probs)
+
+# Initial guesses for alpha and beta
+initial_params = [0.01, np.median(df['score'])]
+
+# Optimize alpha and beta
+result = minimize(optimize_sigmoid, initial_params, args=(df['score'], df['fraud_ind']), method='L-BFGS-B', 
+                  bounds=[(0.001, 0.1), (100, 900)])  # Ensure reasonable bounds
+
+# Extract best parameters
+best_alpha, best_beta = result.x
+print(f"Optimized Alpha: {best_alpha:.5f}, Optimized Beta: {best_beta:.2f}")
+
+# Apply calibrated transformation using optimized values
+df['calibrated_prob'] = sigmoid_calibration(df['score'], best_alpha, best_beta)
+
+# Rescale to 0-999
+df['calibrated_score'] = df['calibrated_prob'] * 999
+
+# Visualization
+plt.figure(figsize=(12, 5))
+
+# Before Calibration: Raw Score Distribution
+plt.subplot(1, 2, 1)
+sns.histplot(df, x='score', hue='fraud_ind', bins=30, kde=True, alpha=0.6)
+plt.title('Raw Fraud Score Distribution')
+plt.xlabel('Fraud Score')
+
+# After Calibration: Optimized Sigmoid Transformed Score Distribution (0-999)
+plt.subplot(1, 2, 2)
+sns.histplot(df, x='calibrated_score', hue='fraud_ind', bins=30, kde=True, alpha=0.6)
+plt.title('Optimized Calibrated Score Distribution (0-999)')
+plt.xlabel('Calibrated Fraud Score')
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.calibration import calibration_curve
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
