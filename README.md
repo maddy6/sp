@@ -1,8 +1,4 @@
-The 2024 economic outlook for the United States is being defined by modest recovery in growth, gradual monetary easing, and steady disinflation.
 
-U.S. economy is expected to expand at a moderate 2.0–2.3% pace in 2024, as measured by real GDP, with forecasts indicating a soft landing scenario. This reflects a rebound from the 2023 growth slowdown and aligns with a return to trend growth near the longer-term average of 1.8%.
-
-Considering the major components of GDP, real consumer spending is expected to rise approximately 2.5% in 2024, assuming wage growth of 4–5%, inflation moderating to 2–2.5%, and continued drawdown of pandemic-era savings. Government spending, still comprising about 17–18% of GDP, is likely to be a neutral to modest positive contributor in 2024, with infrastructure outlays continuing. Business investment is projected to grow 4% in 2024, with steady investment in technology and equipment. However, softness in commercial real estate may persist. Residential investment is expected to stabilize in 2024 as mortgage rates gradually ease, improving affordability. This could bring housing’s share of GDP back toward its historical average. Net foreign trade is expected to have a minimal drag on 2024 GDP, as global demand recovers and the dollar stabilizes.
 
 
 
