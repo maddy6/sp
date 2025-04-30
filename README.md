@@ -1,3 +1,126 @@
+Great, thanks for sharing your initial documentation on Bayesian target encoding. Based on your WOE documentation format, here's the replicated structure for Bayesian Risk Scores in the same style:
+
+
+---
+
+1. Executive Summary
+
+Bayesian Risk Score Calculation
+
+Bayesian encoded values are derived analytically using both global and category-specific historical data distributions.
+
+All categories are treated uniformly under the same smoothing-based Bayesian formulation.
+
+Encoded risk score values fall within a bounded range influenced by the category mean and global mean, thereby offering calibrated risk estimates.
+
+
+Usage in Model
+
+Bayesian scores replace original categorical variables in model development and are treated as independent continuous numeric variables.
+
+No further clusters or manual groupings were created for modeling.
+
+
+Score Update for Model in Production
+
+The encoded Bayesian risk scores are recalculated using the latest available category-wise performance data.
+
+A BAU process has been set up to review fraud performance and drift on a monthly basis. If the encoded risk for certain categories no longer aligns with observed trends (e.g., increased fraud in previously low-risk categories), the shrinkage factor or smoothing may be recalibrated.
+
+Full recalibration of Bayesian encoding parameters is performed semi-annually as part of model maintenance, with monthly monitoring for score drift or deterioration.
+
+
+
+
+---
+
+2. Introduction
+
+2.1 Objective
+
+To convert categorical variables into meaningful numeric scores that capture the fraud risk associated with each category, reducing noise from sparse levels and avoiding overfitting.
+
+Bayesian risk scoring is an alternate encoding strategy similar to WOE that balances local (category-level) performance with global behavior.
+
+2.2 List of Categorical Variables for Bayesian Encoding
+
+Below is the list of categorical variables for which Bayesian encoding was performed in the CP/CNP fraud models:
+
+
+---
+
+3. Bayesian Risk Score Calculation Process
+
+A 4-step process was used to generate the Bayesian encoded values:
+
+1. Data Aggregation
+
+Summarize the data at the category level (e.g., for each MCC), collecting:
+
+Total Transactions
+
+Total Frauds
+
+Fraud Rate = Total Frauds / Total Transactions
+
+
+
+
+2. Bayesian Formula Application
+
+For each category:
+
+
+
+
+\text{Encoded Value} = \mu_{\text{global}} + (\mu_{\text{category}} - \mu_{\text{global}}) \times \text{Shrinkage Factor}
+
+- \mu_{\text{global}} = Global average fraud rate
+ - \mu_{\text{category}} = Average fraud rate within category
+ - Shrinkage Factor = \frac{1}{1 + \exp(-(n - \text{min_samples_leaf}) / \text{smoothing})}
+
+3. Smoothing & Shrinkage
+
+This step ensures that rare categories (with low transaction volumes) are pulled closer to the global mean to prevent overfitting.
+
+The smoothing hyperparameter is tuned based on historical fraud distributions.
+
+
+
+4. Default Handling
+
+For categories not present in development data but encountered in production, the encoded value defaults to the global fraud rate or medium-risk category value based on business justification.
+
+
+
+
+
+---
+
+4. Usage in CRS ML Model
+
+Bayesian encoded variables directly replace original categorical fields during model training.
+
+They are treated as independent continuous numeric features.
+
+No interaction terms or grouping were done unless mentioned specifically under modeling interactions.
+
+Variable importance and impact on model predictions were analyzed and are included in supporting documentation.
+
+
+
+---
+
+Would you like me to provide this as a formatted Word or PDF document as well?
+
+
+
+
+
+
+
+
+
 
 
 
