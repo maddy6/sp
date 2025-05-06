@@ -1,3 +1,189 @@
+Here's a technical 2-liner description for each fraud detection feature based on the formulas:
+
+1. high_dollar_velocity_3hr:
+Ratio of high-value (≥300) txn count in 3hr to total txn count in 3hr. Captures rapid bursts of high-value activity.
+
+
+2. high_dollar_ratio_24hr:
+Ratio of high-value txn amount to total txn amount in 24hr. Highlights dominance of large-value txns in a short time.
+
+
+3. exp_date_mismatch_ratio_7days:
+Count of expiration date mismatches over total txn count in 7 days. Detects frequent CVV/expiry mismatches often tied to synthetic fraud.
+
+
+4. zero_auth_mismatch_ratio_24hr:
+Ratio of zero-auth mismatch count to zero-auth txn count in 24hr. Flags abnormal patterns in pre-auth probes.
+
+
+5. foreign_high_dollar_ratio:
+Ratio of high-value foreign txn amount to total txn amount in 24hr. Indicates risky cross-border high-value txns.
+
+
+6. weekend_high_dollar_ratio:
+Ratio of weekend high-value txn amount to total weekend txn amount in 24hr. Targets off-hour fraud attempts when oversight is low.
+
+
+7. nighttime_high_dollar_velocity:
+High-value txn velocity during 10pm–6am, normalized by txn count. Tracks abnormal night-time high-value behavior.
+
+
+8. high_dollar_swipe_ratio:
+Proportion of swipe high-value txn amount to total amount. Flags high-value in-person swipes that deviate from profile.
+
+
+9. ratio_avg_swipe_amt_24hr_by_60days:
+Average swipe txn amount in 24hr normalized by 60-day average. Highlights short-term spending anomalies.
+
+
+10. transaction_acceleration_24hr:
+Ratio of 24hr txn amount to 48hr trailing window. Quantifies sharp spending increases.
+
+
+11. avmismatch_ratio_30days:
+Count of AV (address verification) mismatches to total txns over 30 days. Flags consistent identity verification failures.
+
+
+12. zero_auth_high_dollar_ratio:
+Ratio of high-value zero-auth txn amount to total zero-auth txn amount. Targets abnormal testing behaviors with large amounts.
+
+
+13. high_val_tx_velocity:
+Ratio of high-value txns to txn count at the same merchant in 24hr. Detects merchant-specific fraud bursts.
+
+
+14. fraud_trx_drift:
+Ratio of fraudulent txn amount to average txn amount at merchant over 60 days. Captures fraud drift toward certain merchants.
+
+
+15. cnt_same_mid_termid_24hr:
+Count of txns at same merchant-terminal combo in 24hr. Detects excessive usage of specific terminal for fraud.
+
+
+16. cnt_for_swipe_24hr:
+Count of swiped txns in 24hr window. Useful for card-present fraud detection.
+
+
+17. velocity_merchant_risk:
+Velocity feature capturing merchant-level txn acceleration. Quantifies merchant risk based on usage pattern deviation.
+
+
+18. cnt_same_merc_id_24hr:
+Count of txns at same merchant ID in 24hr. Flags repeated usage of a merchant which may be fraud hotspot.
+
+
+19. cnt_same_merc_id_30min:
+Same as above but in 30min interval. Captures short-burst fraud attempts.
+
+
+20. hot_mer_mcc_bayesian_encoded_1/11/21/24hr:
+Bayesian encoding of merchant MCC risk based on target leakage in various time windows. Encodes historical MCC fraud likelihood in rolling fashion.
+
+
+
+Let me know if you want this exported to a table or file format for presentation.
+
+
+
+
+
+
+
+
+
+Here is the feature-wise technical description with exact formula context from your image:
+
+
+---
+
+1. high_dollar_fraud_mer_ratio
+Formula: (amt_same_mid_termid_30min) / (amt_same_mid_termid_24hr + 1)
+Description: Ratio of high-value txn amount within 30min to total 24hr amount at the same MID-Terminal. Detects rapid high-value fraud bursts.
+
+
+2. fraud_zero_auth_ratio
+Formula: (cnt_za_ris_24hr * cnt_za_mis_7days) / (tot_zero_auth_cnt_24hr + 1)
+Description: Product of recent risky zero-auth txn count and 7-day mismatch count, normalized by total 24hr zero-auth volume. Captures anomaly in zero-auth behavior.
+
+
+3. high_risk_mer8_name_shift
+Formula: new_merch_ind * hct_mer_mcc_bayesian_encoded_8
+Description: Binary merchant shift indicator weighted by MCC Bayesian risk. Highlights movement toward historically risky MCCs.
+
+
+4. swipe_anomaly_score
+Formula: abs(amt_swipe_tdy - avg_swipe_amt_24hr) / (avg_swipe_amt_60days + epsilon1)
+Description: Absolute swipe txn deviation from 24hr avg, scaled by long-term mean. Detects sudden abnormal swipe patterns.
+
+
+5. time_since_last_high_dollar
+Formula: amt_ge500_ind * time_since_last_trxn
+Description: High-value txn flag weighted by time since last txn. Flags spacing between large amounts.
+
+
+6. mcc_shift_30d_index
+Formula: abs(new_mcc_ind - avg_same_mcc_amt_30days)
+Description: Deviation of MCC switch from 30-day avg. Highlights abrupt merchant pattern changes.
+
+
+7. mcc_shift_24hr_index
+Formula: abs(new_mcc_ind - avg_same_mcc_amt_24hr)
+Description: Captures short-term MCC pattern deviation. Flags recent merchant usage anomalies.
+
+
+8. auth_decline_ratio
+Formula: cnt_same_merc_id_6hr / (cnt_same_merc_id_6hr + 1)
+Description: Simple ratio capturing dense merchant hits post-auth decline. Signifies retry patterns.
+
+
+9. transaction_amt_drift
+Formula: (amt_swipe_tdy * avg_trxn_amt_30days) / (avg_trxn_amt_60days + epsilon1)
+Description: Recent swipe txn amount scaled by 30d avg, normalized by 60d avg. Detects shifts in txn amount profiles.
+
+
+10. high_density_swipe_score
+Formula: cnt_swipe_24hr / (cnt_swipe_60days + 1)
+Description: Swipe txn density score across timeframes. Flags bursts of card-present activity.
+
+
+11. zero_auth_high_risk_mer_score
+Formula: zero_auth_diff_mer_nm_ind * hct_mer_mcc_bayesian_encoded_1
+Description: Flags zero-auth attempts at new merchants with MCC-based risk weighting.
+
+
+12. mcc_high_dollar_ratio
+Formula: (amt_5310_5411_24hr * amt_ge500_ind) / (tot_amt_24hr + 1)
+Description: Proportion of high-value txns at MCC 5310/5411 (grocery/retail) to total. Detects large-value retail spikes.
+
+
+13. ratio_high_dollar_cnp_24hr
+Formula: (amt_cnp_24hr * amt_ge500_ind) / (tot_amt_24hr + 1)
+Description: High-value card-not-present txn ratio over total 24hr value. Flags e-comm fraud risk.
+
+
+14. multi_window_zero_auth_velocity
+Formula: tot_zero_auth_cnt_24hr * tot_zero_auth_cnt_48hr * tot_zero_auth_cnt_72hr
+Description: Velocity of zero-auth transactions across 3 time windows. Captures bot-like probing.
+
+
+15. trxn_hour_foreign_amt_ge500
+Formula: trxn_hour * foreign_ind * amt_ge500_ind
+Description: Time-weighted risk score for high-value foreign txns. Flags suspicious cross-border behavior.
+
+
+
+
+---
+
+Would you like this as a structured Excel or PDF for documentation?
+
+
+
+
+
+
+
+
 import os
 import xlsxwriter
 
