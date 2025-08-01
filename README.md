@@ -1,3 +1,177 @@
+💡 PoC Title:
+
+“One-Touch Onboarding: AI-Powered Universal KYC & Client Activation Hub”
+
+
+---
+
+🧠 The Problem:
+
+In Citibank’s vast network — across retail, corporate, TTS, wealth, and FX clients — onboarding is:
+
+Slow (2–30 days for corporates, HNWIs)
+
+Manual & fragmented across regions (different KYC requirements, regulatory forms)
+
+Expensive due to legal reviews, document collection, multiple back-and-forths
+
+Non-intelligent — forms, policies, and docs are static and generic
+
+
+
+---
+
+🚀 The Vision:
+
+Build a Universal Onboarding Platform powered by GenAI + NLP + Computer Vision, which makes client onboarding:
+
+Instant, adaptive, and intelligent
+
+Compliant with multi-country regulatory requirements
+
+Integrated across Citibank’s global business verticals
+
+Enhanced by a GenAI "Onboarding Copilot" that guides clients & RMs in real time
+
+
+
+---
+
+🔧 Key Components:
+
+Module	Function
+
+📄 AI Document Intelligence	Auto-extracts fields from 100+ types of global ID, business docs (PDF, image)
+🌍 Multi-Jurisdiction Rules Engine	Maps AML/KYC rules across geographies (India, UK, Singapore, etc.)
+🤖 AI Form Generator	Dynamically creates onboarding forms based on entity type + geography
+💬 GenAI Onboarding Copilot	Chatbot that explains forms, answers client queries, and auto-fills data
+🧠 Entity Risk Profiling AI	Builds risk profile of client based on docs, website, news, transaction behavior
+🔐 API-First Layer	Plugs into TTS, wealth, lending, and FX platforms internally
+
+
+
+---
+
+🧱 Technical Enablers:
+
+LLMs (GPT-4, Claude, or Llama) for language understanding + explanation
+
+OCR/Computer Vision: Amazon Textract, Google Document AI for doc parsing
+
+LangChain / RAG: To pull policy clauses from internal onboarding guides
+
+Rule Engine (Drools / custom) for compliance + jurisdiction logic
+
+CI/CD layer to push updated rules dynamically per country changes
+
+
+
+---
+
+🧪 Example Scenarios:
+
+> Corporate Client in India: Uploads ROC + PAN + GST
+System:
+
+
+
+Extracts all data points
+
+Pre-fills global forms for 3 business lines (TTS, FX, Lending)
+
+Detects incomplete information (e.g., missing shareholding pattern)
+
+AI Copilot says: “Please attach ownership declaration — required in India per RBI”
+
+
+> HNI in Singapore: Uploads passport & utility bill
+System:
+
+
+
+Auto-verifies documents
+
+Runs background screening
+
+Completes onboarding in under 15 minutes
+
+
+
+---
+
+📊 Business Impact:
+
+Metric	Before (Manual)	After (AI-Powered)
+
+Retail onboarding time	24–72 hrs	< 30 minutes
+Corporate onboarding	10–30 days	1–2 days
+Manual touchpoints	10+	2–3
+Cost per onboarding	$200–$500	$50–$100
+Drop-off / churn during onboarding	20%	< 5%
+
+
+
+---
+
+🏦 Strategic Wins for Citibank:
+
+First bank to offer “Onboarding-as-a-Service” to clients and partner fintechs
+
+Accelerates growth in SME, startup, and NRI markets
+
+Deepens cross-sell through unified KYC infrastructure
+
+Enables real-time KYC refreshes instead of annual audits
+
+
+
+---
+
+🔄 Future Ideas:
+
+e-Sign + e-Stamp integrations per state/country
+
+Voice onboarding for phone-based clients or rural India
+
+Pre-filled onboarding for returning clients via consented data sharing
+
+Audit trail + explainability reports for regulators
+
+
+
+---
+
+Branding Suggestions:
+
+CitiOne
+
+CitiLaunch Hub
+
+KYC360
+
+
+
+---
+
+Let me know if you want the technical architecture, workflow wireframes, or a pitch slide for this.
+
+Shall we move to PoC #6 — maybe something around cross-border instant B2B payments, GenAI-powered internal knowledge agents, or AI-driven green finance scoring?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 8. Intelligent Servicing Agent for Operations Decision Bottlenecks
 Domain: Ops / Strategy / Shared Services
 Problem: Operational escalations (loan exceptions, wire rejections, treasury ops) pile up in queues waiting for human action.
