@@ -1,3 +1,95 @@
+Here’s your PoC #16: Smart AI Contracts Validator transformed into the exact format shown in your image, tailored for the Citi Ignite Innovation Program 2025 IDEA PROPOSAL slide:
+
+
+---
+
+One-Touch Contracts Validator for Treasury & FX (PoC #16)
+
+An enterprise-grade GenAI platform to auto-validate, summarize, and de-risk treasury & FX contracts — accelerating legal reviews and reducing onboarding risk.
+
+
+---
+
+PROBLEM STATEMENT
+
+Treasury & FX contracts are long (50–300+ pages), jurisdiction-dependent, and require manual review by legal and compliance teams.
+
+Current process takes 6–10 hours per contract, increasing operational costs and legal risk.
+
+Errors in clause validation or version control can cause regulatory breaches, revenue loss, or client dissatisfaction.
+
+
+
+---
+
+SOLUTION
+
+A smart, fine-tuned platform using LLMs to auto-analyze FX contracts.
+
+AI module extracts key clauses (termination, settlement, margining, etc.)
+
+Automatically compares with internal templates & regional checklists.
+
+Identifies risks, missing clauses, ambiguous language, or violations.
+
+Generates plain-English summaries with 360° audit trail.
+
+
+
+---
+
+ESTIMATED IMPACT
+
+🕒 Review time reduced from 10 hours to 1–2 hours per contract
+
+⚖️ Risk reduction: Early detection of 90%+ legal gaps or missing clauses
+
+💸 Legal cost savings of $200–$500 per contract
+
+🧾 Faster onboarding of TTS clients across regions — from weeks to days
+
+✅ Improved governance with full audit traceability & standardization
+
+
+
+---
+
+IMPLEMENTATION PLAN
+
+Fine-tune models on historical Citibank contracts and templates
+
+Build clause extractor and comparator using NLP + rule-based risk engine
+
+Train on multi-jurisdiction contract norms (e.g., UK PRA, India FEMA)
+
+Integrate output to onboarding/legal approval workflows
+
+Develop modular APIs to connect with DocuSign, contract systems, and dashboards
+
+
+
+---
+
+Let me know if you'd like this exported into a PPT slide, or if you want PoC #14 or #15 converted into this same format as well.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 🇺🇸 One-Touch Onboarding (USA Edition)
 
