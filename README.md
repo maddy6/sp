@@ -1,3 +1,88 @@
+
+Perfect — here's a clean and simple answer with examples for all 3 transaction types (01, 02, 03) that you used in Question 1, which is asking for:
+
+> 🔹 Examples for all the 3 transaction types included (01 - Regular Purchase, 02 - Cash Advance, 03 - Mail Order)
+🔹 Plus justification for why these were used in the model development.
+
+
+
+
+---
+
+✅ Answer to Question 1 (with Simple Examples)
+
+We used transaction types 01, 02, and 03 in our model development because they cover a wide range of customer behavior across both Card Present (CP) and Card Not Present (CNP) environments.
+
+
+---
+
+🔸 01 – Regular Purchase
+
+Example (Card Present):
+Customer swipes their card at a supermarket checkout.
+
+Example (Card Not Present):
+Customer pays for a hotel booking online using their card.
+
+Why we used it:
+Regular Purchase transactions are the most frequent and include both CP and CNP, depending on the channel used. It helps the model learn general spending behavior.
+
+
+
+---
+
+🔸 02 – Cash Advance
+
+Example (Card Present):
+Customer uses their credit card at an ATM to withdraw ₹5,000.
+
+Example (Card Not Present):
+Customer initiates a cash withdrawal through a mobile banking app or wallet, where the card was not physically used.
+
+Why we used it:
+Cash advance transactions indicate risky or urgent financial behavior. We included both CP and CNP variants to help the model detect such patterns across different channels.
+
+
+
+---
+
+🔸 03 – Mail Order
+
+Example (Card Not Present):
+Customer calls a store and provides card details over the phone to buy a product.
+
+Example (Treated as Card Present):
+In rare cases, merchants manually enter card info at a physical POS terminal for mail orders, making it similar to CP behavior.
+
+Why we used it:
+Mail order transactions are classic CNP cases, often linked with fraud risk. We included these to improve the model’s accuracy in identifying non-face-to-face transactions.
+
+
+
+---
+
+🧠 Summary Justification
+
+> These three transaction types were selected to ensure our model is trained on a diverse, real-world mix of CP and CNP behaviors.
+We did not rely only on the transaction type code but also used additional fields (like channel, terminal ID, location, etc.) to correctly classify each transaction for model training.
+
+
+
+
+---
+
+Let me know if you'd like this formatted into an email reply or a slide summary!
+
+
+
+
+
+
+
+
+
+
+
 Got it now – thank you for the clarification.
 
 You're being asked to justify:
