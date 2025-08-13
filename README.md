@@ -1,3 +1,27 @@
+import zipfile
+import os
+
+# Path to the folder you want to zip
+folder_path = "/path/to/your/folder"
+zip_path = "/path/to/save/output.zip"
+
+# Create a zip file
+with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            # Write the file into the zip with a relative path
+            zipf.write(file_path, os.path.relpath(file_path, folder_path))
+
+print(f"Zipped folder saved to: {zip_path}")
+
+
+
+
+
+
+
+
 
 Perfect — here's a clean and simple answer with examples for all 3 transaction types (01, 02, 03) that you used in Question 1, which is asking for:
 
