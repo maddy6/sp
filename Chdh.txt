@@ -1,0 +1,130 @@
+You’re right—here’s the revised 3-slide set with an explicit Objective on Slide 1, matching your CompliAI reference style.
+
+
+---
+
+Slide 1 | Background & Process Inefficiencies
+
+Title: AI for Customer Verification in Credit Card Fraud Detection
+
+Objective: Rapidly and accurately verify genuine customers on flagged card transactions to reduce false declines, speed approvals, and lower fraud losses—without adding friction.
+
+Background
+
+Card fraud controls are tuned conservatively → many legit transactions get flagged.
+
+Verification today relies on agent phone calls and manual judgement.
+
+Voice + text signals during calls carry rich cues that can separate genuine vs. impostor behavior.
+
+
+Process Inefficiencies
+
+High false positives: Legit customers declined → repeat calls, escalations, churn.
+
+Slow, subjective reviews: Inconsistent across agents/time; long handle times.
+
+Operational load: Large volumes of low-risk cases consume capacity; true fraud may age.
+
+Limited feedback loop: Hard to learn quickly from new fraud tactics; thresholds static.
+
+
+
+---
+
+Slide 2 | Our Solution – AI-Powered Verification Framework
+
+Data Collection
+
+Labeled call recordings & IVR logs (genuine vs. fraud outcome).
+
+Speech-to-text transcripts, chat/email transcripts, CRM case notes.
+
+Transaction context: merchant, MCC, device/IP, geo, velocity, historical customer behavior.
+
+
+Feature Engineering
+
+Acoustic: MFCCs, pitch, jitter, energy, speech rate, pauses/hesitation, voice quality.
+
+Lexical/Semantic: intent entities, PII consistency, evasive phrases, claim–fact mismatches.
+
+Behavioral: interrupt patterns, answer latency, cross-channel history consistency.
+
+Risk context: device fingerprint risk, geo mismatch, prior decline streaks.
+
+
+Advanced ML Models
+
+Audio models: wav2vec2/BYOL-A for embeddings; LSTM/Transformer classifiers.
+
+Text models: Transformer (e.g., RoBERTa) on transcripts for semantic cues & sentiment.
+
+Structured: Gradient boosting/XGBoost on transaction + history features.
+
+Ensemble & calibration: Stacked model outputs → real-time confidence score with explainability (SHAP).
+
+
+Fraud Ops Oversight Hub
+
+Case triage UI: consolidated audio/text/structured evidence, top reasons, score thresholds.
+
+One-click actions: approve, step-up auth (OTP/biometric), or escalate.
+
+
+Adaptive Control Layer
+
+Continuous learning from agent outcomes; auto-tunes thresholds by segment/region.
+
+Policy guardrails, audit logs, and performance monitoring (drift, bias, SLA alerts).
+
+Seamless API integration with existing fraud engine & CRM.
+
+
+
+---
+
+Slide 3 | Impact and the Way Forward
+
+Reduced Losses
+
+15–25% reduction in fraud exposure via earlier detection of social-engineering/first-party patterns.
+
+30–50% drop in false declines for targeted segments → fewer abandoned transactions.
+
+
+Operational Efficiency
+
+50–60% fewer manual verifications on low-risk cases; faster AHT on escalations.
+
+Saves hundreds of FTE hours annually; focusses analysts on complex cases.
+
+
+Reputation & Trust
+
+Faster, fairer decisions → higher CSAT/NPS; transparent, explainable reviews.
+
+Demonstrates strong customer protection without unnecessary friction.
+
+
+Scalability
+
+Extends to debit, BNPL, wallets, and account-takeover verification.
+
+Works across geographies/regulatory regimes; plugs into existing contact-center stack.
+
+
+Future Scope
+
+Multimodal step-up: passive voice biometrics + behavioral biometrics in real time.
+
+Agent co-pilot: live guidance & suggested probes during calls.
+
+Proactive analytics: emerging scam pattern detection; segment-wise threshold optimization.
+
+
+
+---
+
+If you want, I can condense each section into short, icon-friendly bullets for direct copy into your PPT layout.
+
