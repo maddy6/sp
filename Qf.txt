@@ -1,0 +1,408 @@
+
+Great — I re-checked the entire conversation and pulled together every intermediate table / CTE and the logic you and I worked through, from HNJ_BASE_TMP1 all the way to TAB15A. Below is a single, compact flow chart (text/ASCII) plus a clear, numbered step-by-step explanation (what each node does, important joins/keys, new columns produced, and WHY).
+
+If you want an image version after this, I can make one — but first the full textual map so you can verify.
+
+
+---
+
+Simple ASCII flowchart (full end-to-end)
+
+ (candidate base, cand_stage, req tables, location dim, position dim, job requisition, MAX_PERIOD, MSMG_BASE, WFP_APJ..., other ref tables)
+    │
+    ▼
+[ latest_stage ] (subquery: ROW_NUMBER() OVER PARTITION BY CANDIDATE_ID ORDER BY UPDATED_ON DESC -> rn=1)
+    │
+    ▼
+[ HNJ_BASE_TMP1 ] <- join base A + latest_stage C + position B + location D + cur_pos_wrkr_typ E
+    (adds LAST_RECRUITING_STAGE_FILTER flag)
+    │
+    ▼
+[ HNJ_BASE_TMP2 ] (fill missing start periods/dates via CASE)
+    (compute START_PERIOD, CANDIDATE_START_DATE)
+    │
+    ▼
+[ HNJ_BASE_TMP3 ] (filter to advanced-stage, active candidates)
+    (WHERE LAST_RECRUITING_STAGE_FILTER=1 AND CANDIDATE_STATUS_FILTER=1)
+    │
+    ├────────────────────────────────────────────┐
+    │ │
+    ▼ ▼
+[J O B _ R E Q U I S I T I O N path ] [W D / M D REQ / TRANSF mapping]
+ (JOB_REQUISITION table + lookups) (WD_REQ -> WD_REQ_A -> WD_TRANSF_REQ / MD_TRANSF_REQ)
+    │ │
+    ▼ ▼
+[ ranked_reqs ] (REGEXP_SUBSTR(COST_CENTER) -> REQ_ID,GOC_ID;
+                  CASE map job-levels; region grouping;
+                  ROW_NUMBER() OVER (PARTITION BY REQ_ID ORDER BY REQUEST_COMPLETED_DATE DESC) AS rn)
+    │ │
+    ▼ ▼
+[ ranked_reqs (rn=1) ] [ WD_REQ_A / WD_TRANSF_REQ / MD_TRANSF_REQ ]
+(clean latest requisition per REQ_ID) (map OT_SEGMENT, tech/data-transformation flags)
+    └────────────┬──────────────────────────────┘
+                 │ (these are joined into)
+                 ▼
+             [ HNJ_BASE ] (final HNJ_BASE after joining HNJ_BASE_TMP3 with ranked_reqs & filtering by MAX_PERIOD.COB_DT_MAX)
+                 │
+                 ▼
+           [ HNJ_BASE_MS ] (HNJ_BASE LEFT JOIN MD_TRANSF_REQ/REQ_CAMPUS_FLAG)
+                 │
+                 ▼
+               [ TAB14 ] -- from HNJ_BASE_MS
+ (SELECT ... WHERE INTERNAL='Yes'; ROW_NUMBER() OVER(PARTITION BY EMPLOYEE_ID ORDER BY CANDIDATE_START_DATE DESC) AS RN)
+                 │
+                 ▼
+               [ TAB14A ] -- join to existing HEADCOUNT / TAB8 to get *_OLD values
+ (LEFT JOIN TAB8 ON EMPLOYEE_ID = GEID ; bring in JOB_CD_OLD, LV_ID_OLD etc; WHERE RN=1)
+                 │
+                 ▼
+         [ TAB14A1 / REHIRE LOOKUP ] (historical GEID list or headcount set used to detect rehires)
+                 │
+                 ▼
+               [ TAB15 ] -- compute INT_RIF_FLAG
+ (LEFT JOIN TAB14A1 ON EMPLOYEE_ID = GEID ; INT_RIF_FLAG = CASE WHEN EMPLOYEE_ID = GEID THEN 0 ELSE 1 END)
+                 │
+                 ▼
+              [ TAB15A ] -- final future-move dataset
+ (SELECT current + old fields + MIN/MAX + TABLE_NAME = 'TAB15A' FROM TAB15)
+                 │
+                 ▼
+           FINAL: dataset ready for dashboards / exports
+
+
+---
+
+Step-by-step details — what each step actually does and why
+
+> I list node name, inputs, what is computed/added, key joins, and purpose / why.
+
+
+
+1) latest_stage (subquery)
+
+Inputs: Candidate-stage table (many rows per candidate).
+
+What: ROW_NUMBER() OVER (PARTITION BY CANDIDATE_ID ORDER BY UPDATED_ON DESC) -> pick latest stage row per candidate (rn = 1).
+
+Why: You must join only a candidate’s latest recruiting stage — avoids duplicates and wrong flags.
+
+
+
+---
+
+2) HNJ_BASE_TMP1
+
+Inputs: Base candidate table A, latest_stage (C), position table B, location D, and worker-type base E.
+
+Key joins:
+
+A.CANDIDATE_ID = C.CANDIDATE_ID
+
+A.REQ_ID = B.REQ_ID
+
+A.LOC_KEY = D.LOC_KEY (inferred)
+
+A.REQ_ID = E.CUR_REQ_ID
+
+
+Adds / computes:
+
+Brings LAST_RECRUITING_STAGE, CANDIDATE_STATUS, UPDATED_ON, city/country, position worker type.
+
+FLAG: LAST_RECRUITING_STAGE_FILTER — CASE WHEN LAST_RECRUITING_STAGE IN ('Offer', 'Employment Agreement', 'Background Check', 'Ready for Hire') THEN 1 ELSE 0 END
+
+
+Why: Build a single enriched base row per candidate with stage + job + location attributes.
+
+
+
+---
+
+3) HNJ_BASE_TMP2
+
+Inputs: HNJ_BASE_TMP1
+
+What: Fill missing start-period/start-date fields for candidates in advanced stages.
+
+Computes:
+
+START_PERIOD = CASE WHEN START_PERIOD_TMP IS NULL AND LAST_RECRUITING_STAGE_FILTER=1 AND CANDIDATE_STATUS_FILTER=1 THEN START_PERIOD_TMP_END ELSE START_PERIOD_TMP END
+
+CANDIDATE_START_DATE = CASE WHEN CANDIDATE_START_DATE_TMP IS NULL AND LAST_RECRUITING_STAGE_FILTER=1 AND CANDIDATE_STATUS_FILTER=1 THEN MAX_PERIOD_END WHEN CANDIDATE_START_DATE_TMP IS NOT NULL THEN CANDIDATE_START_DATE_TMP END
+
+
+Why: ATS data is often incomplete — for late-stage candidates we infer expected start periods and dates so reporting can include them.
+
+
+
+---
+
+4) HNJ_BASE_TMP3
+
+Inputs: HNJ_BASE_TMP2
+
+What: SELECT ... FROM HNJ_BASE_TMP2 WHERE LAST_RECRUITING_STAGE_FILTER = 1 AND CANDIDATE_STATUS_FILTER = 1
+
+Why: Narrow to only advanced, active candidates — these are the “future hires” you want to track.
+
+
+
+---
+
+5) ranked_reqs (job requisition cleaning)
+
+Inputs: JOB_REQUISITION table + lookup tables (WFP_APJ..., etc.)
+
+What it does:
+
+REGEXP_SUBSTR(COST_CENTER, '[^,]+',1,1) -> REQ_ID
+
+REGEXP_SUBSTR(COST_CENTER, '[^,]+',1,2) -> GOC_ID
+
+Standardizes job-levels: CASE WHEN JOB_LEVEL IN (...) THEN 'A03' ...
+
+Region grouping via CASE WHEN LOCATION_HIERARCHY_2D_DESC = '... - JPN' THEN 'APAC' ...
+
+Deduplicate: ROW_NUMBER() OVER (PARTITION BY REQ_ID ORDER BY REQUEST_COMPLETED_DATE DESC) AS RN
+
+
+Output: ranked_reqs where RN=1 -> latest canonical requisition per REQ_ID.
+
+Why: Requisition data can have multiple rows per REQ_ID; you want the single, latest record for enrichment.
+
+
+
+---
+
+6) MAX_PERIOD (lookup)
+
+Inputs: Some calendar/period table.
+
+Key value used: COB_DT_MAX
+
+Why: Reporting cutoff — used to keep only candidates with start dates up to current reporting period.
+
+
+
+---
+
+7) HNJ_BASE (final join/filter step)
+
+Inputs: HNJ_BASE_TMP3 (future/advanced candidates) + ranked_reqs (latest requisitions) + MAX_PERIOD
+
+What: join on REQ_ID/other keys to enrich candidates with req-level normalized fields, then WHERE CANDIDATE_START_DATE <= COB_DT_MAX
+
+Why: Produce final base HNJ_BASE of future hires that are within reporting period and have canonical requisition info.
+
+
+
+---
+
+8) WD_REQ_A (separate requisition path)
+
+Inputs: WD_REQ (raw req table) + MSMG_BASE (org hierarchy mapping)
+
+What: SELECT T1.*, T2.OT_BUSINESS_GROUPS_DETAIL, T2.BRC_LOD, T2.LV_ID, T2.LV_NM FROM WD_REQ T1 LEFT JOIN MSMG_BASE T2 ON T1.GOC_ID = T2.GOC_ID
+
+Why: Enrich reqs with org group/hierarchy attributes. This is a supporting dataset used in mapping/transformation steps.
+
+
+
+---
+
+9) WD_TRANSF_REQ / MD_TRANSF_REQ (transformation mapping)
+
+Inputs: WD_REQ_A or WD_REQ_LO_BASE + RC flags + node ids
+
+What: Complex CASE/COALESCE logic to classify OT_SEGMENT (Not Applicable / EM BAU / EM Transformation) based on:
+
+substring of OT_BUSINESS_GROUPS_DETAIL (SUBSTR(...,1,4)='Tech')
+
+MNG_SEC_ID_NODE6 or NODE7 values
+
+rc_b_flag values (with COALESCE)
+
+
+Why: categorize requisitions into business/tech/transform buckets for later analysis.
+
+
+> Note: in the conversation the mapping table was referred to as WD_TRANSF_REQ and later MD_TRANSF_REQ. Treat them as the same mapping/transformation step (name varies in snippets).
+
+
+
+
+---
+
+10) HNJ_BASE_MS
+
+Inputs: HNJ_BASE (final candidate base) LEFT JOIN MD_TRANSF_REQ and REQ_CAMPUS_FLAG_0
+
+Join keys: ON A.REQ_ID = B.REQ_ID and ON A.GOC_IDB = C.GOC_ID (approx)
+
+Adds: ID_LVL_X1_BT_FLAG, LOC_ID, JV_ID, JOB_FMLY_LNG_DESC, CAMPUS_FLAG, old values, etc.
+
+Why: Enrich HNJ_BASE with additional transfer / org / campus details for later internal-only filtering.
+
+
+
+---
+
+11) TAB14
+
+Inputs: HNJ_BASE_MS
+
+What: SELECT ... FROM HNJ_BASE_MS WHERE INTERNAL='Yes' and ROW_NUMBER() OVER (PARTITION BY EMPLOYEE_ID ORDER BY CANDIDATE_START_DATE DESC) AS RN
+
+Why: Keep only internal candidates and assign RN so you can choose the latest row per employee (RN=1).
+
+
+
+---
+
+12) TAB14A
+
+Inputs: TAB14 (T) LEFT JOIN TAB8 (existing major functional/headcount table) ON T.EMPLOYEE_ID = T2.GEID
+
+What: Bring in _OLD fields from the latest headcount snapshot (LV_ID_OLD, JOB_CD_OLD, LOC_CD_OLD, DIR_MGR_GEID_OLD, etc.)
+
+Filter: WHERE RN = 1 (use the latest row per employee)
+
+Why: You need current vs old comparison fields so movement (transfer/promotion) detection is possible.
+
+
+
+---
+
+13) TAB14A1 / rehire lookup (historical list)
+
+Inputs: historical headcount / GEID lists (TAB8 or another table)
+
+Purpose: used as a lookup to detect if an employee is a rehire (GEID present historically).
+
+Why: Rehired employees should be excluded from some future-internal-hire counts.
+
+
+
+---
+
+14) TAB15 (compute rehire flag)
+
+Inputs: TAB14A T LEFT JOIN TAB14A1 T2 ON T.EMPLOYEE_ID = T2.GEID
+
+Computes: INT_RIF_FLAG = CASE WHEN EMPLOYEE_ID = GEID THEN 0 ELSE 1 END
+
+0 = re-hire (exclude)
+
+1 = new internal move (include)
+
+
+Why: Identify and optionally exclude rehires from internal-hire metrics.
+
+
+
+---
+
+15) TAB15A (final future-move dataset)
+
+Inputs: TAB15
+
+What: SELECT final set of fields: current values + _OLD values + MIN/MAX + TABLE_NAME='TAB15A'
+
+Why: Final enriched dataset ready for the dashboard or downstream ETL — contains start dates, req IDs, old/current job/loc/manager, internal flags, min/max window, and table provenance.
+
+
+
+---
+
+Fields / Flags you should watch for (created along the flow)
+
+LAST_RECRUITING_STAGE_FILTER — marks late-stage pipeline candidates.
+
+CANDIDATE_STATUS_FILTER — active/valid candidate.
+
+START_PERIOD, CANDIDATE_START_DATE — imputed/final start data.
+
+RN — row-number used to pick latest per candidate/req/employee (lots of dedup.)
+
+REQ_ID, GOC_ID — extracted from COST_CENTER via REGEXP_SUBSTR.
+
+STD_GR / LV_ID / LV_NM — standardized job-level / level name.
+
+OT_SEGMENT (from TRANSF_REQ) — classification (Not Applicable / EM BAU / EM Transformation).
+
+INT_RIF_FLAG — rehire flag (0 = rehire, 1 = new/internal-move).
+
+
+
+---
+
+Quick mapping of where to find each table/CTE in the conversation
+
+HNJ_BASE_TMP1 — first reconstructed CTE (candidate base + latest stage).
+
+latest_stage — we recommended and used ROW_NUMBER to get latest stage rows.
+
+HNJ_BASE_TMP2 — impute start period/date.
+
+HNJ_BASE_TMP3 — filter to final advanced-stage candidates.
+
+ranked_reqs — job requisition cleanup & RN=1 selection.
+
+MAX_PERIOD — COB_DT_MAX (cutoff) used with HNJ_BASE.
+
+HNJ_BASE — final candidate base after joining ranked_reqs and cutoff.
+
+WD_REQ_A — WD_REQ joined to MSMG_BASE.
+
+WD_TRANSF_REQ / MD_TRANSF_REQ — mapping/transformation CTE using CASE/COALESCE for segments.
+
+HNJ_BASE_MS — HNJ_BASE LEFT JOIN MD_TRANSF_REQ + REQ_CAMPUS_FLAG.
+
+TAB14 — select internal ones & assign RN per employee.
+
+TAB14A — join to headcount (TAB8) to pull _OLD fields.
+
+TAB14A1 — historical GEID/rehire lookup (used to detect rehires).
+
+TAB15 — compute INT_RIF_FLAG.
+
+TAB15A — final select for dashboard.
+
+
+
+---
+
+Final suggestions and checklist before production
+
+1. Explicit column lists — replace A.* wherever possible to avoid ambiguous duplicates later.
+
+
+2. Always ELSE in CASE — avoid NULL vs 0 confusion in flags.
+
+
+3. Use staging lookup tables for lists (late stages, node ids) — do not hardcode values.
+
+
+4. Validate dedup logic — test ROW_NUMBER partitions for unexpected duplicates.
+
+
+5. Null-safes — use COALESCE where nulls matter (you already do this in TRANSF mapping).
+
+
+6. Document transform rules (e.g., ('Offer','Background Check',...) => Last stage) so future maintainers can update.
+
+
+
+
+---
+
+If you want, I’ll now:
+
+Produce the same flowchart as a PNG/SVG (so you can paste into docs / PowerPoint).
+
+Or produce a compact one-page PDF with the flowchart + brief notes for each node.
+
+
+Which do you prefer?
+
+
