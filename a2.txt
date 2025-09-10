@@ -1,3 +1,319 @@
+# Exploratory Attrition Analysis
+# Assumes a DataFrame `df` with columns:
+# 'BUSINESS_GROUPS_TA' (sub-dept), 'MONTH' (YYYY-MM or datetime),
+# 'CURRENT_MONTH_HEADCOUNT', 'VOLUNTARY_EXITS_12M', 'AVG_HEADCOUNT_12M', 'ATTRITION_RATE'
+#
+# If you have your CSV, set CSV_PATH and load; otherwise this script will generate synthetic sample data.
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+from statsmodels.tsa.seasonal import STL
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from scipy.spatial.distance import pdist, squareform
+import warnings
+warnings.filterwarnings('ignore')
+sns.set(style='whitegrid', palette='muted', context='notebook', font_scale=1.0)
+
+# ---------- 0. Option: load your CSV (uncomment and set path) ----------
+# CSV_PATH = 'attrition_monthly_subdept.csv'
+# df = pd.read_csv(CSV_PATH)
+
+# ---------- 0b. Or create synthetic sample data for demo/testing ----------
+def make_sample_df(n_subdepts=8, months=60, seed=42):
+    np.random.seed(seed)
+    subdepts = [f"Dept_{i+1}" for i in range(n_subdepts)]
+    month_starts = pd.date_range(end=pd.to_datetime('today').normalize(), periods=months, freq='MS')
+    rows = []
+    for dept in subdepts:
+        base_head = np.random.randint(200, 8000)
+        # create a trend + seasonality + noise for attrition rate
+        trend = np.linspace(0.02, 0.15, months) * (0.5 + np.random.rand())
+        seasonal = 0.02 * np.sin(np.arange(months) * 2 * np.pi / 12 + np.random.rand()*3)
+        noise = np.random.normal(scale=0.01, size=months)
+        attr = np.clip(trend + seasonal + noise, 0, 0.5)
+        headcounts = np.maximum(50, (base_head + np.random.normal(scale=base_head*0.02, size=months)).astype(int))
+        voluntary_exits_12m = ( (attr * headcounts).round().astype(int) )  # simple proxy: current attr*headcount
+        avg_headcount_12m = pd.Series(headcounts).rolling(12, min_periods=1).mean().round(2).values
+        for i, m in enumerate(month_starts):
+            rows.append({
+                'BUSINESS_GROUPS_TA': dept,
+                'MONTH': m,
+                'CURRENT_MONTH_HEADCOUNT': int(headcounts[i]),
+                'VOLUNTARY_EXITS_12M': int(voluntary_exits_12m[i]),
+                'AVG_HEADCOUNT_12M': float(avg_headcount_12m[i]),
+                'ATTRITION_RATE': float(voluntary_exits_12m[i] / (avg_headcount_12m[i] if avg_headcount_12m[i] > 0 else 1))
+            })
+    return pd.DataFrame(rows)
+
+# If you don't load a CSV, create sample:
+df = make_sample_df(n_subdepts=10, months=60)
+
+# ---------- 1. Data prep & sanity checks ----------
+df['MONTH'] = pd.to_datetime(df['MONTH'])
+df = df.sort_values(['BUSINESS_GROUPS_TA', 'MONTH']).reset_index(drop=True)
+
+print("Rows:", df.shape[0], "Sub-departments:", df['BUSINESS_GROUPS_TA'].nunique())
+print(df.head())
+
+# Quick stats per sub-dept
+agg_stats = df.groupby('BUSINESS_GROUPS_TA').agg(
+    months_present=('MONTH','nunique'),
+    mean_attrition=('ATTRITION_RATE','mean'),
+    std_attrition=('ATTRITION_RATE','std'),
+    last_attrition=('ATTRITION_RATE', lambda x: x.iloc[-1])
+).reset_index().sort_values('mean_attrition', ascending=False)
+print(agg_stats.head(10))
+
+# ---------- 2. Overall & per-subdept trend plots ----------
+def plot_overall_trend(df):
+    overall = df.groupby('MONTH').apply(lambda x: x['VOLUNTARY_EXITS_12M'].sum() / x['AVG_HEADCOUNT_12M'].sum())
+    plt.figure(figsize=(12,4))
+    plt.plot(overall.index, overall.values, marker='o')
+    plt.title('Org-wide rolling-12m Attrition Rate (by month)')
+    plt.ylabel('Attrition Rate')
+    plt.xlabel('Month')
+    plt.grid(True)
+    plt.show()
+
+plot_overall_trend(df)
+
+def plot_subdept_trends(df, subdept_list=None, ncols=2):
+    if subdept_list is None:
+        subdept_list = df['BUSINESS_GROUPS_TA'].unique()
+    n = len(subdept_list)
+    ncols = ncols
+    nrows = int(np.ceil(n / ncols))
+    plt.figure(figsize=(6*ncols, 3*nrows))
+    for i, s in enumerate(subdept_list):
+        ax = plt.subplot(nrows, ncols, i+1)
+        tmp = df[df['BUSINESS_GROUPS_TA']==s]
+        ax.plot(tmp['MONTH'], tmp['ATTRITION_RATE'], marker='o')
+        ax.set_title(s)
+        ax.set_ylim(0, max(0.3, tmp['ATTRITION_RATE'].max()*1.2))
+        ax.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+plot_subdept_trends(df)
+
+# ---------- 3. Rolling stats & volatility ----------
+df['ATTRITION_ROLL_3M'] = df.groupby('BUSINESS_GROUPS_TA')['ATTRITION_RATE'].transform(lambda x: x.rolling(3, min_periods=1).mean())
+df['ATTRITION_ROLL_12M_STD'] = df.groupby('BUSINESS_GROUPS_TA')['ATTRITION_RATE'].transform(lambda x: x.rolling(12, min_periods=1).std())
+
+# plot volatility heatmap (std over recent window)
+recent = df[df['MONTH'] >= (df['MONTH'].max() - pd.DateOffset(months=12))]
+vol_map = recent.groupby('BUSINESS_GROUPS_TA')['ATTRITION_ROLL_12M_STD'].last().sort_values(ascending=False)
+plt.figure(figsize=(8,4))
+sns.barplot(x=vol_map.values, y=vol_map.index)
+plt.title('Sub-dept attrition volatility (12m rolling std, most recent)')
+plt.xlabel('Std dev of attrition (12m)')
+plt.show()
+
+# ---------- 4. Seasonality / STL decomposition (per sub-dept) ----------
+def stl_decompose_and_plot(df, dept, period=12):
+    s = df[df['BUSINESS_GROUPS_TA']==dept].set_index('MONTH')['ATTRITION_RATE'].asfreq('MS').fillna(method='ffill')
+    stl = STL(s, period=period, robust=True).fit()
+    fig = stl.plot()
+    fig.suptitle(f'STL Decomposition for {dept}')
+    plt.show()
+    
+# Example for top-2 subdepts by mean attrition:
+top2 = agg_stats['BUSINESS_GROUPS_TA'].iloc[:2].tolist()
+for dept in top2:
+    stl_decompose_and_plot(df, dept)
+
+# ---------- 5. Heatmap: sub-dept x month (attrition) ----------
+pivot = df.pivot_table(index='BUSINESS_GROUPS_TA', columns='MONTH', values='ATTRITION_RATE', fill_value=0)
+plt.figure(figsize=(14,6))
+sns.heatmap(pivot, cmap='coolwarm', center=pivot.values.mean(), cbar_kws={'label':'Attrition Rate'})
+plt.title('Heatmap: Attrition Rate (sub-dept x month)')
+plt.xlabel('Month')
+plt.ylabel('Sub-department')
+plt.show()
+
+# ---------- 6. Change point detection (simple): look for large shifts in rolling mean ----------
+def detect_changes(series, window=6, threshold=0.02):
+    # returns indices where rolling mean change exceeds threshold
+    rm = series.rolling(window, min_periods=1).mean()
+    delta = rm.diff().abs()
+    return delta[delta > threshold].index.tolist()
+
+changes = {}
+for dept in df['BUSINESS_GROUPS_TA'].unique():
+    s = df[df['BUSINESS_GROUPS_TA']==dept].set_index('MONTH')['ATTRITION_RATE']
+    ch = detect_changes(s, window=6, threshold=0.03)
+    if ch:
+        changes[dept] = ch
+# Print detected change months for review:
+print("Detected significant rolling-mean shifts (dept -> months):")
+for k,v in changes.items():
+    print(k, '->', [pd.to_datetime(x).strftime('%Y-%m') for x in v])
+
+# ---------- 7. Anomaly / spike detection (z-score based) ----------
+def find_spikes(df, z_thresh=2.5):
+    spikes = []
+    for dept in df['BUSINESS_GROUPS_TA'].unique():
+        s = df[df['BUSINESS_GROUPS_TA']==dept].copy()
+        s['z'] = stats.zscore(s['ATTRITION_RATE'].fillna(0))
+        spikes.append(s[s['z'].abs() >= z_thresh][['BUSINESS_GROUPS_TA','MONTH','ATTRITION_RATE','z']])
+    spikes = pd.concat(spikes, ignore_index=True)
+    return spikes.sort_values(['BUSINESS_GROUPS_TA','MONTH'])
+
+spikes = find_spikes(df, z_thresh=2.5)
+print("Anomalous spike rows (z >= 2.5):")
+print(spikes.head(20))
+
+# Plot spikes for a subdept example
+if not spikes.empty:
+    sample_dept = spikes.iloc[0]['BUSINESS_GROUPS_TA']
+    tmp = df[df['BUSINESS_GROUPS_TA']==sample_dept]
+    plt.figure(figsize=(10,4))
+    plt.plot(tmp['MONTH'], tmp['ATTRITION_RATE'], marker='o')
+    spike_months = spikes[spikes['BUSINESS_GROUPS_TA']==sample_dept]['MONTH']
+    plt.scatter(spike_months, tmp.set_index('MONTH').loc[spike_months, 'ATTRITION_RATE'], color='red', s=100, label='Spikes')
+    plt.title(f'{sample_dept} attrition with detected spikes')
+    plt.legend()
+    plt.show()
+
+# ---------- 8. Ranking & delta analysis ----------
+# compute pct change between last 12 months average vs previous 12 months average
+last_month = df['MONTH'].max()
+period_1_start = last_month - pd.DateOffset(months=12)  # last 12 months
+period_2_start = last_month - pd.DateOffset(months=24)  # 12-24 months ago
+
+def avg_attr_range(df, start, end):
+    return df[(df['MONTH'] > start) & (df['MONTH'] <= end)].groupby('BUSINESS_GROUPS_TA')['ATTRITION_RATE'].mean()
+
+avg_recent = avg_attr_range(df, period_1_start, last_month)
+avg_prev = avg_attr_range(df, period_2_start, period_1_start)
+delta = (avg_recent - avg_prev).reset_index().rename(columns={0:'delta'})
+delta['pct_change'] = ((avg_recent - avg_prev)/ (avg_prev.replace(0, np.nan))).values
+delta = delta.sort_values(by='pct_change', ascending=False).reset_index(drop=True)
+print("Top increasing sub-depts (by pct change):")
+print(delta.head(10))
+
+# ---------- 9. Cohort-style proxy: median time to reach threshold attrition ----------
+# Since we only have aggregated monthly attrition we can compute for each dept the earliest month where attrition exceeded a threshold
+threshold = 0.12  # example threshold
+first_exceed = df[df['ATTRITION_RATE'] >= threshold].groupby('BUSINESS_GROUPS_TA')['MONTH'].min().reset_index()
+first_exceed['months_since_start'] = (first_exceed['MONTH'] - df.groupby('BUSINESS_GROUPS_TA')['MONTH'].min().reset_index(drop=True)).dt.days / 30.0
+print("Months to first exceed threshold:")
+print(first_exceed)
+
+# ---------- 10. Clustering sub-depts by temporal pattern ----------
+# Prepare time-series matrix (sub-dept x month features)
+ts_matrix = pivot.copy()  # from earlier pivot sub-dept x month
+# Optionally downsample or smooth
+ts_matrix_smooth = ts_matrix.apply(lambda row: pd.Series(row).rolling(3, min_periods=1).mean().values, axis=1, result_type='broadcast')
+# Standardize and run KMeans
+scaler = StandardScaler()
+X = scaler.fit_transform(ts_matrix_smooth.fillna(0).values)
+# choose k via simple elbow (we'll pick k=3)
+k = 3
+kmeans = KMeans(n_clusters=k, random_state=42).fit(X)
+labels = kmeans.labels_
+cluster_df = pd.DataFrame({'BUSINESS_GROUPS_TA': ts_matrix_smooth.index, 'cluster': labels})
+print(cluster_df.groupby('cluster').size())
+
+# Plot cluster centroids
+centroids = scaler.inverse_transform(kmeans.cluster_centers_)
+plt.figure(figsize=(10,4))
+for i in range(k):
+    plt.plot(pivot.columns, centroids[i], label=f'Cluster {i}')
+plt.legend()
+plt.title('Cluster centroids (attrition pattern over time)')
+plt.show()
+
+# ---------- 11. Correlation style / drivers: headcount vs attrition ----------
+# Correlate attrition with headcount and exit counts per dept
+corrs = df.groupby('BUSINESS_GROUPS_TA').apply(lambda g: pd.Series({
+    'corr_attr_headcount': g['ATTRITION_RATE'].corr(g['CURRENT_MONTH_HEADCOUNT']),
+    'corr_attr_exits': g['ATTRITION_RATE'].corr(g['VOLUNTARY_EXITS_12M'])
+})).reset_index()
+print(corrs)
+
+# Scatter: last-month attrition vs avg headcount (bubble by exits)
+last_df = df[df['MONTH']==df['MONTH'].max()]
+plt.figure(figsize=(8,6))
+plt.scatter(last_df['AVG_HEADCOUNT_12M'], last_df['ATTRITION_RATE'], s=last_df['VOLUNTARY_EXITS_12M']*0.2, alpha=0.7)
+for i,row in last_df.iterrows():
+    plt.text(row['AVG_HEADCOUNT_12M'], row['ATTRITION_RATE'], row['BUSINESS_GROUPS_TA'], fontsize=8)
+plt.xlabel('Avg headcount (12m)')
+plt.ylabel('Attrition rate (most recent month)')
+plt.title('Last month: attrition vs avg headcount (bubble size ~ exits)')
+plt.show()
+
+# ---------- 12. Population Stability Index (PSI) between most recent 12m and prior 12m ----------
+# PSI function
+def psi(expected_array, actual_array, buckets=10):
+    expected_array = np.array(expected_array)
+    actual_array = np.array(actual_array)
+    breakpoints = np.linspace(0,100,buckets+1)
+    quantiles = np.percentile(expected_array, breakpoints)
+    eps = 1e-6
+    psi_val = 0.0
+    for i in range(buckets):
+        lo, hi = quantiles[i], quantiles[i+1]
+        expect_pct = ((expected_array >= lo) & (expected_array < hi)).sum() / len(expected_array)
+        act_pct = ((actual_array >= lo) & (actual_array < hi)).sum() / len(actual_array)
+        psi_val += (expect_pct - act_pct) * np.log((expect_pct + eps) / (act_pct + eps))
+    return psi_val
+
+psi_results = []
+for dept in df['BUSINESS_GROUPS_TA'].unique():
+    series = df[df['BUSINESS_GROUPS_TA']==dept].sort_values('MONTH')['ATTRITION_RATE']
+    recent = series[-12:].values
+    prior = series[-24:-12].values
+    if len(prior) >= 6 and len(recent) >= 6:
+        psi_results.append({'BUSINESS_GROUPS_TA':dept, 'psi': psi(prior, recent)})
+psi_df = pd.DataFrame(psi_results).sort_values('psi', ascending=False)
+print("PSI (prior 12m vs recent 12m):")
+print(psi_df)
+
+# ---------- 13. Forecasting example (SARIMA) for one sub-dept ----------
+# choose one dept with longer series
+dept = df['BUSINESS_GROUPS_TA'].unique()[0]
+s = df[df['BUSINESS_GROUPS_TA']==dept].set_index('MONTH')['ATTRITION_RATE'].asfreq('MS').fillna(method='ffill')
+# simple SARIMA fit (example order, you can tune)
+model = SARIMAX(s, order=(1,0,1), seasonal_order=(1,1,1,12), enforce_stationarity=False, enforce_invertibility=False)
+res = model.fit(disp=False)
+print(res.summary())
+# Forecast next 12 months
+fcast = res.get_forecast(12)
+f_mean = fcast.predicted_mean
+f_ci = fcast.conf_int()
+plt.figure(figsize=(10,4))
+plt.plot(s.index, s.values, label='Observed')
+plt.plot(f_mean.index, f_mean.values, label='Forecast', color='red')
+plt.fill_between(f_ci.index, f_ci.iloc[:,0], f_ci.iloc[:,1], color='pink', alpha=0.3)
+plt.title(f'SARIMA Forecast Attrition for {dept}')
+plt.legend()
+plt.show()
+
+# ---------- 14. Export helpful tables for dashboards ----------
+# Top 10 rising sub-depts by pct_change:
+top_risers = delta.head(10)
+# Subdept cluster assignments:
+cluster_df.to_csv('subdept_clusters.csv', index=False)
+top_risers.to_csv('top_risers.csv', index=False)
+psi_df.to_csv('psi_alerts.csv', index=False)
+print("Exported subdept_clusters.csv, top_risers.csv, psi_alerts.csv")
+
+
+
+
+
+
+
+
+
+
 WITH months AS (
     -- Generate last 60 months
     SELECT ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -LEVEL + 1) AS month_start
