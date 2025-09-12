@@ -1,0 +1,71 @@
+WITH months AS (
+    -- Generate last 60 months
+    SELECT ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -LEVEL + 1) AS month_start
+    FROM dual
+    CONNECT BY LEVEL <= 60
+),
+headcount AS (
+    -- Headcount per sub_dept per month
+    SELECT
+        TRUNC(h.date, 'MM') AS month_start,
+        h.sub_dept,
+        COUNT(*) AS headcount
+    FROM hr_db h
+    GROUP BY TRUNC(h.date, 'MM'), h.sub_dept
+),
+voluntary_exits AS (
+    -- Voluntary exits per sub_dept per month
+    SELECT
+        TRUNC(h.date, 'MM') AS month_start,
+        h.sub_dept,
+        SUM(CASE WHEN h.voluntary_flag = 1 THEN 1 ELSE 0 END) AS voluntary_exits
+    FROM hr_db h
+    GROUP BY TRUNC(h.date, 'MM'), h.sub_dept
+),
+joined AS (
+    -- Join months with sub_dept data
+    SELECT
+        m.month_start,
+        d.sub_dept,
+        NVL(h.headcount, 0) AS headcount,
+        NVL(v.voluntary_exits, 0) AS voluntary_exits
+    FROM months m
+    CROSS JOIN (SELECT DISTINCT sub_dept FROM hr_db) d
+    LEFT JOIN headcount h
+           ON h.month_start = m.month_start
+          AND h.sub_dept = d.sub_dept
+    LEFT JOIN voluntary_exits v
+           ON v.month_start = m.month_start
+          AND v.sub_dept = d.sub_dept
+),
+cumulative AS (
+    SELECT
+        j.sub_dept,
+        j.month_start,
+        j.headcount,
+        j.voluntary_exits,
+        -- Reset cumulative sum at the start of each year
+        SUM(j.voluntary_exits) OVER (
+            PARTITION BY j.sub_dept, TO_CHAR(j.month_start, 'YYYY')
+            ORDER BY j.month_start
+        ) AS cum_voluntary_exits,
+        SUM(j.headcount) OVER (
+            PARTITION BY j.sub_dept, TO_CHAR(j.month_start, 'YYYY')
+            ORDER BY j.month_start
+        ) AS cum_headcount
+    FROM joined j
+)
+SELECT
+    sub_dept,
+    TO_CHAR(month_start, 'YYYY-MM') AS month,
+    headcount AS current_month_headcount,
+    voluntary_exits,
+    cum_voluntary_exits,
+    cum_headcount,
+    ROUND(
+        CASE WHEN cum_headcount > 0
+             THEN cum_voluntary_exits / cum_headcount
+             ELSE 0 END, 4
+    ) AS cumulative_attrition_rate
+FROM cumulative
+ORDER BY sub_dept, month_start;
