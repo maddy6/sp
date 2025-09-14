@@ -1,3 +1,23 @@
+def plot_acf_pacf_series(series, lags=36, savepath=None):
+    n_obs = series.dropna().shape[0]
+    # PACF requires lags < n_obs/2
+    max_lags = int(n_obs // 2 - 1)
+    lags = min(lags, max_lags)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14,4))
+    plot_acf(series.dropna(), lags=lags, ax=axes[0])
+    plot_pacf(series.dropna(), lags=lags, ax=axes[1], method='ywm')
+    plt.tight_layout()
+
+    if savepath:
+        fig.savefig(savepath, dpi=180)
+    plt.show()
+
+
+
+
+
+
 # Convert YYYY-MM strings into datetime
 ts_df['Month'] = pd.to_datetime(ts_df['Month'], format='%Y-%m')
 
