@@ -1,3 +1,15 @@
+# Convert YYYY-MM strings into datetime
+ts_df['Month'] = pd.to_datetime(ts_df['Month'], format='%Y-%m')
+
+# Set Month as index
+ts_df = ts_df.set_index('Month').sort_index()
+
+# Now reindex to monthly start frequency (MS)
+series = ts_df[target_col].asfreq('MS')
+
+
+
+
 import zipfile
 import os
 
