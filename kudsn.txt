@@ -1,0 +1,492 @@
+# SARIMA_workflow.py
+# Run this with: python SARIMA_workflow.py  (or paste into a notebook)
+import warnings
+warnings.filterwarnings("ignore")
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.seasonal import seasonal_decompose, STL
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.graphics.gofplots import qqplot
+from statsmodels.stats.diagnostic import acorr_ljungbox
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from scipy import stats
+import itertools
+import math
+import datetime
+
+# =========================
+# 1) Load & prepare data
+# =========================
+def load_and_prep(filepath_or_df,
+                  date_col='MONTH',
+                  target_col='ANNUALIZED_ATTRITION_RATE',
+                  date_format_try='%Y-%m'):
+    """
+    Load CSV or accept a DataFrame. Parse MONTH into datetime index (monthly) and keep target column numeric.
+    """
+    if isinstance(filepath_or_df, str):
+        df = pd.read_csv(filepath_or_df)
+    elif isinstance(filepath_or_df, pd.DataFrame):
+        df = filepath_or_df.copy()
+    else:
+        raise ValueError("Provide a file path or DataFrame")
+
+    # Ensure date column exists
+    if date_col not in df.columns:
+        raise KeyError(f"{date_col} not in dataframe columns")
+
+    # Parse dates (first try format '%Y-%m', otherwise infer)
+    try:
+        df[date_col] = pd.to_datetime(df[date_col], format=date_format_try)
+    except Exception:
+        df[date_col] = pd.to_datetime(df[date_col], infer_datetime_format=True)
+
+    df = df.sort_values(date_col).reset_index(drop=True)
+    df.set_index(date_col, inplace=True)
+
+    # Ensure target numeric
+    df[target_col] = pd.to_numeric(df[target_col], errors='coerce')
+
+    # Keep only months (start of month). For safety, convert to period if you prefer.
+    df.index = pd.DatetimeIndex(df.index).to_period('M').to_timestamp()
+
+    return df
+
+# =========================
+# 2) Plot the raw series + decomposition
+# =========================
+def plot_series_and_decompose(df, target_col='ANNUALIZED_ATTRITION_RATE', period=12, use_stl=True, figsize=(12,8)):
+    series = df[target_col].dropna()
+    fig, ax = plt.subplots(2,1, figsize=figsize, gridspec_kw={'height_ratios':[1,1.2]})
+    ax[0].plot(series.index, series.values, marker='o', linewidth=1)
+    ax[0].set_title(f"Time series of {target_col}")
+    ax[0].set_ylabel(target_col)
+
+    # decomposition
+    if use_stl:
+        stl = STL(series, period=period, robust=True)
+        res = stl.fit()
+        res.plot(ax=plt.gca())  # will generate its own fig; we'll plot components separately below
+        plt.tight_layout()
+    else:
+        dec = seasonal_decompose(series, model='additive', period=period, extrapolate_trend='freq')
+        fig2, axs = plt.subplots(3,1, figsize=(12,8))
+        axs[0].plot(dec.trend); axs[0].set_title('Trend')
+        axs[1].plot(dec.seasonal); axs[1].set_title('Seasonal')
+        axs[2].plot(dec.resid); axs[2].set_title('Residual')
+        plt.tight_layout()
+    plt.show()
+
+# =========================
+# 3) Stationarity tests: ADF (null=unit root -> nonstationary), KPSS (null=stationary)
+# =========================
+def adf_test(series, autolag='AIC'):
+    result = adfuller(series.dropna(), autolag=autolag)
+    out = {
+        'adf_stat': result[0],
+        'pvalue': result[1],
+        'used_lag': result[2],
+        'nobs': result[3],
+        'critical_values': result[4]
+    }
+    return out
+
+def kpss_test(series, regression='c'):
+    # KPSS can raise; handle gracefully
+    try:
+        statistic, p_value, n_lags, critical_values = kpss(series.dropna(), regression=regression, nlags="auto")
+    except Exception as e:
+        return {'kpss_stat': np.nan, 'pvalue': np.nan, 'nlags': None, 'critical_values': {}}
+    return {'kpss_stat': statistic, 'pvalue': p_value, 'nlags': n_lags, 'critical_values': critical_values}
+
+def print_stationarity(series, name='series'):
+    print(">>> Stationarity tests for:", name)
+    adf = adf_test(series)
+    kpss = kpss_test(series)
+    print(f"ADF: stat={adf['adf_stat']:.4f}, p={adf['pvalue']:.4f}. (H0: unit root / non-stationary) -> p<0.05 suggests stationarity")
+    print(f"KPSS: stat={kpss['kpss_stat']:.4f}, p={kpss['pvalue']}. (H0: stationary) -> p<0.05 suggests non-stationarity")
+    return {'adf': adf, 'kpss': kpss}
+
+# =========================
+# 4) Make stationary (transformations & differencing)
+# =========================
+def make_stationary(series, max_diff=2, seasonal_period=12, max_seasonal_diff=1, boxcox=False):
+    """
+    Try transformations (Box-Cox if positive) and differencing (regular and seasonal) until stationarity is achieved
+    Returns: dict with 'series_transformed', 'd', 'D', 'lambda' (if boxcox), and 'transform' (str)
+    """
+    s = series.dropna().copy()
+    res = {'transform': None, 'lambda': None, 'd': 0, 'D': 0, 'series_transformed': s}
+
+    # 1) Optionally Box-Cox (only if positive and boxcox True)
+    if boxcox:
+        if (s <= 0).any():
+            # shift small epsilon if zeros/negatives
+            eps = abs(s.min()) + 1e-6
+            s = s + eps
+        try:
+            s_bc, lmbda = stats.boxcox(s)
+            s = pd.Series(s_bc, index=series.dropna().index)
+            res['transform'] = 'boxcox'
+            res['lambda'] = lmbda
+        except Exception:
+            res['transform'] = None
+
+    # 2) Iteratively difference regular d up to max_diff
+    d = 0
+    for i in range(max_diff + 1):
+        out = adf_test(s)
+        if out['pvalue'] < 0.05:
+            break
+        # try seasonal differencing first? We'll do regular differencing
+        if i < max_diff:
+            s = s.diff().dropna()
+            d += 1
+    res['d'] = d
+    res['series_after_d'] = s.copy()
+
+    # 3) Try seasonal differencing D up to max_seasonal_diff
+    D = 0
+    for j in range(max_seasonal_diff + 1):
+        out = adf_test(s)
+        if out['pvalue'] < 0.05:
+            break
+        if j < max_seasonal_diff:
+            s = s.diff(seasonal_period).dropna()
+            D += 1
+    res['D'] = D
+    res['series_transformed'] = s
+
+    return res
+
+# =========================
+# 5) Visual ACF / PACF
+# =========================
+def plot_acf_pacf(series, lags=36, figsize=(12,4)):
+    fig, axes = plt.subplots(1,2, figsize=figsize)
+    plot_acf(series.dropna(), ax=axes[0], lags=lags)
+    plot_pacf(series.dropna(), ax=axes[1], lags=lags, method='ywm')
+    axes[0].set_title('ACF')
+    axes[1].set_title('PACF')
+    plt.tight_layout()
+    plt.show()
+
+# =========================
+# 6) Automated model selection options
+#    - Prefer pmdarima.auto_arima if available
+#    - Otherwise fall back to small grid search using SARIMAX AIC
+# =========================
+def try_auto_arima(series, seasonal_period=12, max_p=3, max_q=3, max_P=2, max_Q=2):
+    try:
+        import pmdarima as pm
+    except Exception as e:
+        print("pmdarima not available. Falling back to grid search.")
+        return None
+
+    print("Running pmdarima.auto_arima (this may still take a bit)...")
+    model = pm.auto_arima(series.dropna(),
+                          start_p=0, start_q=0,
+                          max_p=max_p, max_q=max_q,
+                          seasonal=True, m=seasonal_period,
+                          start_P=0, start_Q=0,
+                          max_P=max_P, max_Q=max_Q,
+                          d=None, D=None,  # let auto decide
+                          trace=True,
+                          error_action='ignore',
+                          suppress_warnings=True,
+                          stepwise=True,
+                          information_criterion='aic',
+                          n_jobs=1)
+    print("AutoARIMA summary:")
+    print(model.summary())
+    return model
+
+def grid_search_sarima(series,
+                       seasonal_period=12,
+                       p_range=(0,1,2),
+                       d_range=(0,1),
+                       q_range=(0,1,2),
+                       P_range=(0,1),
+                       D_range=(0,1),
+                       Q_range=(0,1),
+                       max_iter=50,
+                       verbose=False):
+    """
+    Grid search SARIMA(p,d,q)(P,D,Q,s) using AIC. Keep ranges small to avoid long runtimes.
+    Returns results sorted by AIC.
+    """
+    best_models = []
+    series = series.dropna()
+    combos = list(itertools.product(p_range, d_range, q_range, P_range, D_range, Q_range))
+    total = len(combos)
+    print(f"Grid search over {total} combos (this can take time).")
+    for idx, (p,d,q,P,D,Q) in enumerate(combos, start=1):
+        order = (p,d,q)
+        seasonal_order = (P,D,Q,seasonal_period)
+        try:
+            mod = SARIMAX(series, order=order, seasonal_order=seasonal_order,
+                          enforce_stationarity=False, enforce_invertibility=False)
+            res = mod.fit(disp=False, maxiter=max_iter)
+            aic = res.aic
+            best_models.append({'order':order, 'seasonal_order':seasonal_order, 'aic':aic, 'res':res})
+            if verbose:
+                print(f"{idx}/{total} fitted {order} x {seasonal_order} -> AIC {aic:.2f}")
+        except Exception as e:
+            if verbose:
+                print(f"{idx}/{total} {order} x {seasonal_order} failed: {e}")
+            continue
+
+    best_models_sorted = sorted(best_models, key=lambda x: x['aic'])
+    print("Top 5 models by AIC:")
+    for m in best_models_sorted[:5]:
+        print(m['order'], m['seasonal_order'], 'AIC=', m['aic'])
+    return best_models_sorted
+
+# =========================
+# 7) Train/validation/test splits by year(s)
+# =========================
+def split_by_years(df, target_col='ANNUALIZED_ATTRITION_RATE',
+                   train_years=None, val_years=None, test_years=None):
+    """
+    Provide train_years, val_years, test_years as lists of integers like [2019,2020].
+    Returns three pd.Series objects (train, val, test) indexed by datetime.
+    If a group is None, it will return an empty Series.
+    """
+    def _to_mask(years):
+        if years is None:
+            return pd.Series(dtype=float)
+        if isinstance(years, (int, str)):
+            years = [int(years)]
+        years = [int(y) for y in years]
+        mask = df.index.year.isin(years)
+        return df.loc[mask, target_col].dropna()
+
+    train = _to_mask(train_years)
+    val = _to_mask(val_years)
+    test = _to_mask(test_years)
+    return train, val, test
+
+# =========================
+# 8) Fit on train, forecast val horizon, compute metrics, and return fitted model
+# =========================
+def fit_and_evaluate(train_series, val_series,
+                     order, seasonal_order,
+                     enforce_stationarity=False, enforce_invertibility=False):
+    """
+    Fit SARIMAX on train_series and forecast for length of val_series.
+    Returns fitted_results, predictions (pandas Series), conf_int (DataFrame), and metrics dict.
+    """
+    model = SARIMAX(train_series, order=order, seasonal_order=seasonal_order,
+                    enforce_stationarity=enforce_stationarity,
+                    enforce_invertibility=enforce_invertibility)
+    res = model.fit(disp=False)
+    steps = len(val_series)
+    if steps == 0:
+        preds = pd.Series([], dtype=float)
+        conf_int = pd.DataFrame()
+        metrics = {}
+        return res, preds, conf_int, metrics
+
+    forecast_obj = res.get_forecast(steps=steps)
+    preds = forecast_obj.predicted_mean
+    conf_int = forecast_obj.conf_int(alpha=0.05)
+
+    # align preds with validation index
+    preds.index = val_series.index
+    conf_int.index = val_series.index
+
+    # metrics
+    mae = mean_absolute_error(val_series, preds)
+    rmse = math.sqrt(mean_squared_error(val_series, preds))
+    mape = np.mean(np.abs((val_series - preds) / val_series)) * 100
+
+    metrics = {'MAE': mae, 'RMSE': rmse, 'MAPE%': mape}
+    return res, preds, conf_int, metrics
+
+# =========================
+# 9) Plot results in CEO-friendly way
+# =========================
+def plot_ceo(train_series, val_series, test_series, preds_val, conf_int_val, final_forecast=None, final_conf_int=None,
+             title='Attrition forecast', figsize=(14,6)):
+    """
+    Plot train / val / test + predictions + CI. final_forecast and final_conf_int are future forecasts (series and df).
+    """
+    plt.figure(figsize=figsize)
+    ax = plt.gca()
+
+    # plot historical
+    if not train_series.empty:
+        ax.plot(train_series.index, train_series.values, label='Train', linewidth=2)
+    if not val_series.empty:
+        ax.plot(val_series.index, val_series.values, label='Validation', linewidth=2)
+    if not test_series.empty:
+        ax.plot(test_series.index, test_series.values, label='Test (actual)', linewidth=2)
+
+    # preds
+    if preds_val is not None and len(preds_val)>0:
+        ax.plot(preds_val.index, preds_val.values, label='Forecast (val)', linestyle='--', marker='o')
+        ax.fill_between(conf_int_val.index, conf_int_val.iloc[:,0], conf_int_val.iloc[:,1], alpha=0.2)
+
+    # future forecast
+    if final_forecast is not None and len(final_forecast)>0:
+        ax.plot(final_forecast.index, final_forecast.values, label='Future forecast', linestyle='-.', marker='x')
+        if final_conf_int is not None:
+            ax.fill_between(final_conf_int.index, final_conf_int.iloc[:,0], final_conf_int.iloc[:,1], alpha=0.15)
+
+    ax.set_title(title, fontsize=14)
+    ax.set_ylabel('ANNUALIZED_ATTRITION_RATE')
+    ax.legend()
+    ax.grid(alpha=0.2)
+
+    # annotate simple metrics box if validation exists
+    # compute metrics if preds_val available and val_series present
+    if (preds_val is not None) and (not val_series.empty):
+        mae = mean_absolute_error(val_series, preds_val)
+        rmse = math.sqrt(mean_squared_error(val_series, preds_val))
+        mape = np.mean(np.abs((val_series - preds_val)/val_series))*100
+        textstr = f"Val MAE: {mae:.5f}\nVal RMSE: {rmse:.5f}\nVal MAPE: {mape:.2f}%\nData range: {train_series.index.min().date() if not train_series.empty else ''} to { (test_series.index.max().date() if not test_series.empty else val_series.index.max().date()) }"
+        # place a box
+        props = dict(boxstyle='round', facecolor='white', alpha=0.8)
+        ax.text(0.02, 0.95, textstr, transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', bbox=props)
+
+    plt.show()
+
+# =========================
+# 10) Residual diagnostics
+# =========================
+def residual_diagnostics(residuals, lags=24):
+    print("Residuals summary:")
+    print(pd.Series(residuals).describe())
+    plt.figure(figsize=(12,4))
+    plt.subplot(1,3,1)
+    plt.plot(residuals)
+    plt.title('Residuals over time')
+    plt.subplot(1,3,2)
+    qqplot(residuals, line='s', ax=plt.gca())
+    plt.title('QQ plot')
+    plt.subplot(1,3,3)
+    plot_acf(residuals, ax=plt.gca(), lags=lags)
+    plt.title('Residual ACF')
+    plt.tight_layout()
+    plt.show()
+
+    lb = acorr_ljungbox(residuals, lags=[lags], return_df=True)
+    print("Ljung-Box test (null: no autocorrelation). p-value:")
+    print(lb)
+
+# =========================
+# Example usage (put this into a main or run cell)
+# =========================
+if __name__ == "__main__":
+    # ------------- USER CONFIG -------------
+    filepath = "your_data.csv"   # path to CSV or pass a dataframe instead
+    date_col = 'MONTH'
+    target_col = 'ANNUALIZED_ATTRITION_RATE'
+    seasonal_period = 12  # monthly data -> 12
+    # specify train, validation, test years (example)
+    train_years = [2019, 2020]    # all months in these years form training
+    val_years   = [2021]          # validation
+    test_years  = [2022]          # test
+    # grid search ranges (keep small or expand)
+    p_range = [0,1,2]
+    d_range = [0,1]
+    q_range = [0,1,2]
+    P_range = [0,1]
+    D_range = [0,1]
+    Q_range = [0,1]
+    # --------------------------------------
+
+    # 1) load
+    df = load_and_prep(filepath, date_col=date_col, target_col=target_col)
+    print("Data loaded. Date range:", df.index.min(), "to", df.index.max())
+    print("Columns:", df.columns.tolist())
+
+    # 2) quick plot + decomposition
+    plot_series_and_decompose(df, target_col=target_col, period=seasonal_period, use_stl=True)
+
+    # 3) stationarity tests on raw series
+    series = df[target_col].dropna()
+    print_stationarity(series, name=target_col)
+
+    # 4) try to make stationary (BoxCox optional)
+    ms = make_stationary(series, max_diff=2, seasonal_period=seasonal_period, max_seasonal_diff=1, boxcox=False)
+    print("Transform:", ms['transform'], "d, D:", ms['d'], ms['D'])
+
+    # 5) ACF / PACF of transformed
+    plot_acf_pacf(ms['series_transformed'], lags=36)
+
+    # 6) Try auto_arima (pmdarima) first, else grid search
+    auto = try_auto_arima(series, seasonal_period=seasonal_period, max_p=3, max_q=3, max_P=1, max_Q=1)
+    if auto is not None:
+        suggested_order = auto.order()
+        suggested_seasonal = auto.seasonal_order()
+        print("AutoARIMA suggests", suggested_order, suggested_seasonal)
+        # If you want to use pmdarima directly for forecasting, you can.
+    else:
+        # fallback grid search (will take longer). Use the ranges above or tighten them.
+        best = grid_search_sarima(series,
+                                  seasonal_period=seasonal_period,
+                                  p_range=p_range,
+                                  d_range=d_range,
+                                  q_range=q_range,
+                                  P_range=P_range,
+                                  D_range=D_range,
+                                  Q_range=Q_range,
+                                  verbose=False)
+        if len(best) == 0:
+            raise RuntimeError("No models fitted in grid search; expand ranges or debug.")
+        best_model_info = best[0]
+        suggested_order = best_model_info['order']
+        suggested_seasonal = best_model_info['seasonal_order']
+        print("Grid search best:", suggested_order, suggested_seasonal, "AIC:", best_model_info['aic'])
+
+    # 7) Split data by years for train/val/test
+    train_s, val_s, test_s = split_by_years(df, target_col=target_col,
+                                            train_years=train_years,
+                                            val_years=val_years,
+                                            test_years=test_years)
+    print("Train months:", len(train_s), "Val months:", len(val_s), "Test months:", len(test_s))
+
+    # 8) Fit on train, forecast val
+    print("Fitting SARIMAX with order", suggested_order, "seasonal_order", suggested_seasonal)
+    res_fit, preds_val, conf_int_val, metrics = fit_and_evaluate(train_s, val_s, suggested_order, suggested_seasonal)
+    print("Validation metrics:", metrics)
+
+    # 9) Residual diagnostics on fitted model (trained on train)
+    residuals = res_fit.resid
+    residual_diagnostics(residuals)
+
+    # 10) Refit on train+val to forecast test or future horizon
+    train_val = pd.concat([train_s, val_s]).sort_index()
+    model_full = SARIMAX(train_val, order=suggested_order, seasonal_order=suggested_seasonal,
+                         enforce_stationarity=False, enforce_invertibility=False)
+    res_full = model_full.fit(disp=False)
+
+    # forecast horizon = len(test) if available else 12 months
+    steps = len(test_s) if len(test_s)>0 else 12
+    fore_obj = res_full.get_forecast(steps=steps)
+    final_fore = fore_obj.predicted_mean
+    final_conf = fore_obj.conf_int()
+    if len(test_s)>0:
+        final_fore.index = test_s.index
+        final_conf.index = test_s.index
+    else:
+        # produce monthly index after last date
+        last = train_val.index.max()
+        future_index = pd.date_range(start=last + pd.offsets.MonthBegin(1), periods=steps, freq='MS')
+        final_fore.index = future_index
+        final_conf.index = future_index
+
+    # 11) Plot everything nicely
+    plot_ceo(train_s, val_s, test_s, preds_val, conf_int_val, final_fore, final_conf,
+             title="ANNUALIZED_ATTRITION_RATE: Actual vs Forecast")
+
+    # 12) If you want to save model
+    # res_full.save("sarimax_final_model.pickle")
+    print("Done.")
