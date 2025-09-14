@@ -1,0 +1,169 @@
+1️⃣ Starting point
+
+You already have:
+
+results_df = pd.DataFrame(results,
+                          columns=['Group','Test_RMSE','Test_MAPE','Val_RMSE','Val_MAPE'])
+
+
+We’ll add a Stability Index and (if you have it) a Group Size or Weight column to show business impact.
+
+# Add Stability Index (difference between Val & Test MAPE)
+results_df['Stability_Index'] = (results_df['Val_MAPE'] - results_df['Test_MAPE']).abs()
+
+# (Optional) Add Group Size column to show business impact
+# results_df['Group_Size'] = [volume per group]  # supply if you have
+
+2️⃣ Combined Dashboard Code
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# sort groups by Val_MAPE for consistent ordering
+results_df = results_df.sort_values('Val_MAPE')
+
+fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+axes = axes.flatten()
+
+# 1️⃣ Bar chart – Validation MAPE per group
+axes[0].barh(results_df['Group'], results_df['Val_MAPE'], color='teal')
+axes[0].set_title('Validation MAPE by Group (Forecast Accuracy)')
+axes[0].set_xlabel('Val MAPE (%)')
+
+# 2️⃣ Scatter plot – Test vs Validation MAPE (stability)
+axes[1].scatter(results_df['Test_MAPE'], results_df['Val_MAPE'], c='purple')
+for i, txt in enumerate(results_df['Group']):
+    axes[1].annotate(txt,
+        (results_df['Test_MAPE'].iloc[i], results_df['Val_MAPE'].iloc[i]))
+axes[1].set_xlabel('Test MAPE')
+axes[1].set_ylabel('Val MAPE')
+axes[1].set_title('Stability: Test vs Validation MAPE')
+
+# 3️⃣ Heatmap – all metrics
+sns.heatmap(results_df.set_index('Group')[['Test_MAPE','Val_MAPE','Stability_Index']],
+            annot=True, fmt=".2f", cmap='RdYlGn_r', ax=axes[2])
+axes[2].set_title('Heatmap of Forecast Metrics')
+
+# 4️⃣ Stability Index Bar chart
+axes[3].bar(results_df['Group'], results_df['Stability_Index'], color='orange')
+axes[3].set_title('Stability Index (Lower = More Stable)')
+axes[3].set_ylabel('Abs(Val MAPE - Test MAPE)')
+axes[3].tick_params(axis='x', rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+
+This produces 4 views at once:
+– Val MAPE bar chart
+– Test vs Val scatter
+– Heatmap of all metrics
+– Stability Index bar chart
+
+3️⃣ Reverse-engineering each view
+View 1: Bar Chart – Validation MAPE by Group
+
+What we plot: Each group’s Val MAPE (Y axis), group name (X axis).
+
+Why: This instantly shows CEO which business groups the model is most accurate on.
+
+How: plt.barh() with Val_MAPE values.
+
+Takeaway: Lower bars = better forecast accuracy.
+
+View 2: Scatter Plot – Test vs Validation MAPE
+
+What we plot: X = Test MAPE, Y = Val MAPE. Each point = one group.
+
+Why: Checks stability between test and validation.
+
+How: plt.scatter() + annotate each point with group name.
+
+Interpretation:
+
+Points near the diagonal line (Val ≈ Test) → stable forecasts.
+
+Points far above diagonal → model degrades on validation.
+
+Points below diagonal → model improves on validation.
+
+CEO-level message: Which segments hold up out-of-sample.
+
+View 3: Heatmap – Metrics Table with Colors
+
+What we plot: Groups as rows, metrics as columns (Test_MAPE, Val_MAPE, Stability Index).
+
+Why: Color-coded performance shows good (green) vs bad (red) segments at a glance.
+
+How: sns.heatmap() of the metrics dataframe.
+
+Interpretation:
+
+Darker green = better.
+
+Redder = worse.
+
+CEO-level message: Immediate “green/yellow/red” view of performance.
+
+View 4: Bar Chart – Stability Index
+
+What we plot: |Val MAPE – Test MAPE| for each group.
+
+Why: Measures forecast stability. Lower = more stable.
+
+How: plt.bar() with Stability_Index.
+
+Interpretation:
+
+Small bars = model behaves consistently.
+
+Tall bars = unstable, group may be volatile or model weak.
+
+CEO-level message: Which business segments are predictable vs volatile.
+
+4️⃣ Optional Extra Views
+A. Business Impact Chart (if you have group size):
+if 'Group_Size' in results_df.columns:
+    results_df['Impact'] = results_df['Group_Size'] * results_df['Val_MAPE']
+    plt.figure(figsize=(10,5))
+    plt.barh(results_df['Group'], results_df['Impact'], color='red')
+    plt.title('Business Impact of Forecast Error')
+    plt.xlabel('Impact (Group Size × Val MAPE)')
+    plt.show()
+
+
+This translates error into dollars or customer counts, which CEOs love.
+
+B. Forecast Fan Chart (for one group)
+
+Use your actual vs forecast data to show uncertainty bands. (We can do this once you have the forecast + confidence intervals.)
+
+5️⃣ CEO-level narrative (tie it all together)
+
+When you present:
+
+Start with accuracy overview (bar chart).
+
+Show stability vs test (scatter).
+
+Show heatmap (one slide).
+
+Show stability index (one slide).
+
+Optional: business impact (one slide).
+
+Frame as:
+
+“We tested our forecasting system across 15 business groups.
+– Achieved <X% error on 80% of groups.
+– Identified 3 volatile segments for deeper investigation.
+– Quantified potential revenue risk due to forecast error.
+– Next step: integrate marketing & macro signals for further accuracy.”
+
+TL;DR: What CEO sees
+View	CEO takeaway
+Val MAPE bar	Who’s accurate vs not
+Test vs Val scatter	Stability of forecast
+Heatmap	At-a-glance green/red performance
+Stability index	Predictability vs volatility
+Impact chart	$$$ / customer effect of error
+Fan chart	We know our uncertainty, not just point forecasts
