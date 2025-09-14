@@ -1,0 +1,92 @@
+def fit_sarima_groupwise(df, group_col="_TA", date_col="MONTH", target_col="ANNUALIZED_ATTRITION_RATE",
+                         train_years=(2019,2020), test_years=2021, val_years=None,
+                         m=12, verbose=True, plots=True):
+    """
+    Full SARIMA workflow for each BUSINESS_GROUPS_TA:
+    - Stationarity tests (ADF, KPSS)
+    - Differencing (d, D) suggestion
+    - Decomposition plot
+    - ACF/PACF plots
+    - Auto parameter selection
+    - Fit SARIMAX
+    - Forecast + metrics
+
+    Returns: dict of results per group
+    """
+    results = {}
+    groups = df[group_col].unique()
+
+    for grp in groups:
+        print("\n" + "="*50)
+        print(f"Processing group: {grp}")
+        print("="*50)
+
+        # --- Step 1: Subset group ---
+        df_grp = df[df[group_col] == grp].copy()
+        df_grp[date_col] = pd.to_datetime(df_grp[date_col], format="%Y-%m")
+        df_grp = df_grp.sort_values(date_col).set_index(date_col)
+
+        series = df_grp[target_col].astype(float)
+
+        # --- Step 2: Stationarity checks ---
+        print("\n📊 Stationarity check BEFORE differencing:")
+        stationarity_res = check_stationarity(series)
+
+        # --- Step 3: Auto differencing ---
+        print("\n⚙️ Applying differencing if required...")
+        s_transformed, d_used, D_used = make_stationary(series, m=m, verbose=True)
+        print(f"✅ Differencing chosen: d={d_used}, D={D_used}")
+
+        # --- Step 4: Decomposition plot ---
+        if plots:
+            plot_series_and_decomposition(series, m=m,
+                title=f"{grp} - Decomposition")
+
+        # --- Step 5: ACF/PACF plots ---
+        if plots:
+            plot_acf_pacf_series(s_transformed, lags=36)
+
+        # --- Step 6: Split train/test/val ---
+        train_s, test_s, val_s = split_by_years(df_grp,
+                                                train_years=train_years,
+                                                test_years=test_years,
+                                                val_years=val_years)
+
+        if train_s is None or test_s is None:
+            print(f"⚠️ Skipping {grp} (not enough data for selected years).")
+            continue
+
+        # --- Step 7: Auto-select SARIMA parameters ---
+        print("\n🔍 Auto-selecting SARIMA parameters...")
+        arima_model, order, seasonal_order = auto_select_sarima(train_s, m=m, verbose=verbose)
+        print(f"✅ Best model: order={order}, seasonal_order={seasonal_order}")
+
+        # --- Step 8: Fit SARIMAX ---
+        fitted_model = fit_sarimax_with_statsmodels(train_s, order, seasonal_order)
+
+        # --- Step 9: Forecast test period ---
+        forecast_mean, conf = forecast_and_plot(
+            fitted_model, train_s, test_s,
+            title=f"{grp} - Actual vs Forecast")
+
+        # --- Step 10: Metrics ---
+        metrics = forecast_metrics(test_s.loc[forecast_mean.index], forecast_mean)
+        print(f"📈 Performance metrics ({grp}):", metrics)
+
+        # --- Collect results ---
+        results[grp] = {
+            "train": train_s,
+            "test": test_s,
+            "val": val_s,
+            "order": order,
+            "seasonal_order": seasonal_order,
+            "model": fitted_model,
+            "forecast": forecast_mean,
+            "conf_int": conf,
+            "metrics": metrics,
+            "d_used": d_used,
+            "D_used": D_used,
+            "stationarity_before": stationarity_res
+        }
+
+    return results
