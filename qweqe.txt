@@ -1,0 +1,328 @@
+# sarima_workflow.py
+import warnings
+warnings.filterwarnings("ignore")
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.dates import DateFormatter
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.tsa.seasonal import STL
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+# auto selection
+from pmdarima import auto_arima
+
+# metrics
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+# --- 1) Load & prepare data ----------------------------------------------
+def load_series(csv_path, date_col='MONTH', target_col='ANNUALIZED_ATTRITION_RATE', date_format='%Y-%m'):
+    """
+    Load CSV with MONTH column in 'yyyy-mm' format and return a pandas Series indexed by datetime.
+    """
+    df = pd.read_csv(csv_path)
+    # Parse date
+    df[date_col] = pd.to_datetime(df[date_col], format=date_format)
+    df = df.sort_values(date_col).set_index(date_col)
+    # ensure numeric (coerce bad strings -> NaN)
+    series = pd.to_numeric(df[target_col], errors='coerce')
+    # simple handling: linear interpolate missing and then forward/backfill if edges missing
+    series = series.interpolate(method='time').ffill().bfill()
+    series.name = target_col
+    return series, df
+
+# --- 2) Stationarity tests & suggestion ----------------------------------
+def adf_test(series, autolag='AIC'):
+    res = adfuller(series.dropna(), autolag=autolag)
+    out = {'adf_stat': res[0], 'pvalue': res[1], 'usedlag': res[2], 'nobs': res[3]}
+    return out
+
+def kpss_test(series, regression='c', nlags='auto'):
+    # Note KPSS null hypothesis: series is stationary; small p-value -> reject stationarity
+    stat, p_value, lags, critical_values = kpss(series.dropna(), regression=regression, nlags=nlags)
+    return {'kpss_stat': stat, 'pvalue': p_value, 'nlags': lags, 'critical_values': critical_values}
+
+def check_stationarity(series):
+    a = adf_test(series)
+    k = kpss_test(series)
+    print("ADF test:    stat = {:.4f}, p = {:.4f}  (H0: non-stationary)".format(a['adf_stat'], a['pvalue']))
+    print("KPSS test:   stat = {:.4f}, p = {:.4f}  (H0: stationary)".format(k['kpss_stat'], k['pvalue']))
+    # Suggestion: if ADF p > 0.05 (fail to reject non-stationary) OR KPSS p < 0.05 (reject stationary) -> not stationary
+    not_stationary = (a['pvalue'] > 0.05) or (k['pvalue'] < 0.05)
+    print("=> Suggested: {}stationary".format("" if not not_stationary else "not "))
+    return {'adf': a, 'kpss': k, 'stationary': (not not_stationary)}
+
+# --- 3) Automatic differencing helper ------------------------------------
+def make_stationary(series, m=12, max_d=2, max_D=1, verbose=True):
+    """
+    Auto-apply regular differencing (d) and seasonal differencing (D) until tests pass
+    or maximum differencing reached. Returns transformed series and (d, D) used.
+    """
+    s = series.copy()
+    d = 0
+    D = 0
+
+    for seasonal_round in range(max_D + 1):
+        # regular differencing loop
+        while d <= max_d:
+            tests = check_stationarity(s) if verbose else None
+            stationary = (tests['stationary'] if verbose else None)
+            # if verbose we have tests. If series is stationary -> stop
+            if verbose and stationary:
+                if verbose:
+                    print(f"Stationary at d={d}, D={D}")
+                return s, d, D
+            if d == max_d:
+                break
+            # apply 1st difference
+            s = s.diff().dropna()
+            d += 1
+            if verbose:
+                print(f"Applied regular diff -> d = {d}")
+        # if not stationary yet and seasonal differencing allowed, apply seasonal diff and continue
+        if D < max_D:
+            s = series.copy()
+            # apply D seasonal diff(s)
+            for _ in range(D + 1):
+                s = s.diff(m).dropna()
+            if verbose:
+                print(f"Applied seasonal diff -> D = {D+1}, trying again regular diffs")
+            D += 1
+            # after applying seasonal diff, reset d counter to try regular diffs again
+            d = 0
+        else:
+            break
+
+    # final check and return whatever we have
+    if verbose:
+        print(f"Finished differencing: d={d}, D={D}. Final series length={len(s)}")
+    return s, d, D
+
+# --- 4) Visual diagnostic plots ------------------------------------------
+def plot_series_and_decomposition(series, m=12, title=None, savepath=None):
+    title = title or series.name
+    fig, axes = plt.subplots(4, 1, figsize=(12, 10), sharex=True)
+    series.plot(ax=axes[0], legend=False, title=title)
+    axes[0].set_ylabel(series.name)
+
+    # STL decomposition is robust
+    stl = STL(series, period=m, robust=True)
+    res = stl.fit()
+    axes[1].plot(res.trend); axes[1].set_ylabel('Trend')
+    axes[2].plot(res.seasonal); axes[2].set_ylabel('Seasonal')
+    axes[3].plot(res.resid); axes[3].set_ylabel('Resid')
+
+    plt.tight_layout()
+    if savepath:
+        fig.savefig(savepath, dpi=180)
+    plt.show()
+
+def plot_acf_pacf_series(series, lags=36, savepath=None):
+    fig, axes = plt.subplots(1, 2, figsize=(14,4))
+    plot_acf(series.dropna(), lags=lags, ax=axes[0])
+    plot_pacf(series.dropna(), lags=lags, ax=axes[1], method='ywm')
+    plt.tight_layout()
+    if savepath:
+        fig.savefig(savepath, dpi=180)
+    plt.show()
+
+# --- 5) Auto-select SARIMA (p,d,q)(P,D,Q,m) --------------------------------
+def auto_select_sarima(series, m=12, seasonal=True,
+                       max_p=3, max_q=3, max_P=2, max_Q=2, 
+                       information_criterion='aic', stepwise=True, n_jobs=1, verbose=False):
+    """
+    Uses pmdarima.auto_arima to find best model according to AIC/BIC.
+    Returns the fitted pmdarima model and the order tuples.
+    """
+    arima_model = auto_arima(series,
+                             seasonal=seasonal,
+                             m=m,
+                             max_p=max_p, max_q=max_q,
+                             max_P=max_P, max_Q=max_Q,
+                             d=None, D=None,               # let auto_arima decide d and D
+                             trace=verbose,
+                             error_action='ignore',
+                             suppress_warnings=True,
+                             stepwise=stepwise,
+                             information_criterion=information_criterion,
+                             n_jobs=n_jobs)
+    order = arima_model.order
+    seasonal_order = arima_model.seasonal_order if hasattr(arima_model, 'seasonal_order') else (0,0,0,m)
+    return arima_model, order, seasonal_order
+
+# --- 6) Fit SARIMAX (statsmodels) ------------------------------------------------
+def fit_sarimax_with_statsmodels(train_series, order, seasonal_order, enforce_stationarity=False, enforce_invertibility=False):
+    """
+    Fit SARIMAX and return the fitted results object from statsmodels.
+    """
+    model = SARIMAX(train_series, order=order, seasonal_order=seasonal_order,
+                    enforce_stationarity=enforce_stationarity,
+                    enforce_invertibility=enforce_invertibility)
+    res = model.fit(disp=False)
+    return res
+
+# --- 7) Forecast + visualize with CI -------------------------------------------
+def forecast_and_plot(fitted_res, train_series, test_series=None, steps=None, title='Forecast vs Actual',
+                      savepath=None, show_legend=True):
+    """
+    If test_series is provided, plot both actual test and forecast with CI.
+    """
+    if steps is None:
+        if test_series is not None:
+            steps = len(test_series)
+        else:
+            steps = 12
+
+    pred = fitted_res.get_forecast(steps=steps)
+    mean_forecast = pred.predicted_mean
+    conf = pred.conf_int()
+
+    # Build index for forecast:
+    last_date = train_series.index[-1]
+    freq = train_series.index.freq or pd.infer_freq(train_series.index)
+    if freq is None:
+        # assume monthly
+        freq = 'MS'
+    forecast_index = pd.date_range(start=last_date + pd.offsets.MonthBegin(1), periods=steps, freq=freq)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(12,5))
+    train_series.plot(ax=ax, label='Train (actual)')
+    if test_series is not None:
+        test_series.plot(ax=ax, label='Test (actual)')
+    ax.plot(forecast_index, mean_forecast.values, label='Forecast', linestyle='--')
+    ax.fill_between(forecast_index, conf.iloc[:,0].values, conf.iloc[:,1].values, alpha=0.25, label='95% CI')
+    ax.set_title(title)
+    ax.set_ylabel(train_series.name)
+    ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+    if show_legend:
+        ax.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    if savepath:
+        fig.savefig(savepath, dpi=180)
+    plt.show()
+
+    return mean_forecast, conf
+
+# --- 8) Performance metrics ---------------------------------------------------
+def forecast_metrics(actual, predicted):
+    mae = mean_absolute_error(actual, predicted)
+    rmse = mean_squared_error(actual, predicted, squared=False)
+    mape = np.mean(np.abs((actual - predicted) / actual)) * 100
+    return {'MAE': mae, 'RMSE': rmse, 'MAPE(%)': mape}
+
+# --- 9) Split helper: choose years for train/test/val -------------------------
+def _years_to_dates(years):
+    """
+    allow input as list of years [2019,2020] or tuple range (2019,2020) -> returns list of years
+    """
+    if years is None:
+        return []
+    if isinstance(years, tuple) and len(years) == 2:
+        return list(range(years[0], years[1]+1))
+    if isinstance(years, int):
+        return [years]
+    return list(years)
+
+def split_by_years(df, date_col_index='MONTH', train_years=None, test_years=None, val_years=None):
+    """
+    df should have datetime index (MONTH). Supply train_years/test_years/val_years as:
+      - tuple (start_year, end_year) inclusive OR
+      - list [2019,2020] OR
+      - single int 2019
+    Returns (train_series, test_series, val_series) as pandas Series (or None)
+    """
+    # If df is Series convert to DataFrame wrapper
+    if isinstance(df, pd.Series):
+        series = df
+    else:
+        # assume df has 'ANNUALIZED_ATTRITION_RATE' column
+        series = df['ANNUALIZED_ATTRITION_RATE']
+
+    def years_to_mask(years):
+        if not years:
+            return None
+        yrs = _years_to_dates(years)
+        return series.index.year.isin(yrs)
+
+    train_mask = years_to_mask(train_years)
+    test_mask  = years_to_mask(test_years)
+    val_mask   = years_to_mask(val_years)
+
+    train_s = series[train_mask] if train_mask is not None else None
+    test_s  = series[test_mask]  if test_mask is not None else None
+    val_s   = series[val_mask]   if val_mask is not None else None
+
+    return train_s, test_s, val_s
+
+# --- 10) Walk-forward evaluation per split (auto model selection) ------------
+def evaluate_split_with_auto_model(train_series, test_series, m=12, info_criterion='aic', verbose=False):
+    """
+    For a single train/test pair: auto-select parameters on THE TRAIN set, fit SARIMAX, forecast test, and return metrics + model.
+    """
+    # auto select with pmdarima
+    arima_model, order, seasonal_order = auto_select_sarima(train_series, m=m, information_criterion=info_criterion, verbose=verbose)
+    if verbose:
+        print("Auto-selected order:", order, " seasonal:", seasonal_order)
+
+    # fit with statsmodels for richer diagnostics
+    fitted = fit_sarimax_with_statsmodels(train_series, order, seasonal_order)
+    # forecast
+    steps = len(test_series)
+    pred = fitted.get_forecast(steps=steps)
+    forecast_mean = pred.predicted_mean
+    # align index: build forecast index (just after last train date)
+    last_date = train_series.index[-1]
+    freq = train_series.index.freq or pd.infer_freq(train_series.index) or 'MS'
+    forecast_index = pd.date_range(start=last_date + pd.offsets.MonthBegin(1), periods=steps, freq=freq)
+    forecast_mean.index = forecast_index
+    # Evaluate
+    metrics = forecast_metrics(test_series.loc[forecast_index], forecast_mean)
+    return {
+        'model_order': order,
+        'seasonal_order': seasonal_order,
+        'fitted_model': fitted,
+        'forecast_mean': forecast_mean,
+        'metrics': metrics
+    }
+
+# --- Example usage ---------------------------------------------------------
+if __name__ == "__main__":
+    # Example: load CSV
+    series, df = load_series("attrition_data.csv")   # replace with your file path
+
+    # 1) Quick visualization + decomposition
+    plot_series_and_decomposition(series, m=12, title="ANNUALIZED_ATTRITION_RATE decomposition", savepath="decomposition.png")
+
+    # 2) Stationarity check
+    check_stationarity(series)
+
+    # 3) If not stationary, auto-difference to make stationary (suggested)
+    s_transformed, d_used, D_used = make_stationary(series, m=12, verbose=True)
+    print("Differencing used: d =", d_used, ", D =", D_used)
+
+    # 4) ACF/PACF of transformed series (to eyeball p/q)
+    plot_acf_pacf_series(s_transformed, lags=36, savepath="acf_pacf.png")
+
+    # 5) Choose years for train/test/val easily:
+    #    train_years=(2019,2020), test_years=2021, val_years=2022 etc.
+    train_s, test_s, val_s = split_by_years(df, train_years=(2019,2020), test_years=2021, val_years=2022)
+
+    # 6) Auto-select model on train and evaluate on test
+    result = evaluate_split_with_auto_model(train_s, test_s, m=12, verbose=True)
+    print("Metrics on test:", result['metrics'])
+
+    # 7) Plot forecast vs actual for CEO
+    forecast_and_plot(result['fitted_model'], train_s, test_s, title="Attrition: actual vs forecast (test)", savepath="forecast_test.png")
+
+    # 8) Residual diagnostics (useful for technical appendix)
+    result['fitted_model'].plot_diagnostics(figsize=(12,8))
+    plt.tight_layout()
+    plt.savefig("residual_diagnostics.png")
+    plt.show()
+
+    # 9) Save or export model, or repeat for validation set similarly...
