@@ -275,3 +275,185 @@ Why separate: CEO gets one clean slide per chart, each with its own interpretati
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1️⃣ Business Impact Bubble Chart
+
+🔹 Why CEOs love it: Shows where error actually costs the most.
+🔹 Idea: X = Validation MAPE, Y = Group Size (or Revenue), bubble size = Test RMSE.
+
+plt.figure(figsize=(10,8))
+plt.scatter(results_df['Val_MAPE'], results_df['Group_Size'],
+            s=results_df['Test_RMSE']*500, alpha=0.6, c='skyblue', edgecolors='black')
+
+for i, txt in enumerate(results_df['Group']):
+    plt.annotate(txt, (results_df['Val_MAPE'].iloc[i], results_df['Group_Size'].iloc[i]))
+
+plt.xlabel('Validation MAPE (%)')
+plt.ylabel('Group Size / Revenue')
+plt.title('Forecast Error vs Business Impact')
+
+plt.figtext(0.1, -0.1,
+            'Big bubbles = high RMSE. Top right quadrant = high error + big group = highest risk.\n'
+            'Bottom left quadrant = low error + small group = safest.',
+            ha='left', fontsize=11, bbox=dict(facecolor='white', alpha=0.7))
+plt.tight_layout()
+plt.show()
+
+2️⃣ Ranking Table with Icons (Red/Green Arrows)
+
+🔹 Why CEOs love it: Easy to see winners vs laggards.
+🔹 Idea: Create a DataFrame sorted by Val_MAPE and add ▲/▼ arrows for improvement vs test.
+
+results_df['Improvement'] = results_df['Test_MAPE'] - results_df['Val_MAPE']
+results_df['Status'] = results_df['Improvement'].apply(lambda x: '▲ Improved' if x>0 else '▼ Degraded')
+styled = results_df[['Group','Test_MAPE','Val_MAPE','Improvement','Status']]\
+            .style.background_gradient(cmap='RdYlGn_r', subset=['Val_MAPE'])\
+            .format({'Test_MAPE':'{:.2f}','Val_MAPE':'{:.2f}','Improvement':'{:.2f}'})
+styled
+
+
+This renders an HTML table with red/green backgrounds — perfect for dashboards.
+
+3️⃣ Rolling Error Trend per Group (Time Series View)
+
+🔹 Why CEOs love it: Shows how error evolves over time, not just one number.
+🔹 Idea: Plot actual vs forecast or rolling MAPE per group month by month.
+
+# Suppose you have df with columns: ['Date','Group','Actual','Forecast']
+df['AbsPercError'] = (abs(df['Actual'] - df['Forecast']) / df['Actual'])*100
+sns.lineplot(data=df, x='Date', y='AbsPercError', hue='Group')
+plt.title('Rolling Forecast Error Over Time by Group')
+plt.ylabel('Absolute % Error')
+plt.show()
+
+4️⃣ Stability Quadrant Chart (Predictability vs Volatility)
+
+🔹 Why CEOs love it: It’s a 2×2 matrix of “Stable & Accurate” vs “Unstable & High Error”.
+🔹 Idea:
+
+X axis = Stability Index (low = stable).
+
+Y axis = Val MAPE (low = accurate).
+
+Quadrants automatically highlight risk vs safety.
+
+plt.figure(figsize=(10,8))
+plt.scatter(results_df['Stability_Index'], results_df['Val_MAPE'], c='orange', s=100)
+plt.axhline(results_df['Val_MAPE'].median(), color='red', linestyle='--')
+plt.axvline(results_df['Stability_Index'].median(), color='red', linestyle='--')
+for i, txt in enumerate(results_df['Group']):
+    plt.annotate(txt, (results_df['Stability_Index'].iloc[i], results_df['Val_MAPE'].iloc[i]))
+plt.xlabel('Stability Index (Low=Stable)')
+plt.ylabel('Validation MAPE (Low=Accurate)')
+plt.title('Accuracy vs Stability Quadrant')
+plt.figtext(0.1, -0.1,
+            'Bottom-left quadrant = best groups (stable & accurate).\n'
+            'Top-right quadrant = worst groups (unstable & inaccurate).',
+            ha='left', fontsize=11, bbox=dict(facecolor='white', alpha=0.7))
+plt.tight_layout()
+plt.show()
+
+5️⃣ Waterfall Chart – Error Contribution to Total Risk
+
+🔹 Why CEOs love it: Shows which groups contribute most to total forecast error.
+🔹 Idea: Combine Val MAPE × Group Size to compute “error impact” and plot as waterfall.
+
+results_df['Impact'] = results_df['Group_Size'] * results_df['Val_MAPE']
+impact_sorted = results_df.sort_values('Impact', ascending=False)
+
+plt.figure(figsize=(12,6))
+plt.bar(impact_sorted['Group'], impact_sorted['Impact'], color='crimson')
+plt.xticks(rotation=45)
+plt.title('Total Forecast Error Impact by Group')
+plt.ylabel('Impact (Group Size × Val MAPE)')
+plt.figtext(0.1, -0.2,
+            'Left bars = biggest contributors to total error.\n'
+            'Helps prioritize which groups to focus on.',
+            ha='left', fontsize=11, bbox=dict(facecolor='white', alpha=0.7))
+plt.tight_layout()
+plt.show()
+
+6️⃣ Uncertainty Fan Chart (for a single group)
+
+🔹 Why CEOs love it: Shows forecast + confidence intervals → conveys risk transparently.
+🔹 Idea: Use ARIMA’s .get_forecast() to retrieve conf_int.
+
+forecast_obj = model.get_forecast(steps=len(val_series))
+forecast_mean = forecast_obj.predicted_mean
+conf_int = forecast_obj.conf_int()
+
+plt.figure(figsize=(12,6))
+plt.plot(train_series.index, train_series, label='Train')
+plt.plot(test_series.index, test_series, label='Test Actual')
+plt.plot(val_series.index, val_series, label='Validation Actual')
+plt.plot(forecast_mean.index, forecast_mean, label='Forecast', color='black')
+plt.fill_between(conf_int.index, conf_int.iloc[:,0], conf_int.iloc[:,1],
+                 color='gray', alpha=0.3, label='95% Confidence Interval')
+plt.legend()
+plt.title('Forecast with Uncertainty Band')
+plt.figtext(0.1, -0.1,
+            'The shaded area shows 95% confidence interval.\n'
+            'Narrow bands = high certainty, Wide bands = high uncertainty.',
+            ha='left', fontsize=11, bbox=dict(facecolor='white', alpha=0.7))
+plt.tight_layout()
+plt.show()
+
+7️⃣ Pareto (80/20) Chart of Error
+
+🔹 Why CEOs love it: Shows that a few groups cause most of the forecast error (the “80/20 rule”).
+
+impact_sorted['CumulativeImpact'] = impact_sorted['Impact'].cumsum()/impact_sorted['Impact'].sum()*100
+
+fig, ax1 = plt.subplots(figsize=(12,6))
+ax1.bar(impact_sorted['Group'], impact_sorted['Impact'], color='steelblue')
+ax2 = ax1.twinx()
+ax2.plot(impact_sorted['Group'], impact_sorted['CumulativeImpact'], color='red', marker='o')
+ax1.set_ylabel('Impact')
+ax2.set_ylabel('Cumulative %')
+ax1.set_title('Pareto Analysis of Forecast Error Impact')
+ax1.tick_params(axis='x', rotation=45)
+
+plt.figtext(0.1, -0.1,
+            'Blue bars = impact per group. Red line = cumulative contribution.\n'
+            'Use this to see which top few groups drive most error.',
+            ha='left', fontsize=11, bbox=dict(facecolor='white', alpha=0.7))
+plt.tight_layout()
+plt.show()
+
+💡 How to “Tell the Story” to CEO:
+Chart Idea	CEO Takeaway
+Bubble Chart	“Where is error costing us the most money.”
+Ranking Table	“Green arrows = improving segments.”
+Rolling Error Trend	“We’re trending down error over time.”
+Stability Quadrant	“Safe vs risky groups at a glance.”
+Waterfall Chart	“Focus efforts where risk is concentrated.”
+Fan Chart	“We know our uncertainty and can plan around it.”
+Pareto Chart	“80% of error comes from 20% of groups.”
+🎯 Executive framing tips:
+
+Translate % error to dollars, customers, or risk → CEOs think in impact not error.
+
+Color code green/yellow/red consistently across all visuals.
+
+Show trends not just snapshots → trending down shows progress.
+
+Show uncertainty → indicates maturity of forecasting process.
+
+
+
+
+
