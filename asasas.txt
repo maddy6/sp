@@ -1,0 +1,166 @@
+# ===========================
+# 1. Imports
+# ===========================
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.stattools import adfuller
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+from pmdarima import auto_arima
+
+# ===========================
+# 2. Helper Functions
+# ===========================
+
+# --- ADF stationarity test ---
+def adf_test(series, alpha=0.05):
+    """Return True if stationary, else False."""
+    result = adfuller(series.dropna())
+    p_value = result[1]
+    return p_value < alpha
+
+# --- Auto-difference until stationary ---
+def make_stationary_auto(series, max_diff=3):
+    """
+    Auto-difference until stationary or max_diff reached.
+    Returns transformed series and number of differences applied.
+    """
+    d = 0
+    ts = series.copy()
+    while not adf_test(ts) and d < max_diff:
+        ts = ts.diff().dropna()
+        d += 1
+    return ts, d  # stationary series & differencing count
+
+# --- Split by years ---
+def split_by_years(df, train_years, test_years, val_years, date_col='DATE'):
+    """
+    Split dataframe into train/test/val by year lists.
+    """
+    df = df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df['YEAR'] = df[date_col].dt.year
+
+    train = df[df['YEAR'].isin(train_years)]
+    test  = df[df['YEAR'].isin(test_years)]
+    val   = df[df['YEAR'].isin(val_years)]
+    return train, test, val
+
+# --- Fit Auto ARIMA ---
+def fit_auto_arima_model(series, seasonal=False, m=12, d=None):
+    """
+    Fit auto_arima model on given series.
+    """
+    model = auto_arima(series,
+                       seasonal=seasonal,
+                       m=m,
+                       d=d,
+                       stepwise=True,
+                       suppress_warnings=True)
+    return model
+
+# --- Forecast and compute metrics ---
+def forecast_and_metrics(model, test_series):
+    """
+    Forecast test_series length & compute RMSE and MAPE.
+    """
+    n_periods = len(test_series)
+    fc = model.predict(n_periods=n_periods)
+    rmse = np.sqrt(mean_squared_error(test_series, fc))
+    mape = mean_absolute_percentage_error(test_series, fc)
+    return fc, rmse, mape
+
+# --- Plot actual vs forecast ---
+def plot_forecast(train_series, test_series, fc_test, val_series=None, fc_val=None, title='Forecast'):
+    plt.figure(figsize=(12,6))
+    plt.plot(train_series.index, train_series, label='Train')
+    plt.plot(test_series.index, test_series, label='Test Actual')
+    plt.plot(test_series.index, fc_test, label='Test Forecast', linestyle='--')
+    if val_series is not None and fc_val is not None:
+        plt.plot(val_series.index, val_series, label='Val Actual')
+        plt.plot(val_series.index, fc_val, label='Val Forecast', linestyle='--')
+    plt.title(title)
+    plt.xlabel('Date')
+    plt.ylabel('ANNUALIZED_ATTRITION_RATE')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# ===========================
+# 3. Main Pipeline Example for ONE group
+# ===========================
+
+# Suppose your dataframe is named df and has columns:
+# DATE, BUSINESS_GROUPS_TA, ANNUALIZED_ATTRITION_RATE
+# df = pd.read_csv('your_file.csv')
+
+group_index = 'Retail Banking'  # <-- change to your group
+df_group = df[df['BUSINESS_GROUPS_TA'] == group_index]
+
+# 1. Split by years
+train_df, test_df, val_df = split_by_years(
+    df_group,
+    train_years=[2020, 2021, 2022],
+    test_years=[2023, 2024],
+    val_years=[2025],
+    date_col='DATE'
+)
+
+train_series = train_df.set_index('DATE')['ANNUALIZED_ATTRITION_RATE']
+test_series  = test_df.set_index('DATE')['ANNUALIZED_ATTRITION_RATE']
+val_series   = val_df.set_index('DATE')['ANNUALIZED_ATTRITION_RATE']
+
+# 2. Make stationary automatically
+train_stationary, d_used = make_stationary_auto(train_series)
+print(f"Differencing applied: {d_used} times")
+
+# 3. Fit Auto ARIMA on original series but pass d_used
+model = fit_auto_arima_model(train_series, d=d_used)
+
+# 4. Forecast on test
+fc_test, rmse_test, mape_test = forecast_and_metrics(model, test_series)
+print("Test RMSE:", rmse_test, "Test MAPE:", mape_test)
+
+# 5. Forecast on val (optional)
+fc_val, rmse_val, mape_val = forecast_and_metrics(model, val_series)
+print("Val RMSE:", rmse_val, "Val MAPE:", mape_val)
+
+# 6. Plot to show CEO
+plot_forecast(train_series, test_series, fc_test, val_series, fc_val,
+              title=f'Attrition Forecast for {group_index}')
+
+# ===========================
+# 4. (Optional) Loop over ALL groups automatically
+# ===========================
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+results = []
+for g in groups:
+    df_g = df[df['BUSINESS_GROUPS_TA'] == g]
+    train_df, test_df, val_df = split_by_years(
+        df_g,
+        train_years=[2020,2021,2022],
+        test_years=[2023,2024],
+        val_years=[2025],
+        date_col='DATE'
+    )
+
+    train_series = train_df.set_index('DATE')['ANNUALIZED_ATTRITION_RATE']
+    test_series  = test_df.set_index('DATE')['ANNUALIZED_ATTRITION_RATE']
+    val_series   = val_df.set_index('DATE')['ANNUALIZED_ATTRITION_RATE']
+
+    # skip if too few data
+    if len(train_series) < 5 or len(test_series) < 1:
+        continue
+
+    train_stationary, d_used = make_stationary_auto(train_series)
+    model = fit_auto_arima_model(train_series, d=d_used)
+    fc_test, rmse_test, mape_test = forecast_and_metrics(model, test_series)
+    fc_val, rmse_val, mape_val = forecast_and_metrics(model, val_series)
+
+    results.append([g, rmse_test, mape_test, rmse_val, mape_val])
+
+# convert results to DataFrame
+results_df = pd.DataFrame(results,
+                          columns=['Group','Test_RMSE','Test_MAPE','Val_RMSE','Val_MAPE'])
+print(results_df)
