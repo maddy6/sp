@@ -167,3 +167,111 @@ Heatmap	At-a-glance green/red performance
 Stability index	Predictability vs volatility
 Impact chart	$$$ / customer effect of error
 Fan chart	We know our uncertainty, not just point forecasts
+
+
+
+
+
+
+
+
+
+
+
+
+
+1️⃣ Bar Chart – Validation MAPE per Group
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# sort by Val_MAPE
+results_df = results_df.sort_values('Val_MAPE')
+
+plt.figure(figsize=(12,7))
+plt.barh(results_df['Group'], results_df['Val_MAPE'], color='teal')
+plt.title('Validation MAPE by Group (Forecast Accuracy)', fontsize=16)
+plt.xlabel('Val MAPE')
+
+# Add explanation box
+plt.figtext(0.1, -0.1,
+            '📊 Interpretation:\n'
+            'Each bar shows the Validation MAPE (error %) per group.\n'
+            'Lower bars = more accurate forecasts.\n'
+            'Compare across groups to see which areas need improvement.',
+            ha='left', fontsize=12, bbox=dict(facecolor='white', alpha=0.7))
+
+plt.tight_layout()
+plt.show()
+
+2️⃣ Scatter Plot – Test vs Validation MAPE
+plt.figure(figsize=(10,8))
+plt.scatter(results_df['Test_MAPE'], results_df['Val_MAPE'], c='purple', s=100)
+for i, txt in enumerate(results_df['Group']):
+    plt.annotate(txt,
+                 (results_df['Test_MAPE'].iloc[i], results_df['Val_MAPE'].iloc[i]))
+
+plt.xlabel('Test MAPE')
+plt.ylabel('Val MAPE')
+plt.title('Stability: Test vs Validation MAPE', fontsize=16)
+
+# diagonal line for perfect stability
+min_val = min(results_df['Test_MAPE'].min(), results_df['Val_MAPE'].min())
+max_val = max(results_df['Test_MAPE'].max(), results_df['Val_MAPE'].max())
+plt.plot([min_val, max_val],[min_val, max_val], 'r--')
+
+# explanation box
+plt.figtext(0.1, -0.1,
+            '📊 Interpretation:\n'
+            'Points near the dashed line = stable performance between test and validation.\n'
+            'Above line = model degraded on validation.\n'
+            'Below line = model improved on validation.',
+            ha='left', fontsize=12, bbox=dict(facecolor='white', alpha=0.7))
+
+plt.tight_layout()
+plt.show()
+
+3️⃣ Heatmap – All Metrics
+plt.figure(figsize=(12,7))
+sns.heatmap(results_df.set_index('Group')[['Test_MAPE','Val_MAPE','Stability_Index']],
+            annot=True, fmt=".2f", cmap='RdYlGn_r')
+plt.title('Heatmap of Forecast Metrics', fontsize=16)
+
+plt.figtext(0.1, -0.15,
+            '📊 Interpretation:\n'
+            'Green cells = better performance, Red = worse.\n'
+            'Compare metrics across groups instantly.\n'
+            'Use this to identify priority groups for improvement.',
+            ha='left', fontsize=12, bbox=dict(facecolor='white', alpha=0.7))
+
+plt.tight_layout()
+plt.show()
+
+4️⃣ Bar Chart – Stability Index
+plt.figure(figsize=(12,7))
+plt.bar(results_df['Group'], results_df['Stability_Index'], color='orange')
+plt.title('Stability Index (Lower = More Stable)', fontsize=16)
+plt.ylabel('Abs(Val MAPE - Test MAPE)')
+plt.xticks(rotation=45)
+
+plt.figtext(0.1, -0.15,
+            '📊 Interpretation:\n'
+            'Lower bar = model behaves consistently between test and validation.\n'
+            'Higher bar = unstable predictions (model or data volatility).\n'
+            'Helps prioritize groups needing stability improvements.',
+            ha='left', fontsize=12, bbox=dict(facecolor='white', alpha=0.7))
+
+plt.tight_layout()
+plt.show()
+
+🔎 How it works (reverse-engineer):
+
+plt.figure(figsize=(w,h)) → bigger chart.
+
+plt.figtext(x, y, text, bbox=…) → places a text box anywhere on the figure. We used y negative (below plot) to make it a footer.
+
+bbox=dict(facecolor='white', alpha=0.7) → makes a semi-transparent white box to highlight explanation.
+
+Why separate: CEO gets one clean slide per chart, each with its own interpretation.
+
+
+
