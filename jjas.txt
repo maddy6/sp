@@ -457,3 +457,187 @@ Show uncertainty → indicates maturity of forecasting process.
 
 
 
+
+
+
+
+
+
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+plot_acf(model.resid, lags=24)
+plt.show()
+
+
+
+
+
+
+1️⃣ What ARIMA / SARIMAX actually is
+
+At its core ARIMA is a way of saying:
+
+“This month’s value can be explained by (a) some previous months’ values,
+(b) some past forecast errors,
+and (c) seasonal adjustments.”
+
+AR = AutoRegressive = use previous values (lags).
+
+I = Integrated = differences to remove trend/seasonality.
+
+MA = Moving Average = use previous errors (shocks).
+
+SARIMA = Seasonal ARIMA — same but explicitly models seasonal patterns (like 12 months cycle).
+SARIMAX = same but can add extra regressors (the “X” for exogenous).
+
+2️⃣ How to read the model notation
+
+Your model says:
+
+SARIMAX(2,0,1)x(0,1,0,12)
+
+
+Break it:
+
+Non-seasonal part (p,d,q)=(2,0,1)
+
+p=2 → two AR lags (use y[t−1], y[t−2])
+
+d=0 → no regular differencing (series stationary except for seasonal)
+
+q=1 → one MA lag (use past forecast error e[t−1])
+
+Seasonal part (P,D,Q,m)=(0,1,0,12)
+
+D=1 → you did seasonal differencing at lag 12 → (y[t]−y[t−12]) to remove yearly pattern
+
+P=0,Q=0 → no seasonal AR/MA terms
+
+m=12 → monthly seasonality
+
+So you seasonally differenced once at lag 12 and then fit an AR(2)+MA(1) model on the transformed series.
+
+3️⃣ Why differencing matters
+
+Imagine a wavy series with upward trend.
+
+Differencing once (y[t]−y[t−1]) removes trend.
+
+Seasonal differencing (y[t]−y[t−12]) removes yearly cycle.
+Then AR and MA terms model the “stationary core” left over.
+
+4️⃣ Understanding the coefficients one by one
+
+Your table:
+
+Parameter	Coef	p-value	Meaning
+ar.L1	+1.9427	<0.001	Very strong link to previous month
+ar.L2	-0.9760	<0.001	Second month offset/correction
+ma.L1	-0.9811	0.532	Past error influence, but not significant
+sigma2	0.0001	residual variance	
+
+Let’s interpret:
+
+AR(2) means the next value is built from the last two values. Large positive at lag1 and large negative at lag2 typically means oscillating behavior (think up-down-up-down but decaying slowly).
+
+MA(1) is how last month’s random error affects this month. Here it’s not significant (p>0.05) → maybe not needed.
+
+sigma2 is just the variance of residual noise.
+
+Visualizing AR(2) vs AR(1)
+
+AR(1) alone: y[t] ≈ φ₁y[t−1] + error.
+
+AR(2): y[t] ≈ φ₁y[t−1] + φ₂y[t−2] + error.
+If φ₂ negative, it creates a bounce/overshoot effect — like a spring oscillating.
+
+5️⃣ The “Information criteria” (AIC/BIC)
+
+AIC (Akaike) and BIC (Bayesian) measure model quality: smaller = better (balances fit vs complexity).
+
+auto_arima tries different combinations to minimize AIC.
+
+You don’t care about absolute number; you care about “which model has lower AIC than others.”
+
+6️⃣ Putting it all together
+
+Your pipeline:
+
+Raw monthly series
+
+Seasonal difference at lag 12
+
+Fit AR(2)+MA(1)
+
+Forecast next months
+
+What this model is telling you:
+
+After removing yearly seasonality, the attrition metric is highly persistent — what happened last month and the month before heavily influences this month.
+
+It tends to oscillate a bit because lag2 coefficient is negative.
+
+The MA(1) is not adding much explanatory power.
+
+7️⃣ Do you still need ACF/PACF?
+
+For selection: No, because auto_arima already tried many combos.
+
+For diagnostics & explanation: Yes, especially on residuals.
+
+ACF plot of residuals should look like random noise.
+
+If not, your model missed something.
+
+8️⃣ How to diagnose residuals
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+plot_acf(model.resid, lags=24)
+plt.show()
+
+
+If all bars stay within the shaded area (95% conf), residuals are fine.
+
+9️⃣ Forecast and uncertainty
+
+model.get_forecast(steps=12) → predicted_mean + conf_int
+
+Plot fan chart to show CEO uncertainty zone.
+
+🔟 Checklist for you to internalize
+Step	What you’re checking	Why
+ADF / differencing	Stationarity	Make ARIMA valid
+Seasonal differencing	Remove cycles	Make ARIMA simpler
+auto_arima	Picks (p,d,q)(P,D,Q)	Automates model
+Residual ACF/PACF	Noise?	Validate model
+Forecast with CI	Show risk band	Impress CEO
+🔁 In plain story form for your CEO:
+
+We started with raw monthly attrition. It had yearly seasonality.
+
+We removed yearly seasonality automatically (seasonal difference).
+
+We built a dynamic model where each month depends on the last two months. This captures persistence and oscillations.
+
+We tested accuracy on 2023–2024 (test) and 2025 (val) and saw good RMSE and MAPE.
+
+We validated residuals (they look like noise).
+
+We forecast 12 months ahead with confidence intervals (fan chart).
+
+Action: our top-3 groups have high forecast error — focus on them.
+
+📝 Key takeaways (beginner-friendly but technical):
+
+ARIMA = AR (memory of past values) + I (difference for stationarity) + MA (memory of past shocks).
+
+Seasonal ARIMA = same but accounts for repeating patterns.
+
+Auto_ARIMA picks model automatically; you still check residuals.
+
+Big AR coefficients = strong dependence; negative AR2 = oscillation.
+
+MA coefficients = effect of past forecast errors; if not significant, drop them.
+
+AIC/BIC low = better model but don’t overfit.
+
+Always plot residual ACF and fan chart to communicate.
+
