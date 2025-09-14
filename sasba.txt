@@ -1,0 +1,128 @@
+# ---------------------------
+# 5. Model training, walk-forward evaluation routine (per-split)
+# ---------------------------
+
+def make_split_by_years(series, train_years, test_years, val_years):
+    """
+    Splits a time series into train, test, validation based on explicit years.
+    """
+    train_idx = series[series.index.year.isin(train_years)].index
+    test_idx  = series[series.index.year.isin(test_years)].index
+    val_idx   = series[series.index.year.isin(val_years)].index
+
+    # Extract subsets
+    train_series = series.loc[train_idx].dropna()
+    test_series  = series.loc[test_idx].dropna()
+    val_series   = series.loc[val_idx].dropna()
+
+    return {
+        "train": train_series,
+        "test": test_series,
+        "val": val_series,
+        "train_years": train_years,
+        "test_years": test_years,
+        "val_years": val_years
+    }
+
+def fit_sarima_and_forecast(train_series, test_index, order, seasonal_order, disp=False):
+    """
+    Fit SARIMAX on train_series and forecast for len(test_index) steps.
+    """
+    model = SARIMAX(train_series, order=order, seasonal_order=seasonal_order,
+                    enforce_stationarity=False, enforce_invertibility=False)
+    fit = model.fit(disp=disp)
+    steps = len(test_index)
+    forecast_res = fit.get_forecast(steps=steps)
+    mean = pd.Series(forecast_res.predicted_mean, index=test_index)
+    ci = forecast_res.conf_int(alpha=0.05)
+    ci.index = test_index
+    return fit, mean, ci
+
+def evaluate_forecast(y_true, y_pred, verbose=True):
+    """
+    Evaluate forecast using MAE, RMSE, MAPE.
+    """
+    y_true, y_pred = y_true.align(y_pred, join='inner')
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = sqrt(mean_squared_error(y_true, y_pred))
+    mape = np.mean(np.abs((y_true - y_pred) / np.where(y_true==0, 1e-6, y_true))) * 100
+    if verbose:
+        print(f"MAE={mae:.6f}, RMSE={rmse:.6f}, MAPE={mape:.2f}%")
+    return {'MAE':mae,'RMSE':rmse,'MAPE':mape}
+
+# ---------------------------
+# Example experiments using explicit year splits
+# ---------------------------
+
+experiment_results = []
+
+# Example split: Train 2019–2021, Test 2022, Validation 2023
+split = make_split_by_years(series, train_years=[2019,2020,2021],
+                                     test_years=[2022],
+                                     val_years=[2023])
+
+print("\n=== Experiment: Train={} Test={} Val={}".format(
+    split['train_years'], split['test_years'], split['val_years']))
+
+# 1) Auto ARIMA on train
+auto_local = pm.auto_arima(split['train'], seasonal=True, m=12,
+                           start_p=0,start_q=0,max_p=3,max_q=3,
+                           start_P=0,start_Q=0,max_P=2,max_Q=2,
+                           d=None, D=None, stepwise=True, trace=False,
+                           suppress_warnings=True, error_action='ignore',
+                           information_criterion='aic')
+ord_loc = auto_local.order
+seas_loc = auto_local.seasonal_order
+print("Auto-ARIMA (train-window) chose:", ord_loc, seas_loc)
+
+# 2) Fit SARIMA on train and forecast test
+fit_loc, pred_test, ci_test = fit_sarima_and_forecast(split['train'], split['test'].index,
+                                                      ord_loc, seas_loc)
+metrics_test = evaluate_forecast(split['test'], pred_test, verbose=True)
+
+# 3) Residual diagnostics (train fit)
+resid = fit_loc.resid
+lb_test = acorr_ljungbox(resid.dropna(), lags=[12], return_df=True)
+lb_pvalue = float(lb_test['lb_pvalue'].iloc[-1])
+print("Ljung-Box p-value (residuals) at lag 12:", lb_pvalue)
+
+# 4) Refit on train+test then forecast validation
+combined = pd.concat([split['train'], split['test']])
+fit_final, pred_val, ci_val = fit_sarima_and_forecast(combined, split['val'].index,
+                                                      ord_loc, seas_loc)
+metrics_val = evaluate_forecast(split['val'], pred_val, verbose=True)
+
+# Store results
+experiment_results.append({
+    'experiment': f"{split['train_years']}|{split['test_years']}|{split['val_years']}",
+    'order': ord_loc,
+    'seasonal_order': seas_loc,
+    'lb_pvalue': lb_pvalue,
+    'test_metrics': metrics_test,
+    'val_metrics': metrics_val,
+    'pred_test': pred_test,
+    'ci_test': ci_test,
+    'pred_val': pred_val,
+    'ci_val': ci_val,
+    'train_end': split['train'].index[-1],
+    'test_end': split['test'].index[-1],
+    'val_end': split['val'].index[-1]
+})
+
+# Summarize
+rows=[]
+for r in experiment_results:
+    rows.append({
+        'experiment': r['experiment'],
+        'order': r['order'],
+        'seasonal_order': r['seasonal_order'],
+        'lb_pvalue': r['lb_pvalue'],
+        'test_MAE': r['test_metrics']['MAE'],
+        'test_RMSE': r['test_metrics']['RMSE'],
+        'test_MAPE': r['test_metrics']['MAPE'],
+        'val_MAE': r['val_metrics']['MAE'],
+        'val_RMSE': r['val_metrics']['RMSE'],
+        'val_MAPE': r['val_metrics']['MAPE'],
+    })
+summary_df = pd.DataFrame(rows).sort_values('val_RMSE')
+display(summary_df)
