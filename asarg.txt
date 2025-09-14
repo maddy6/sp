@@ -1,0 +1,475 @@
+# Full SARIMA modelling pipeline (corrected, extended, annotated)
+# Run in Jupyter / Python 3.8+ environment.
+# Required packages: pandas, numpy, matplotlib, seaborn, statsmodels, pmdarima, sklearn, scipy
+
+import warnings
+warnings.filterwarnings('ignore')
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.stats.diagnostic import acorr_ljungbox
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+import pmdarima as pm
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from math import sqrt
+from scipy.stats import probplot
+
+sns.set(style='whitegrid', context='talk')
+
+# ---------------------------
+# 0. LOAD DATA
+# ---------------------------
+# Replace this with your real data load. Expected columns (exact names from your SQL):
+# ['BUSINESS_GROUPS_TA','MONTH','CURRENT_MONTH_HEADCOUNT','CURRENT_MONTH_EXITS',
+#  'CUM_VOLUNTARY_EXITS','AVG_HEADCOUNT_YTD','YTD_ATTRITION_RATE','ANNUALIZED_ATTRITION_RATE']
+
+# Example: df = pd.read_excel("attrition_dataset.xlsx")
+# df['MONTH'] = pd.to_datetime(df['MONTH'], format='%Y-%m')   # if month string
+
+# For demonstration we create a synthetic dataset (60 months, multiple sub-depts).
+def make_demo_df(n_subdepts=6, months=60, seed=2025):
+    np.random.seed(seed)
+    subs = [f"Dept_{i+1}" for i in range(n_subdepts)]
+    months_idx = pd.date_range(end=pd.to_datetime('today').normalize(), periods=months, freq='MS')
+    rows=[]
+    for s in subs:
+        base = np.random.randint(200,3000)
+        trend = np.linspace(0.02,0.12,months) * (0.6 + np.random.rand())
+        season = 0.01 * np.sin(np.arange(months)*2*np.pi/12 + np.random.rand()*3)
+        noise = np.random.normal(0,0.01,months)
+        attr = np.clip(trend + season + noise, 0.0, 0.5)
+        head = (base + np.random.normal(scale=base*0.02,size=months)).astype(int)
+        exits = (attr * head).round().astype(int)
+        for i,m in enumerate(months_idx):
+            rows.append({
+                'BUSINESS_GROUPS_TA': s,
+                'MONTH': m,
+                'CURRENT_MONTH_HEADCOUNT': int(head[i]),
+                'CURRENT_MONTH_EXITS': int(exits[i]),
+                'CUM_VOLUNTARY_EXITS': int(exits[:i+1].sum()),
+                'AVG_HEADCOUNT_YTD': float(pd.Series(head[:i+1]).mean()),
+                'YTD_ATTRITION_RATE': float(exits[:i+1].sum() / max(1,pd.Series(head[:i+1]).mean())),
+                'ANNUALIZED_ATTRITION_RATE': float((exits[:i+1].sum() / max(1,pd.Series(head[:i+1]).mean())) * (12/(i+1 if i+1>0 else 1)))
+            })
+    return pd.DataFrame(rows)
+
+# Load real data: uncomment and adjust:
+# df = pd.read_excel("your_attrition_file.xlsx")
+# df['MONTH'] = pd.to_datetime(df['MONTH'], format='%Y-%m')
+# Or use the demo:
+df = make_demo_df(n_subdepts=6, months=60)
+
+# Normalize column names
+df.columns = [c.strip() for c in df.columns]
+
+# Settings: change to the sub-dept you want to model
+group_col = 'BUSINESS_GROUPS_TA'
+time_col = 'MONTH'
+target_col = 'ANNUALIZED_ATTRITION_RATE'   # monthly attrition series to model
+
+dept = df[group_col].unique()[0]
+print("Modeling sub-department:", dept)
+
+# Build time series for the chosen sub-dept
+ts_df = df[df[group_col]==dept].sort_values(time_col).set_index(time_col)
+series = ts_df[target_col].asfreq('MS')   # monthly start frequency
+
+# ---------------------------
+# 1. PRE-MODELING DIAGNOSTICS & EDA
+# ---------------------------
+def check_missing_and_fill(ts):
+    missing = ts.isna().sum()
+    print(f"Missing months: {missing}")
+    if missing>0:
+        # Business decision: forward-fill (assume no sudden structural missing months)
+        ts = ts.ffill().bfill()
+    return ts
+
+series = check_missing_and_fill(series)
+
+# 1A: Seasonal decomposition (trend + season + resid)
+def decomposition_plot(ts, period=12, title=None):
+    res = seasonal_decompose(ts, model='additive', period=period, extrapolate_trend='freq')
+    fig = res.plot()
+    fig.set_size_inches(12,8)
+    if title: plt.suptitle(title, y=0.95, fontsize=14)
+    plt.show()
+
+decomposition_plot(series, period=12, title=f'{dept} - Seasonal Decomposition')
+
+# 1B: Stationarity tests - ADF & KPSS
+def adf_test(ts):
+    res = adfuller(ts.dropna(), autolag='AIC')
+    print("ADF Statistic: {:.5f}, p-value: {:.5f}".format(res[0], res[1]))
+    return res[1]
+
+def kpss_test_safe(ts):
+    try:
+        stat, p, lags, crit = kpss(ts.dropna(), regression='c', nlags='auto')
+        print("KPSS Statistic: {:.5f}, p-value: {:.5f}".format(stat, p))
+        return p
+    except Exception as e:
+        print("KPSS test failed:", e)
+        return np.nan
+
+print("\nStationarity tests:")
+p_adf = adf_test(series)
+p_kpss = kpss_test_safe(series)
+
+# 1C: ACF/PACF visuals to guide p/q and P/Q choices
+fig, axes = plt.subplots(1,2, figsize=(14,4))
+plot_acf(series.dropna(), lags=36, ax=axes[0])
+plot_pacf(series.dropna(), lags=36, ax=axes[1])
+axes[0].set_title('ACF'); axes[1].set_title('PACF')
+plt.show()
+
+# ---------------------------
+# 2. DECIDE differencing d and seasonal D programmatically
+# ---------------------------
+# SME rules-of-thumb applied:
+d = 0
+D = 0
+if p_adf > 0.05:
+    d = 1
+# Check seasonal stationarity by KPSS on seasonally differenced series
+seasonal_diff = series.diff(12).dropna()
+p_kpss_seas = kpss_test_safe(seasonal_diff)
+if (not np.isnan(p_kpss_seas)) and (p_kpss_seas < 0.05):
+    D = 1
+
+print(f"Preliminary differencing selection: d={d}, D={D}")
+
+# ---------------------------
+# 3. AUTOMATED SARIMA PARAMETER SELECTION
+# ---------------------------
+print("\nRunning auto_arima (can take a minute)...")
+auto = pm.auto_arima(
+    series.dropna(),
+    seasonal=True, m=12,
+    start_p=0, start_q=0, max_p=3, max_q=3,
+    start_P=0, start_Q=0, max_P=2, max_Q=2,
+    d=d, D=D,
+    stepwise=True,
+    suppress_warnings=True,
+    error_action='ignore',
+    information_criterion='aic'   # AIC preferred for balanced fit; change to bic for parsimony
+)
+print("Auto ARIMA selected order:", auto.order, "seasonal_order:", auto.seasonal_order)
+print(auto.summary())
+
+candidate_order = auto.order
+candidate_seasonal = auto.seasonal_order
+
+# ---------------------------
+# 4. TRAIN / TEST / VALIDATION SPLITS (anchored + sliding)
+# ---------------------------
+def generate_splits(ts_index, train_months=36, test_months=12, val_months=12, mode='anchored'):
+    n = len(ts_index)
+    splits=[]
+    if mode=='anchored':
+        if train_months + test_months + val_months > n:
+            raise ValueError("Not enough months for anchored split")
+        start = 0
+        train_idx = ts_index[start:start+train_months]
+        test_idx = ts_index[start+train_months:start+train_months+test_months]
+        val_idx  = ts_index[start+train_months+test_months:start+train_months+test_months+val_months]
+        splits.append({'name':'anchored_{}y_{}y_{}y'.format(train_months//12,test_months//12,val_months//12),
+                       'train':train_idx,'test':test_idx,'val':val_idx})
+    elif mode=='sliding':
+        if train_months + test_months + val_months > n:
+            raise ValueError("Not enough months for sliding split")
+        # sliding: val = earliest block, test = the block after val, train = the latest block
+        test_start = n - train_months - test_months
+        val_start  = test_start - val_months
+        val_idx = ts_index[val_start:val_start+val_months]
+        test_idx = ts_index[test_start:test_start+test_months]
+        train_idx = ts_index[test_start+test_months:test_start+test_months+train_months]
+        splits.append({'name':'sliding_{}y_{}y_{}y'.format(train_months//12,test_months//12,val_months//12),
+                       'train':train_idx,'test':test_idx,'val':val_idx})
+    else:
+        raise ValueError("unknown mode")
+    return splits
+
+idx = series.index
+split_configs = [
+    (36,12,12,'anchored'),  # 3y train, 1y test, 1y val
+    (36,12,12,'sliding'),   # sliding recent train
+    (48,6,6,'anchored'),    # 4y train, 6m test, 6m val
+    (24,24,12,'anchored')   # 2y train, 2y test, 1y val
+]
+
+all_splits=[]
+for cfg in split_configs:
+    all_splits += generate_splits(idx, *cfg)
+
+# ---------------------------
+# 5. Model training, walk-forward evaluation routine (per-split)
+# ---------------------------
+def fit_sarima_and_forecast(train_series, test_index, order, seasonal_order, disp=False):
+    model = SARIMAX(train_series, order=order, seasonal_order=seasonal_order,
+                    enforce_stationarity=False, enforce_invertibility=False)
+    fit = model.fit(disp=disp)
+    steps = len(test_index)
+    forecast_res = fit.get_forecast(steps=steps)
+    mean = pd.Series(forecast_res.predicted_mean, index=test_index)
+    ci = forecast_res.conf_int(alpha=0.05)
+    ci.index = test_index
+    return fit, mean, ci
+
+def evaluate_forecast(y_true, y_pred, verbose=True):
+    y_true, y_pred = y_true.align(y_pred, join='inner')
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = sqrt(mean_squared_error(y_true, y_pred))
+    mape = np.mean(np.abs((y_true - y_pred) / np.where(y_true==0, 1e-6, y_true))) * 100
+    if verbose:
+        print(f"MAE={mae:.6f}, RMSE={rmse:.6f}, MAPE={mape:.2f}%")
+    return {'MAE':mae,'RMSE':rmse,'MAPE':mape}
+
+experiment_results = []
+
+for sp in all_splits:
+    name = sp['name']
+    train_idx = sp['train']
+    test_idx  = sp['test']
+    val_idx   = sp['val']
+    train_series = series.loc[train_idx]
+    test_series  = series.loc[test_idx]
+    val_series   = series.loc[val_idx]
+    print("\n=== Experiment:", name)
+    print("Train:", train_idx[0].strftime("%Y-%m"), "->", train_idx[-1].strftime("%Y-%m"),
+          "Test:", test_idx[0].strftime("%Y-%m"), "->", test_idx[-1].strftime("%Y-%m"),
+          "Val:", val_idx[0].strftime("%Y-%m"), "->", val_idx[-1].strftime("%Y-%m"))
+    # 1) Auto arima on this train window to find best local params
+    auto_local = pm.auto_arima(train_series, seasonal=True, m=12,
+                               start_p=0,start_q=0,max_p=3,max_q=3,
+                               start_P=0,start_Q=0,max_P=2,max_Q=2,
+                               d=None, D=None, stepwise=True, trace=False,
+                               suppress_warnings=True, error_action='ignore',
+                               information_criterion='aic')
+    ord_loc = auto_local.order
+    seas_loc = auto_local.seasonal_order
+    print("Auto-ARIMA (train-window) chose:", ord_loc, seas_loc)
+    # 2) Fit SARIMAX on train and forecast test
+    fit_loc, pred_test, ci_test = fit_sarima_and_forecast(train_series, test_idx, ord_loc, seas_loc)
+    metrics_test = evaluate_forecast(test_series, pred_test, verbose=True)
+    # Residual diagnostics on training fit
+    resid = fit_loc.resid.dropna()
+    lb_test = acorr_ljungbox(resid, lags=[12], return_df=True)
+    lb_pvalue = float(lb_test['lb_pvalue'].iloc[-1])
+    print("Ljung-Box p-value (residuals) at lag 12:", lb_pvalue)
+    # 3) Refit on train+test and forecast validation
+    combined = pd.concat([train_series, test_series])
+    fit_final, pred_val, ci_val = None, None, None
+    try:
+        fit_final, pred_val, ci_val = fit_sarima_and_forecast(combined, val_idx, ord_loc, seas_loc)
+        metrics_val = evaluate_forecast(val_series, pred_val, verbose=True)
+    except Exception as e:
+        print("Error fitting on combined train+test:", e)
+        metrics_val = {'MAE':np.nan,'RMSE':np.nan,'MAPE':np.nan}
+    # Store experiment outcome
+    experiment_results.append({
+        'experiment': name,
+        'order': ord_loc,
+        'seasonal_order': seas_loc,
+        'lb_pvalue': lb_pvalue,
+        'test_metrics': metrics_test,
+        'val_metrics': metrics_val,
+        'pred_test': pred_test,
+        'ci_test': ci_test,
+        'pred_val': pred_val,
+        'ci_val': ci_val,
+        'train_end': train_idx[-1],
+        'test_end': test_idx[-1],
+        'val_end': val_idx[-1],
+        'train_range': (train_idx[0], train_idx[-1])
+    })
+
+# Summarize experiments
+rows=[]
+for r in experiment_results:
+    rows.append({
+        'experiment': r['experiment'],
+        'order': r['order'],
+        'seasonal_order': r['seasonal_order'],
+        'lb_pvalue': r['lb_pvalue'],
+        'test_MAE': r['test_metrics']['MAE'],
+        'test_RMSE': r['test_metrics']['RMSE'],
+        'test_MAPE': r['test_metrics']['MAPE'],
+        'val_MAE': r['val_metrics']['MAE'],
+        'val_RMSE': r['val_metrics']['RMSE'],
+        'val_MAPE': r['val_metrics']['MAPE'],
+    })
+summary_df = pd.DataFrame(rows).sort_values('val_RMSE').reset_index(drop=True)
+print("\nExperiment summary (sorted by val_RMSE):")
+display(summary_df)
+
+# ---------------------------
+# 6. Choose best experiment & refit final model (on full series or the preferred training window)
+# ---------------------------
+# Selection rule: primary = lowest val_RMSE, tie-breaker = lowest test_RMSE, and Ljung-Box p-value > 0.05 preferred
+best_row = summary_df.iloc[0]
+best_exp = next(x for x in experiment_results if x['experiment']==best_row['experiment'])
+print("\nSelected best experiment:", best_row['experiment'])
+best_order = tuple(best_row['order'])
+best_seasonal = tuple(best_row['seasonal_order'])
+
+# Refit final model on entire historical series (recommended) or on combined train+test of the best experiment
+# We'll refit on entire series (gives maximum data) but you can restrict to combined window if you prefer.
+final_model = SARIMAX(series, order=best_order, seasonal_order=best_seasonal,
+                      enforce_stationarity=False, enforce_invertibility=False)
+final_fit = final_model.fit(disp=False)
+print("\nFinal model fitted on entire series - summary:")
+print(final_fit.summary())
+
+# ---------------------------
+# Residual diagnostics & checks (SME)
+# ---------------------------
+resid = final_fit.resid.dropna()
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
+resid.plot(title='Residuals (time series)')
+plt.subplot(1,2,2)
+sns.histplot(resid, kde=True)
+plt.title('Residual distribution')
+plt.show()
+
+# Q-Q plot
+plt.figure(figsize=(6,4))
+probplot(resid, dist="norm", plot=plt)
+plt.title("Residual Q-Q plot")
+plt.show()
+
+# Ljung-Box tests at multiple lags
+lb = acorr_ljungbox(resid, lags=[6,12,18], return_df=True)
+print("Ljung-Box test for residuals:\n", lb)
+
+# ---------------------------
+# 7. CEO-GRADE Visualizations (innovative, executive-friendly)
+# ---------------------------
+
+# 7A. Fan chart (forecast uncertainty) using bootstrap residual sampling added to point forecast
+def fan_chart(fitted_model, hist_series, steps=12, n_sims=1000, title="Fan Chart Forecast"):
+    resid = fitted_model.resid.dropna().values
+    # point forecast
+    fc = fitted_model.get_forecast(steps=steps)
+    fc_idx = pd.date_range(start=hist_series.index[-1] + pd.offsets.MonthBegin(1), periods=steps, freq='MS')
+    fc_mean = pd.Series(fc.predicted_mean, index=fc_idx)
+    # simulate by sampling residuals (i.i.d. bootstrap) and adding to the forecast mean
+    sims = np.zeros((n_sims, steps))
+    for i in range(n_sims):
+        rnd = np.random.choice(resid, size=steps, replace=True)
+        sims[i, :] = fc_mean.values + rnd  # approximate add noise to mean
+    sims_df = pd.DataFrame(sims, columns=fc_idx)
+    q_low95 = sims_df.quantile(0.025)
+    q_high95 = sims_df.quantile(0.975)
+    q_low80 = sims_df.quantile(0.10)
+    q_high80 = sims_df.quantile(0.90)
+    q_low50 = sims_df.quantile(0.25)
+    q_high50 = sims_df.quantile(0.75)
+
+    plt.figure(figsize=(12,5))
+    plt.plot(hist_series.index, hist_series.values, label='Historical', color='black')
+    plt.plot(fc_mean.index, fc_mean.values, label='Point forecast', color='red', linewidth=2)
+    plt.fill_between(fc_mean.index, q_low95, q_high95, alpha=0.12, label='95% band')
+    plt.fill_between(fc_mean.index, q_low80, q_high80, alpha=0.12, label='80% band')
+    plt.fill_between(fc_mean.index, q_low50, q_high50, alpha=0.12, label='50% band')
+    plt.title(title)
+    plt.legend()
+    plt.show()
+
+fan_chart(final_fit, series, steps=12, n_sims=1000, title=f'{dept} - Forecast Fan Chart (12 months)')
+
+# 7B. Parameter stability chart (show p,d,q,P,D,Q across experiments)
+param_rows=[]
+for r in experiment_results:
+    param_rows.append({
+        'experiment': r['experiment'],
+        'order': r['order'],
+        'seasonal_order': r['seasonal_order'],
+        'test_RMSE': r['test_metrics']['RMSE'],
+        'val_RMSE': r['val_metrics']['RMSE']
+    })
+param_df = pd.DataFrame(param_rows)
+param_df[['p','d','q']] = pd.DataFrame(param_df['order'].tolist(), index=param_df.index)
+param_df[['P','D','Q','s']] = pd.DataFrame(param_df['seasonal_order'].tolist(), index=param_df.index)
+print("\nParameter selections across experiments:")
+display(param_df[['experiment','p','d','q','P','D','Q','test_RMSE','val_RMSE']])
+
+plt.figure(figsize=(10,5))
+melt = param_df.melt(id_vars=['experiment'], value_vars=['p','d','q','P','D','Q'], var_name='param', value_name='value')
+sns.stripplot(x='experiment', y='value', hue='param', data=melt, dodge=True, jitter=True, size=8)
+plt.title("Parameter selections across experiments (stability view)")
+plt.xticks(rotation=30)
+plt.legend(bbox_to_anchor=(1.05,1))
+plt.show()
+
+# 7C. Surprise Waterfall (highest unexpected attrition months)
+pred_in_sample = final_fit.get_prediction(start=series.index[0], end=series.index[-1])
+try:
+    pred_mean_ins = pd.Series(pred_in_sample.predicted_mean, index=pred_in_sample.row_labels)
+except Exception:
+    pred_mean_ins = pd.Series(pred_in_sample.predicted_mean, index=series.index)
+errors = series - pred_mean_ins
+errors = errors.dropna()
+top_surprises = errors.sort_values(ascending=False).head(10)
+plt.figure(figsize=(10,6))
+plt.barh(top_surprises.index.strftime('%Y-%m'), top_surprises.values, color='crimson')
+plt.title("Top 10 Unexpected Attrition Surprises (Actual - Predicted)")
+plt.xlabel("Absolute attrition surprise")
+plt.gca().invert_yaxis()
+plt.show()
+
+# 7D. Business-impact Forecast (expected leavers & replacement cost)
+latest_headcount = ts_df['CURRENT_MONTH_HEADCOUNT'].iloc[-1] if 'CURRENT_MONTH_HEADCOUNT' in ts_df.columns else 1000
+fc = final_fit.get_forecast(steps=12)
+fc_idx = pd.date_range(start=series.index[-1] + pd.offsets.MonthBegin(1), periods=12, freq='MS')
+fc_mean = pd.Series(fc.predicted_mean, index=fc_idx)
+expected_leavers = fc_mean * latest_headcount
+avg_replacement_cost = 40000  # customize for your org
+expected_cost = expected_leavers * avg_replacement_cost
+
+plt.figure(figsize=(12,5))
+plt.plot(fc_mean.index, expected_leavers.cumsum(), label='Cumulative expected leavers (12m)')
+plt.plot(fc_mean.index, expected_cost.cumsum(), label='Cumulative expected replacement cost (12m)')
+plt.title('Business Impact of Forecasted Attrition (12-month)')
+plt.ylabel('Count / Cost')
+plt.legend()
+plt.show()
+
+# 7E. Performance radar across experiments (normalized)
+perf = summary_df[['experiment','test_MAE','test_RMSE','test_MAPE']].set_index('experiment')
+norm = (perf - perf.min())/(perf.max()-perf.min() + 1e-12)
+labels = norm.columns.tolist()
+angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist()
+angles += angles[:1]
+
+plt.figure(figsize=(7,7))
+ax = plt.subplot(111, polar=True)
+for i,row in norm.iterrows():
+    values = row.values.flatten().tolist()
+    values += values[:1]
+    ax.plot(angles, values, label=i)
+    ax.fill(angles, values, alpha=0.1)
+ax.set_thetagrids(np.degrees(angles[:-1]), labels)
+plt.title("Normalized Test Performance across experiments (radar)")
+plt.legend(loc='upper right', bbox_to_anchor=(1.5,1.1))
+plt.show()
+
+# ---------------------------
+# 8. Save outputs & model (optional)
+# ---------------------------
+summary_df.to_csv('sarima_experiment_summary.csv', index=False)
+print("Saved experiment summary to sarima_experiment_summary.csv")
+
+# Save model (pickle)
+import pickle
+with open(f"sarima_final_model_{dept.replace(' ','_')}.pkl","wb") as f:
+    pickle.dump(final_fit, f)
+print("Saved final SARIMA model pickle.")
+
+# End of pipeline
