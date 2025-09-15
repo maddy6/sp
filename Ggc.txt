@@ -22,6 +22,169 @@ plt.show()
 
 
 
+
+
+
+
+
+Perfect 👍 You’ve got a time-series HR dataset with columns like:
+
+BUSINESS_GROUPS_TA
+
+MONTH
+
+CURRENT_MONTH_HEADCOUNT
+
+CURRENT_MONTH_EXITS
+
+CUM_VOLUNTARY_EXITS
+
+AVG_HEADCOUNT_YTD
+
+YTD_ATTRITION_RATE
+
+ANNUALIZED_ATTRITION_RATE
+
+
+Here’s how we can do a structured Exploratory Data Analysis (EDA) with views useful for business + modeling.
+
+
+---
+
+🔎 Step 1: Dataset Overview
+
+print(df.info())
+print(df.describe())
+print(df.head())
+
+👉 Helps check missing values, ranges, and data types.
+
+
+---
+
+📊 Step 2: Trends Over Time
+
+1. Overall Attrition Trend
+
+df['MONTH'] = pd.to_datetime(df['MONTH'], format="%Y-%m")
+
+plt.figure(figsize=(12,6))
+plt.plot(df['MONTH'], df['ANNUALIZED_ATTRITION_RATE'], marker='o', color='teal')
+plt.title("Overall Annualized Attrition Rate Trend")
+plt.xlabel("Month"); plt.ylabel("Annualized Attrition Rate")
+plt.xticks(rotation=45); plt.grid(True, alpha=0.5)
+plt.show()
+
+👉 Shows whether attrition is rising/falling year by year.
+
+
+---
+
+2. Business Group Wise Trends
+
+import seaborn as sns
+
+plt.figure(figsize=(14,6))
+sns.lineplot(data=df, x="MONTH", y="ANNUALIZED_ATTRITION_RATE", hue="BUSINESS_GROUPS_TA", marker="o")
+plt.title("Attrition Rate by Business Group")
+plt.xticks(rotation=45); plt.grid(True, alpha=0.5)
+plt.show()
+
+👉 Compare different BUSINESS_GROUPS_TA performance.
+
+
+---
+
+📈 Step 3: Headcount & Exits
+
+3. Headcount Trend
+
+plt.figure(figsize=(12,6))
+plt.plot(df['MONTH'], df['CURRENT_MONTH_HEADCOUNT'], marker='o', color='navy')
+plt.title("Current Month Headcount Over Time")
+plt.xlabel("Month"); plt.ylabel("Headcount")
+plt.xticks(rotation=45); plt.grid(True, alpha=0.5)
+plt.show()
+
+👉 Whether workforce is shrinking/growing.
+
+
+---
+
+4. Exits vs Headcount
+
+fig, ax1 = plt.subplots(figsize=(12,6))
+
+ax1.plot(df['MONTH'], df['CURRENT_MONTH_EXITS'], color='red', marker='o', label="Monthly Exits")
+ax1.set_ylabel("Monthly Exits", color='red')
+
+ax2 = ax1.twinx()
+ax2.plot(df['MONTH'], df['CURRENT_MONTH_HEADCOUNT'], color='blue', marker='o', label="Headcount")
+ax2.set_ylabel("Headcount", color='blue')
+
+plt.title("Monthly Exits vs Headcount")
+plt.xticks(rotation=45)
+plt.grid(True, alpha=0.5)
+plt.show()
+
+👉 See if exits correlate with workforce size.
+
+
+---
+
+📉 Step 4: Attrition Ratios
+
+5. YTD vs Annualized Attrition
+
+plt.figure(figsize=(12,6))
+plt.plot(df['MONTH'], df['YTD_ATTRITION_RATE'], marker='o', label="YTD Attrition Rate")
+plt.plot(df['MONTH'], df['ANNUALIZED_ATTRITION_RATE'], marker='s', label="Annualized Attrition Rate")
+plt.title("YTD vs Annualized Attrition Rate")
+plt.xlabel("Month"); plt.ylabel("Attrition Rate")
+plt.legend(); plt.xticks(rotation=45); plt.grid(True, alpha=0.5)
+plt.show()
+
+👉 Business users can see how YTD compares to annualized values.
+
+
+---
+
+📊 Step 5: Distributions
+
+6. Distribution of Attrition Rates
+
+sns.histplot(df['ANNUALIZED_ATTRITION_RATE'], kde=True, bins=20, color="teal")
+plt.title("Distribution of Annualized Attrition Rate")
+plt.show()
+
+👉 Helps detect extreme attrition periods.
+
+
+---
+
+📌 Step 6: Insights for CEO
+
+Which business groups have the highest attrition?
+
+Are exits seasonal? (e.g., spikes every year at certain months)
+
+Is headcount decline linked with higher attrition?
+
+Difference between YTD vs Annualized Attrition – stable or diverging?
+
+Distribution of attrition – mostly stable or with extreme shocks?
+
+
+
+---
+
+👉 With this EDA, you’ll have trend plots, group comparisons, exit–headcount relationships, and attrition distributions ready to present.
+
+Would you like me to wrap this into one single reusable Python function (explore_attrition_data(df)) that generates all these charts in one go, so you can just call it on your dataset?
+
+
+
+
 import seaborn as sns
 
 plt.figure(figsize=(14,7))
