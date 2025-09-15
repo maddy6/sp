@@ -1,0 +1,217 @@
+import pandas as pd
+
+# Load your dataset (replace with your actual file path)
+df = pd.read_excel("your_file.xlsx")
+
+# Overall sum of attrition rate
+overall_sum = df['ANNUALIZED_ATTRITION_RATE'].sum()
+
+# Month-wise sum of attrition rate
+monthwise_sum = (
+    df.groupby('MONTH', as_index=False)['ANNUALIZED_ATTRITION_RATE']
+      .sum()
+)
+
+print("Overall sum of ANNUALIZED_ATTRITION_RATE:", overall_sum)
+print("\nMonth-wise sum of ANNUALIZED_ATTRITION_RATE:")
+print(monthwise_sum)
+
+
+
+
+1. 📈 Overall Attrition Trend (Line Chart)
+
+Shows how attrition evolved month-over-month. Good for spotting spikes and dips.
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(12,6))
+plt.plot(df['MONTH'], df['ANNUALIZED_ATTRITION_RATE'], marker='o', color='royalblue', linewidth=2)
+
+plt.title("Overall Attrition Rate Trend", fontsize=16, fontweight='bold')
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate")
+plt.xticks(rotation=45)
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.show()
+
+2. 📊 Attrition by Business Groups (Stacked Area Chart)
+
+Shows how different groups contribute to total attrition rate over time.
+
+grouped = df.groupby(['MONTH','BUSINESS_GROUPS_TA'])['ANNUALIZED_ATTRITION_RATE'].sum().reset_index()
+pivoted = grouped.pivot(index='MONTH', columns='BUSINESS_GROUPS_TA', values='ANNUALIZED_ATTRITION_RATE')
+
+pivoted.plot(kind='area', figsize=(12,6), alpha=0.6, cmap='Set2')
+plt.title("Attrition Contribution by Business Groups", fontsize=16, fontweight='bold')
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate")
+plt.xticks(rotation=45)
+plt.show()
+
+3. 🚦 Attrition Heatmap (Month vs Business Group)
+
+Color-coded heatmap helps CEO spot hot months / high-risk groups.
+
+import seaborn as sns
+
+heatmap_data = grouped.pivot(index='BUSINESS_GROUPS_TA', columns='MONTH', values='ANNUALIZED_ATTRITION_RATE')
+
+plt.figure(figsize=(14,6))
+sns.heatmap(heatmap_data, annot=True, cmap="coolwarm", fmt=".2f", linewidths=.5)
+plt.title("Attrition Heatmap (Month vs Business Groups)", fontsize=16, fontweight='bold')
+plt.xlabel("Month")
+plt.ylabel("Business Group")
+plt.show()
+
+4. 🎯 Yearly Comparison (Bar Chart with Highlight)
+
+Compare annualized attrition across years.
+
+df['YEAR'] = df['MONTH'].str[:4]  # extract year
+yearly = df.groupby('YEAR')['ANNUALIZED_ATTRITION_RATE'].mean().reset_index()
+
+plt.figure(figsize=(8,6))
+bars = plt.bar(yearly['YEAR'], yearly['ANNUALIZED_ATTRITION_RATE'], color='skyblue')
+
+# Highlight the highest attrition year
+max_idx = yearly['ANNUALIZED_ATTRITION_RATE'].idxmax()
+bars[max_idx].set_color('crimson')
+
+plt.title("Yearly Average Attrition Rate", fontsize=16, fontweight='bold')
+plt.xlabel("Year")
+plt.ylabel("Average Attrition Rate")
+plt.show()
+
+
+
+
+1. 📌 Attrition Calendar Heatmap (Year-Month Grid)
+
+Instead of a boring line, show attrition like a calendar of risk.
+The CEO can see “red months” instantly.
+
+import calendar
+import seaborn as sns
+
+df['YEAR'] = pd.to_datetime(df['MONTH']).dt.year
+df['MONTH_NUM'] = pd.to_datetime(df['MONTH']).dt.month
+
+pivot_cal = df.pivot("YEAR", "MONTH_NUM", "ANNUALIZED_ATTRITION_RATE")
+
+plt.figure(figsize=(14,6))
+sns.heatmap(pivot_cal, annot=True, fmt=".2%", cmap="Reds", linewidths=.5, cbar_kws={'label': 'Attrition Rate'})
+plt.xticks(ticks=range(12), labels=[calendar.month_abbr[i+1] for i in range(12)])
+plt.title("Attrition Calendar View", fontsize=16, fontweight='bold')
+plt.xlabel("Month")
+plt.ylabel("Year")
+plt.show()
+
+
+👉 Why CEO will love this: Shows seasonality patterns (e.g., attrition spikes in June every year).
+
+2. 🏆 Attrition Leaderboard (Business Group Ranking)
+
+Rank business groups by attrition risk like a sports leaderboard.
+
+ranked = df.groupby("BUSINESS_GROUPS_TA")["ANNUALIZED_ATTRITION_RATE"].mean().sort_values(ascending=False)
+
+plt.figure(figsize=(8,6))
+bars = plt.barh(ranked.index, ranked.values, color="steelblue")
+bars[0].set_color("crimson")  # highlight worst group
+plt.title("Attrition Leaderboard by Business Group", fontsize=16, fontweight="bold")
+plt.xlabel("Avg Attrition Rate")
+plt.gca().invert_yaxis()
+plt.show()
+
+
+👉 Why CEO will love this: Turns numbers into a competitive challenge — “who’s losing the most talent?”
+
+3. 🌍 Attrition as a Risk Radar (Spider Chart)
+
+Visualize business groups like radar spokes. Wide spikes = high attrition risk.
+
+import numpy as np
+
+groups = df['BUSINESS_GROUPS_TA'].unique()
+group_mean = df.groupby('BUSINESS_GROUPS_TA')['ANNUALIZED_ATTRITION_RATE'].mean()
+
+angles = np.linspace(0, 2*np.pi, len(groups), endpoint=False).tolist()
+values = group_mean.values.tolist()
+values += values[:1]
+angles += angles[:1]
+
+fig, ax = plt.subplots(figsize=(8,8), subplot_kw=dict(polar=True))
+ax.plot(angles, values, color='crimson', linewidth=2)
+ax.fill(angles, values, color='crimson', alpha=0.25)
+ax.set_xticks(angles[:-1])
+ax.set_xticklabels(groups, fontsize=10)
+plt.title("Attrition Risk Radar", fontsize=16, fontweight='bold')
+plt.show()
+
+
+👉 Why CEO will love this: Looks like a risk compass — where should leadership look first?
+
+4. 🎢 Attrition Rollercoaster (Annotated Peaks & Valleys)
+
+Highlight moments when attrition spiked or dropped dramatically.
+
+plt.figure(figsize=(12,6))
+plt.plot(df['MONTH'], df['ANNUALIZED_ATTRITION_RATE'], marker='o', color='darkblue')
+
+# Annotate peaks & valleys
+max_idx = df['ANNUALIZED_ATTRITION_RATE'].idxmax()
+min_idx = df['ANNUALIZED_ATTRITION_RATE'].idxmin()
+
+plt.annotate("Peak: {:.2%}".format(df.loc[max_idx,'ANNUALIZED_ATTRITION_RATE']),
+             xy=(df.loc[max_idx,'MONTH'], df.loc[max_idx,'ANNUALIZED_ATTRITION_RATE']),
+             xytext=(+30, +30), textcoords="offset points",
+             arrowprops=dict(arrowstyle="->", color="red"))
+
+plt.annotate("Valley: {:.2%}".format(df.loc[min_idx,'ANNUALIZED_ATTRITION_RATE']),
+             xy=(df.loc[min_idx,'MONTH'], df.loc[min_idx,'ANNUALIZED_ATTRITION_RATE']),
+             xytext=(-50, -40), textcoords="offset points",
+             arrowprops=dict(arrowstyle="->", color="green"))
+
+plt.title("Attrition Rollercoaster (Peaks & Valleys)", fontsize=16, fontweight="bold")
+plt.xticks(rotation=45)
+plt.ylabel("Attrition Rate")
+plt.show()
+
+
+👉 Why CEO will love this: Instead of lines, it tells a story — “here’s where we lost the most talent, and why”.
+
+5. 🔮 Attrition “Risk Thermometer”
+
+Use color intensity to show overall risk levels like a thermometer.
+
+avg_rate = df['ANNUALIZED_ATTRITION_RATE'].mean()
+
+plt.figure(figsize=(2,6))
+plt.barh(["Attrition"], [avg_rate], color="red" if avg_rate > 0.05 else "green")
+plt.xlim(0, 0.2)  # assume 20% max
+plt.title("Attrition Risk Thermometer", fontsize=14, fontweight='bold')
+plt.show()
+
+
+👉 Why CEO will love this: One-glance KPI gauge — “are we in safe zone or danger zone?”
+
+6. 🧭 Attrition Journey Map (Cumulative Exits vs Headcount)
+
+Show the story of exits eating into headcount.
+
+plt.figure(figsize=(12,6))
+plt.plot(df['MONTH'], df['CURRENT_MONTH_HEADCOUNT'], label="Headcount", color="blue", linewidth=2)
+plt.plot(df['MONTH'], df['CUM_VOLUNTARY_EXITS'], label="Cumulative Exits", color="crimson", linewidth=2)
+plt.fill_between(df['MONTH'], df['CUM_VOLUNTARY_EXITS'], df['CURRENT_MONTH_HEADCOUNT'], alpha=0.2, color="gray")
+
+plt.title("Attrition Journey Map (Exits vs Headcount)", fontsize=16, fontweight="bold")
+plt.legend()
+plt.xticks(rotation=45)
+plt.show()
+
+
+👉 Why CEO will love this: Connects people leaving directly to business size shrinking.
+
+
+
