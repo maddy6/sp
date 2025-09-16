@@ -1,0 +1,49 @@
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def plot_attrition_comparison(out_df, group=None):
+    """
+    Plots Actual vs Forecasted attrition counts.
+    If group is given, filter for that group; else plot overall.
+    """
+    df = out_df.copy()
+
+    if group:
+        df = df[df['Business Group'] == group]
+
+    # ---- Bar Plot ----
+    plt.figure(figsize=(12,6))
+    x = df['Future Month']
+    plt.bar(x, df['Act Vol Attr Count'], width=0.35, label="Actual", alpha=0.8)
+    plt.bar(x, df['Fut Vol. Attr Count'], width=0.35, label="Forecast", alpha=0.8, bottom=df['Act Vol Attr Count']*0)
+    plt.xticks(rotation=45)
+    plt.ylabel("Attrition Count")
+    plt.title(f"Actual vs Forecast Attrition Counts ({group if group else 'All Groups'})")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def plot_deviation_heatmap(out_df):
+    """
+    Heatmap of deviations (Forecast - Actual) across groups & months
+    """
+    df = out_df.copy()
+    df['Deviation'] = df['Fut Vol. Attr Count'] - df['Act Vol Attr Count']
+    pivot = df.pivot(index="Business Group", columns="Future Month", values="Deviation")
+
+    plt.figure(figsize=(14,8))
+    sns.heatmap(pivot, cmap="RdYlGn", center=0, annot=True, fmt=".0f", cbar_kws={'label': 'Deviation'})
+    plt.title("Forecast Deviation (Predicted - Actual) by Group & Month")
+    plt.ylabel("Business Group")
+    plt.xlabel("Month")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+
+
+# Group-specific bar chart
+plot_attrition_comparison(out_df, group="Finance")
+
+# Overall deviation heatmap
+plot_deviation_heatmap(out_df)
