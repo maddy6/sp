@@ -1,3 +1,43 @@
+import pandas as pd
+
+# Read your dataset
+df = pd.read_excel("Monthly_attrition.xlsx")
+
+# Step 1: Convert MONTH to datetime (if not already)
+df["MONTH"] = pd.to_datetime(df["MONTH"])
+
+# Step 2: Aggregate monthwise across all business groups
+overall = df.groupby("MONTH").agg({
+    "HEADCOUNT": "sum",
+    "VOLUNTARY_EXITS": "sum"
+}).reset_index()
+
+# Step 3: Recalculate overall attrition rate
+overall["MONTHLY_ATTRITION_RATE"] = overall["VOLUNTARY_EXITS"] / overall["HEADCOUNT"]
+
+# Step 4: Add a new column to mark this group as "Overall"
+overall["BUSINESS_GROUPS_TA"] = "Overall"
+
+# Step 5: Reorder columns to match original structure
+overall = overall[["BUSINESS_GROUPS_TA", "MONTH", "HEADCOUNT", "VOLUNTARY_EXITS", "MONTHLY_ATTRITION_RATE"]]
+
+# Step 6: Append back to the original dataframe (optional)
+df_with_overall = pd.concat([df, overall], ignore_index=True)
+
+# ✅ Now df_with_overall contains all business groups + an extra "Overall"
+print(df_with_overall.tail(12))  # see last few months with overall
+
+
+
+
+
+
+
+
+
+
+
+
 # --------------------------
 # 8. Convert Forecasted Rates into Headcount
 # --------------------------
