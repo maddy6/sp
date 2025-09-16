@@ -1,0 +1,182 @@
+import statsmodels.api as sm
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 1. Fit SARIMAX model
+def fit_sarimax(train_series, order=(1,1,1), seasonal_order=(1,0,0,12), exog_train=None):
+    """
+    Fit SARIMAX model on given training series.
+    """
+    model = sm.tsa.statespace.SARIMAX(
+        train_series,
+        order=order,
+        seasonal_order=seasonal_order,
+        exog=exog_train,
+        enforce_stationarity=False,
+        enforce_invertibility=False
+    )
+    model_fit = model.fit(disp=False)
+    return model_fit
+
+
+# 2. Forecast + compute metrics
+def forecast_and_metrics_sarimax(model_fit, test_series, exog_test=None):
+    """
+    Forecast for test_series length & compute RMSE and MAPE.
+    """
+    n_periods = len(test_series)
+    fc = model_fit.get_forecast(steps=n_periods, exog=exog_test)
+    fc_mean = fc.predicted_mean
+    
+    rmse = np.sqrt(mean_squared_error(test_series, fc_mean))
+    mape = mean_absolute_percentage_error(test_series, fc_mean)
+    
+    return fc_mean, rmse, mape
+
+
+# 3. Plot actual vs forecast
+def plot_forecast_sarimax(train_series, test_series, fc_test, 
+                          val_series=None, fc_val=None, title="SARIMAX Forecast"):
+    """
+    Plot train, test, and forecast (optionally validation).
+    """
+    plt.figure(figsize=(12,6))
+    plt.plot(train_series.index, train_series, label="Train", color="blue")
+    plt.plot(test_series.index, test_series, label="Test Actual", color="green")
+    plt.plot(test_series.index, fc_test, label="Test Forecast", linestyle="--", color="orange")
+    
+    if val_series is not None and fc_val is not None:
+        plt.plot(val_series.index, val_series, label="Val Actual", color="purple")
+        plt.plot(val_series.index, fc_val, label="Val Forecast", linestyle="--", color="red")
+    
+    plt.xlabel("Date")
+    plt.ylabel("ANNUALIZED_ATTRITION_RATE")
+    plt.title(title)
+    plt.legend()
+    plt.show()
+
+
+
+
+
+with exogenous variable 
+
+# Fit model
+sarimax_model = fit_sarimax(train_series, order=(2,1,2), seasonal_order=(1,0,1,12))
+
+# Forecast + metrics
+fc_test, rmse, mape = forecast_and_metrics_sarimax(sarimax_model, test_series)
+
+print("RMSE:", rmse, "MAPE:", mape)
+
+# Plot
+plot_forecast_sarimax(train_series, test_series, fc_test, title="SARIMAX Forecast (No Exog)")
+
+
+
+without exogenous variable 
+
+exog_train = df_with_overall.loc[train_series.index, ["HEADCOUNT", "VOLUNTARY_EXITS"]]
+exog_test  = df_with_overall.loc[test_series.index, ["HEADCOUNT", "VOLUNTARY_EXITS"]]
+
+sarimax_model_exog = fit_sarimax(train_series, order=(2,1,2), seasonal_order=(1,0,1,12),
+                                 exog_train=exog_train)
+
+fc_test_exog, rmse_exog, mape_exog = forecast_and_metrics_sarimax(sarimax_model_exog, 
+                                                                 test_series, 
+                                                                 exog_test=exog_test)
+
+
+
+
+
+
+
+
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+import numpy as np
+
+# ----------------------------
+# 1. Fit SARIMAX model
+# ----------------------------
+def fit_sarimax(train_series, order=(1,1,1), seasonal_order=(0,0,0,0), exog_train=None):
+    model = SARIMAX(
+        train_series,
+        order=order,
+        seasonal_order=seasonal_order,
+        exog=exog_train,
+        enforce_stationarity=False,
+        enforce_invertibility=False
+    )
+    fitted = model.fit(disp=False)
+    return fitted
+
+# ----------------------------
+# 2. Forecast + metrics
+# ----------------------------
+def forecast_and_metrics_sarimax(model, true_series, exog_test=None):
+    n_periods = len(true_series)
+    forecast = model.get_forecast(steps=n_periods, exog=exog_test)
+    fc_values = forecast.predicted_mean
+    rmse = np.sqrt(mean_squared_error(true_series, fc_values))
+    mape = mean_absolute_percentage_error(true_series, fc_values)
+    return fc_values, rmse, mape
+
+# ----------------------------
+# 3. Plot actual vs forecast
+# ----------------------------
+def plot_forecast_sarimax(train_series, test_series, fc_test, 
+                          val_series=None, fc_val=None, title="SARIMAX Forecast"):
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(12,6))
+    plt.plot(train_series.index, train_series, label="Train", color="blue")
+    plt.plot(test_series.index, test_series, label="Test Actual", color="green")
+    plt.plot(fc_test.index, fc_test, label="Test Forecast", linestyle="--", color="green")
+
+    if val_series is not None:
+        plt.plot(val_series.index, val_series, label="Val Actual", color="orange")
+    if fc_val is not None:
+        plt.plot(fc_val.index, fc_val, label="Val Forecast", linestyle="--", color="orange")
+
+    plt.xlabel("Date")
+    plt.ylabel("Attrition Rate")
+    plt.title(title, fontsize=14, fontweight="bold")
+    plt.legend()
+    plt.show()
+
+# ----------------------------
+# 4. Example Usage
+# ----------------------------
+# Train SARIMAX (with OR without exogenous)
+sarimax_model = fit_sarimax(
+    train_series,
+    order=(2,1,2),
+    seasonal_order=(1,0,0,12),
+    exog_train=exog_train   # <-- None if no exogenous variables
+)
+
+# Forecast on train
+fc_train, rmse_train, mape_train = forecast_and_metrics_sarimax(sarimax_model, train_series, exog_test=exog_train)
+print("Train RMSE:", rmse_train, " Train MAPE:", mape_train)
+
+# Forecast on test
+fc_test, rmse_test, mape_test = forecast_and_metrics_sarimax(sarimax_model, test_series, exog_test=exog_test)
+print("Test RMSE:", rmse_test, " Test MAPE:", mape_test)
+
+# Forecast on validation
+fc_val, rmse_val, mape_val = forecast_and_metrics_sarimax(sarimax_model, val_series, exog_test=exog_val)
+print("Val RMSE:", rmse_val, " Val MAPE:", mape_val)
+
+# Plot
+plot_forecast_sarimax(train_series, test_series, fc_test, 
+                      val_series=val_series, fc_val=fc_val,
+                      title=f"Attrition Forecast for {group_index}")
+print("RMSE (exog):", rmse_exog, "MAPE (exog):", mape_exog)
+
+plot_forecast_sarimax(train_series, test_series, fc_test_exog, 
+                      title="SARIMAX Forecast with Exogenous Vars")
+
+
