@@ -1,0 +1,112 @@
+# Requires: pandas, numpy, scipy
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+# 1. load (adjust path as needed)
+df = pd.read_excel('monthwise_updated_attrition_dataset.xlsx')  # your file
+# ensure MONTH sorts chronologically
+df = df.sort_values(['BUSINESS_GROUPS_TA', 'MONTH']).reset_index(drop=True)
+
+# 2. quick per-row per-person exit rate estimate (no pooling)
+df['lambda_hat'] = df['VOLUNTARY_EXITS'] / df['HEADCOUNT']  # observed per-person rate
+
+# 3. Empirical Bayes (method-of-moments) to get global Gamma prior for theta
+m = df['lambda_hat'].mean()
+v = df['lambda_hat'].var(ddof=1)
+# safety if v is 0 or extremely small:
+if v <= 0 or np.isnan(v):
+    # fallback weak prior around mean
+    alpha0, beta0 = 1.0, 1.0 / max(m, 1e-6)
+else:
+    alpha0 = (m**2) / v
+    beta0  = m / v
+# Note: in the Gamma(rate) parameterization, mean = alpha/beta
+
+# 4. create cumulative-up-to-previous-month statistics per group (so forecasting uses only past)
+g = df.groupby('BUSINESS_GROUPS_TA')
+df['cum_exits_prev'] = g['VOLUNTARY_EXITS'].cumsum() - df['VOLUNTARY_EXITS']
+df['cum_head_prev']  = g['HEADCOUNT'].cumsum() - df['HEADCOUNT']
+
+# For the first row of a group, cum_*_prev will be 0 -> posterior is just prior
+
+# 5. posterior parameters using past data (alpha_post = alpha0 + sum_exits_past ; beta_post = beta0 + sum_headcount_past)
+df['alpha_post_prev'] = alpha0 + df['cum_exits_prev']
+df['beta_post_prev']  = beta0  + df['cum_head_prev']
+
+# 6. choose exposure (HEADCOUNT) for next-month prediction. If you have a next-month HEADCOUNT use it;
+#    otherwise use current HEADCOUNT as a simple estimator for next month exposure.
+df['HEADCOUNT_next_est'] = df['HEADCOUNT']  # simple, can be improved by modeling hires separately
+
+# 7. predictive mean for next-month exits:
+#    E[exits_next] = HEADCOUNT_next * (alpha_post_prev / beta_post_prev)
+df['pred_exits_mean'] = df['HEADCOUNT_next_est'] * (df['alpha_post_prev'] / df['beta_post_prev'])
+
+# 8. predictive 95% credible interval using Negative-Binomial parameterization:
+#    NB parameters: r = alpha_post_prev, p = beta_post_prev / (beta_post_prev + HEADCOUNT_next_est)
+r = df['alpha_post_prev'].values
+p = df['beta_post_prev'].values / (df['beta_post_prev'].values + df['HEADCOUNT_next_est'].values)
+
+# use scipy nbinom: nbinom.ppf returns number of failures (exits) quantile
+lower_q = stats.nbinom.ppf(0.025, r, p)
+upper_q = stats.nbinom.ppf(0.975, r, p)
+
+df['pred_exits_ci_lower'] = lower_q
+df['pred_exits_ci_upper'] = upper_q
+
+# 9. predicted attrition rate (mean and CI)
+df['pred_monthly_attrition_rate_mean'] = df['pred_exits_mean'] / df['HEADCOUNT_next_est']
+df['pred_attr_rate_ci_lower'] = df['pred_exits_ci_lower'] / df['HEADCOUNT_next_est']
+df['pred_attr_rate_ci_upper'] = df['pred_exits_ci_upper'] / df['HEADCOUNT_next_est']
+
+# 10. view results for latest month in each BUSINESS_GROUPS_TA (example)
+latest_preds = df.groupby('BUSINESS_GROUPS_TA').tail(1)[[
+    'BUSINESS_GROUPS_TA','MONTH','HEADCOUNT','VOLUNTARY_EXITS','MONTHLY_ATTRITION_RATE',
+    'pred_exits_mean','pred_exits_ci_lower','pred_exits_ci_upper',
+    'pred_monthly_attrition_rate_mean','pred_attr_rate_ci_lower','pred_attr_rate_ci_upper'
+]]
+print(latest_preds.to_string(index=False))
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Example: pick one BUSINESS_GROUPS_TA to plot (change as needed)
+group_to_plot = df['BUSINESS_GROUPS_TA'].unique()[0]
+
+plot_df = df[df['BUSINESS_GROUPS_TA'] == group_to_plot].copy()
+
+plt.figure(figsize=(14,6))
+
+# Actual voluntary exits
+sns.lineplot(
+    data=plot_df,
+    x='MONTH', y='VOLUNTARY_EXITS',
+    label='Actual Exits', marker='o'
+)
+
+# Predicted mean
+sns.lineplot(
+    data=plot_df,
+    x='MONTH', y='pred_exits_mean',
+    label='Predicted Exits (mean)', marker='o'
+)
+
+# Fill between lower/upper CI
+plt.fill_between(
+    plot_df['MONTH'],
+    plot_df['pred_exits_ci_lower'],
+    plot_df['pred_exits_ci_upper'],
+    color='gray', alpha=0.2, label='95% Predicted Interval'
+)
+
+plt.title(f'Predicted vs Actual Voluntary Exits – {group_to_plot}')
+plt.xticks(rotation=45)
+plt.ylabel('Number of Exits')
+plt.legend()
+plt.tight_layout()
+plt.show()
