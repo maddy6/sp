@@ -1,0 +1,79 @@
+import pandas as pd
+from pmdarima import auto_arima
+from statsmodels.tsa.stattools import adfuller
+
+# ---------------------------
+# Helper Functions
+# ---------------------------
+def make_stationary(series):
+    """Check stationarity, difference if needed"""
+    result = adfuller(series.dropna())
+    d = 0
+    while result[1] > 0.05 and d < 2:  # non-stationary → difference
+        series = series.diff().dropna()
+        d += 1
+        result = adfuller(series)
+    return series, d
+
+# ---------------------------
+# Parameters
+# ---------------------------
+BASE_MONTH_HC = 210000  # Fixed headcount
+future_months = pd.date_range("2025-04-01", "2025-12-01", freq="MS")
+
+# ---------------------------
+# Load Data
+# ---------------------------
+df = pd.read_excel("monthwise_updated_attrition_dataset.xlsx")
+df['MONTH'] = pd.to_datetime(df['MONTH'])
+
+# ---------------------------
+# Build Forecast for each Group
+# ---------------------------
+groups = df['BUSINESS_GROUPS_TA'].unique()
+all_outputs = []
+
+for g in groups:
+    df_g = df[df['BUSINESS_GROUPS_TA'] == g].copy()
+    df_g = df_g.set_index('MONTH').sort_index()
+
+    # Training series = Monthly attrition rate
+    train_series = df_g['MONTHLY_ATTRITION_RATE'].astype(float)
+
+    # Make stationary
+    train_stationary, d_used = make_stationary(train_series)
+
+    # Fit Auto-ARIMA
+    model = auto_arima(train_series, seasonal=False, d=d_used, suppress_warnings=True)
+
+    # Forecast April–Dec 2025
+    fc = model.predict(n_periods=len(future_months))
+
+    # Build rows
+    for i, fut_month in enumerate(future_months):
+        fut_month_str = fut_month.strftime("%Y-%b")
+
+        # Pull actuals if they exist in dataset, else NA
+        act_attr_rate = df_g.loc[df_g.index == fut_month, "MONTHLY_ATTRITION_RATE"].values
+        act_vol_exits = df_g.loc[df_g.index == fut_month, "VOLUNTARY_EXITS"].values
+        act_headcount = df_g.loc[df_g.index == fut_month, "HEADCOUNT"].values
+
+        row = {
+            "Future Month": fut_month_str,
+            "Business Group": g,
+            "Fut Vol Attr. Month %": fc[i],
+            "Base Month HC": BASE_MONTH_HC,
+            "Fut Vol. Attr Count": fc[i] * BASE_MONTH_HC,
+            "Act Vol Attr. Month %": act_attr_rate[0] if len(act_attr_rate) > 0 else None,
+            "Act Vol Attr Count": act_vol_exits[0] if len(act_vol_exits) > 0 else None,
+            "Actual Headcount": act_headcount[0] if len(act_headcount) > 0 else None,
+        }
+        all_outputs.append(row)
+
+# ---------------------------
+# Final Output DataFrame
+# ---------------------------
+output_df = pd.DataFrame(all_outputs)
+output_df.to_excel("Attrition_Forecast_Output.xlsx", index=False)
+
+print(output_df.head(20))
