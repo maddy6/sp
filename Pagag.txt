@@ -1,0 +1,81 @@
+import pandas as pd
+import numpy as np
+from pmdarima import auto_arima
+
+# ----------------------------
+# CONFIG
+# ----------------------------
+INPUT_XLSX = "monthwise_updated_attrition_dataset.xlsx"
+OUTPUT_XLSX = "Attrition_Forecast_Output_Simple.xlsx"
+BASE_MONTH_HC = 210000
+TRAIN_YEARS = [2021, 2022, 2023]   # set None to use all history
+FORECAST_START = "2025-04-01"
+FORECAST_END   = "2025-12-01"
+
+DIVIDE_BY_100 = True   # if MONTHLY_ATTRITION_RATE is % (e.g. 0.59 = 0.59%), keep True
+
+# ----------------------------
+# Load dataset
+# ----------------------------
+df = pd.read_excel(INPUT_XLSX)
+df['MONTH'] = pd.to_datetime(df['MONTH']).dt.to_period('M').dt.to_timestamp()
+df['YEAR'] = df['MONTH'].dt.year
+
+forecast_index = pd.date_range(start=FORECAST_START, end=FORECAST_END, freq="MS")
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+all_rows = []
+
+# ----------------------------
+# Loop over groups
+# ----------------------------
+for g in groups:
+    grp = df[df['BUSINESS_GROUPS_TA'] == g].copy().set_index('MONTH').sort_index()
+
+    # Training data (exclude forecast months)
+    if TRAIN_YEARS:
+        train_df = grp[(grp.index < forecast_index[0]) & (grp['YEAR'].isin(TRAIN_YEARS))]
+    else:
+        train_df = grp[grp.index < forecast_index[0]]
+    train_series = train_df['MONTHLY_ATTRITION_RATE']
+
+    # Fit ARIMA
+    model = auto_arima(train_series, seasonal=True, m=12, error_action='ignore', suppress_warnings=True)
+    forecast = model.predict(n_periods=len(forecast_index))
+
+    # ----------------------------
+    # Build output rows
+    # ----------------------------
+    for i, fut_ts in enumerate(forecast_index):
+        # actuals (if available)
+        if fut_ts in grp.index:
+            act_rate = grp.at[fut_ts, 'MONTHLY_ATTRITION_RATE']
+            act_exits = grp.at[fut_ts, 'VOLUNTARY_EXITS']
+            act_hc = grp.at[fut_ts, 'HEADCOUNT']
+        else:
+            act_rate = np.nan
+            act_exits = np.nan
+            act_hc = np.nan
+
+        fut_rate = forecast[i]
+        fut_count = (fut_rate/100 * BASE_MONTH_HC) if DIVIDE_BY_100 else (fut_rate * BASE_MONTH_HC)
+
+        row = {
+            "Future Month": fut_ts.strftime("%Y-%b"),
+            "Business Group": g,
+            "Fut Vol Attr. Month %": round(fut_rate, 4),
+            "Base Month HC": BASE_MONTH_HC,
+            "Fut Vol. Attr Count": int(round(fut_count)),
+            "Act Vol Attr. Month %": round(act_rate, 4) if not pd.isna(act_rate) else np.nan,
+            "Act Vol Attr Count": int(act_exits) if not pd.isna(act_exits) else np.nan,
+            "Actual Headcount": int(act_hc) if not pd.isna(act_hc) else np.nan
+        }
+        all_rows.append(row)
+
+# ----------------------------
+# Save result
+# ----------------------------
+out_df = pd.DataFrame(all_rows).sort_values(["Future Month", "Business Group"])
+out_df.to_excel(OUTPUT_XLSX, index=False)
+
+print(f"Saved forecast output to {OUTPUT_XLSX}")
