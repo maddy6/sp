@@ -1,0 +1,45 @@
+# --------------------------
+# 8. Convert Forecasted Rates into Headcount
+# --------------------------
+
+# Take latest known headcount from your dataset (Aug 2025)
+last_known_date = df["MONTH"].max()
+last_known_headcount = df.loc[df["MONTH"] == last_known_date, "HEADCOUNT"].sum()
+
+print("Last known date:", last_known_date)
+print("Last known headcount:", last_known_headcount)
+
+# Forecasted attrition rates (from your future_forecast)
+future_forecast = pd.Series(
+    model.predict(n_periods=25),  # e.g., next 25 months
+    index=pd.date_range(start="2025-09-01", periods=25, freq="MS")
+)
+
+# Initialize headcount projection
+forecast_df = pd.DataFrame({"Attrition_Rate": future_forecast})
+forecast_df["Headcount"] = None
+
+# Set initial headcount
+prev_headcount = last_known_headcount
+
+# Iteratively compute future headcount
+for i, row in forecast_df.iterrows():
+    exits = prev_headcount * row["Attrition_Rate"]
+    new_headcount = prev_headcount - exits
+    forecast_df.at[i, "Headcount"] = new_headcount
+    prev_headcount = new_headcount  # update for next month
+
+# --------------------------
+# 9. Results
+# --------------------------
+print(forecast_df.head(10))   # first few months forecast
+print(forecast_df.tail(5))    # last few months
+
+# Plot headcount projection
+plt.figure(figsize=(12,6))
+plt.plot(forecast_df["Headcount"], label="Forecasted Headcount", color="red")
+plt.title("Projected Headcount (Based on Forecasted Attrition)")
+plt.xlabel("Date")
+plt.ylabel("Headcount")
+plt.legend()
+plt.show()
