@@ -1,3 +1,66 @@
+val_preds = val_pred_base_df.copy()
+adj_preds = []
+
+for _, row in val_preds.iterrows():
+    g = row['BUSINESS_GROUPS_TA']
+    train_g = train_df[train_df['BUSINESS_GROUPS_TA'] == g].sort_values('MONTH')
+    train_g = compute_hires_rate(train_g)
+
+    # Get hires_rate_pred
+    if train_g.shape[0] >= 3:
+        hires_rate_pred = train_g['hires_rate'].dropna().iloc[-3:].mean()
+    elif train_g.shape[0] >= 1:
+        hires_rate_pred = train_g['hires_rate'].dropna().iloc[-1]
+    else:
+        hires_rate_pred = 0.0
+
+    gamma = gamma_map.get(g, 0.0)
+
+    headcount = row['HEADCOUNT']
+    if headcount > 0:
+        base_rate = row['pred_mean_base'] / headcount
+    else:
+        base_rate = 0.0
+
+    adj_rate = base_rate + gamma * hires_rate_pred
+    pred_mean_adj = max(0, headcount * adj_rate)
+    adj_preds.append(pred_mean_adj)
+
+val_preds['pred_mean_hires_adj'] = adj_preds
+
+
+
+
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10,6))
+plt.plot(val_preds['MONTH'], val_preds['ACTUAL_EXITS'], label='Actual Exits', marker='o')
+plt.plot(val_preds['MONTH'], val_preds['pred_mean_hires_adj'], label='Predicted (Adj)', marker='x')
+plt.title('Attrition Forecast: Actual vs Predicted')
+plt.xlabel('Month')
+plt.ylabel('Exits')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
 # --------------------------------------------------
 # Robust fast-reacting attrition pipeline (no ML/time-series)
 # --------------------------------------------------
