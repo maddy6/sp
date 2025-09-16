@@ -1,0 +1,47 @@
+WITH months AS (
+    -- Generate last 60 months
+    SELECT ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -LEVEL + 1) AS month_start
+    FROM dual
+    CONNECT BY LEVEL <= 60
+),
+headcount AS (
+    -- Headcount per business group per month
+    SELECT TRUNC(h.period_date, 'MM') AS month_start,
+           h.business_groups_ta,
+           COUNT(DISTINCT h.person_id) AS headcount
+    FROM WFA_APP_USR.TALO_L3_ICI_EMPL_ATTR_IMS h
+    GROUP BY TRUNC(h.period_date, 'MM'), h.business_groups_ta
+),
+voluntary_exits AS (
+    -- Voluntary exits per business group per month
+    SELECT TRUNC(e.period_date, 'MM') AS month_start,
+           e.business_groups_ta,
+           COUNT(DISTINCT e.person_id) AS voluntary_exits
+    FROM WFA_APP_USR.TALO_L3_ICI_EMPL_ATTR_IMS e
+    WHERE e.term_type = 'Voluntary'   -- adjust condition for voluntary exit
+    GROUP BY TRUNC(e.period_date, 'MM'), e.business_groups_ta
+),
+joined AS (
+    -- Join months with headcount and exits
+    SELECT m.month_start,
+           bg.business_groups_ta,
+           NVL(h.headcount, 0) AS headcount,
+           NVL(v.voluntary_exits, 0) AS voluntary_exits
+    FROM months m
+    CROSS JOIN (SELECT DISTINCT business_groups_ta FROM WFA_APP_USR.TALO_L3_ICI_EMPL_ATTR_IMS) bg
+    LEFT JOIN headcount h
+           ON h.month_start = m.month_start
+          AND h.business_groups_ta = bg.business_groups_ta
+    LEFT JOIN voluntary_exits v
+           ON v.month_start = m.month_start
+          AND v.business_groups_ta = bg.business_groups_ta
+)
+SELECT j.business_groups_ta,
+       TO_CHAR(j.month_start, 'YYYY-MM') AS month,
+       j.headcount,
+       j.voluntary_exits,
+       CASE WHEN j.headcount > 0
+            THEN ROUND(j.voluntary_exits * 100.0 / j.headcount, 2)
+            ELSE 0 END AS monthly_attrition_rate
+FROM joined j
+ORDER BY j.business_groups_ta, j.month_start;
