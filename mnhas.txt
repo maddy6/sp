@@ -1,3 +1,43 @@
+import matplotlib.pyplot as plt
+
+# Loop through each group and plot Actual vs Base
+for g in val_preds['BUSINESS_GROUPS_TA'].unique():
+    sub = val_preds[val_preds['BUSINESS_GROUPS_TA'] == g]
+    if sub.empty:
+        continue
+    
+    plt.figure(figsize=(8,4))
+    # Plot base prediction
+    plt.plot(sub['MONTH'], sub['pred_mean_base'], 'b*-', label='Base Prediction')  # blue stars
+    # Plot actual
+    plt.plot(sub['MONTH'], sub['VOLUNTARY_EXITS'], 'ro-', label='Actual')          # red circles
+    
+    plt.title(f'Actual vs Base Prediction: {g}')
+    plt.xlabel('Month')
+    plt.ylabel('Exits')
+    plt.xticks(rotation=45)
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 val_preds = val_pred_base_df.copy()
 adj_preds = []
 
