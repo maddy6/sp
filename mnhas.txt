@@ -1,3 +1,283 @@
+# --------------------------------------------------
+# Robust fast-reacting attrition pipeline (no ML/time-series)
+# --------------------------------------------------
+import pandas as pd
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# -------------------------
+# 1. Load & basic prep
+# -------------------------
+df = pd.read_excel('monthwise_updated_attrition_dataset.xlsx')
+df['MONTH'] = pd.to_datetime(df['MONTH'])
+df = df.sort_values(['BUSINESS_GROUPS_TA','MONTH']).reset_index(drop=True)
+
+# train: 2021,2022,2023 ; val: 2025
+train_mask = df['MONTH'].dt.year.isin([2021,2022,2023])
+val_mask   = df['MONTH'].dt.year == 2025
+train_df = df[train_mask].copy().reset_index(drop=True)
+val_df   = df[val_mask].copy().reset_index(drop=True)
+
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+# -------------------------
+# 2. Prior from train (method-of-moments)
+# -------------------------
+train_lambda = train_df['VOLUNTARY_EXITS'] / train_df['HEADCOUNT']
+m = train_lambda.mean()
+v = train_lambda.var(ddof=1)
+if v <= 0 or np.isnan(v):
+    alpha0, beta0 = 1.0, 1.0 / max(m,1e-6)
+else:
+    alpha0 = (m**2)/v
+    beta0  = m / v
+
+# -------------------------
+# helpers
+# -------------------------
+def months_between(later, earlier):
+    return (later.year - earlier.year)*12 + (later.month - earlier.month)
+
+def weighted_posterior_for_group(train_g, pred_month, delta, alpha0, beta0):
+    # train_g: dataframe of past months for this group
+    if train_g.shape[0] == 0:
+        return alpha0, beta0  # fallback
+    diffs = np.array([months_between(pred_month, t) for t in train_g['MONTH']])
+    # only use months where diffs>0 (past)
+    diffs = np.maximum(diffs, 0)
+    weights = (delta ** diffs).astype(float)
+    alpha_post = alpha0 + np.sum(weights * train_g['VOLUNTARY_EXITS'].values)
+    beta_post  = beta0  + np.sum(weights * train_g['HEADCOUNT'].values)
+    return alpha_post, beta_post
+
+def predict_with_delta_delta_grid(train_df, val_df, groups, delta_grid, alpha0, beta0):
+    # finds best delta per group by validation MAE (if val months present), else picks robust default
+    best_delta = {}
+    val_preds = []
+    for g in groups:
+        train_g = train_df[train_df['BUSINESS_GROUPS_TA']==g]
+        val_g = val_df[val_df['BUSINESS_GROUPS_TA']==g]
+        if val_g.shape[0] == 0:
+            best_delta[g] = 0.9  # default if no val
+            continue
+        best_mae = np.inf
+        best_d = None
+        for d in delta_grid:
+            preds = []
+            for _, row in val_g.iterrows():
+                a_post, b_post = weighted_posterior_for_group(train_g, row['MONTH'], d, alpha0, beta0)
+                pred_mean = row['HEADCOUNT'] * (a_post / b_post)
+                preds.append(pred_mean)
+            mae = np.mean(np.abs(np.array(preds) - val_g['VOLUNTARY_EXITS'].values))
+            if mae < best_mae:
+                best_mae = mae; best_d = d
+        best_delta[g] = best_d
+    # final predictions using best deltas
+    all_val_preds = []
+    for _, row in val_df.iterrows():
+        g = row['BUSINESS_GROUPS_TA']
+        a_post, b_post = weighted_posterior_for_group(train_df[train_df['BUSINESS_GROUPS_TA']==g],
+                                                      row['MONTH'], best_delta[g], alpha0, beta0)
+        r = a_post
+        p = b_post / (b_post + row['HEADCOUNT'])
+        # mean predictive using NB mean = HEADCOUNT * (a_post/b_post)
+        pred_mean = row['HEADCOUNT'] * (a_post / b_post)
+        # CI (2.5,97.5)
+        lower = stats.nbinom.ppf(0.025, r, p)
+        upper = stats.nbinom.ppf(0.975, r, p)
+        all_val_preds.append({
+            'BUSINESS_GROUPS_TA': g, 'MONTH': row['MONTH'],
+            'pred_mean_base': pred_mean, 'pred_lower_base': lower, 'pred_upper_base': upper,
+            'VOLUNTARY_EXITS': row['VOLUNTARY_EXITS'], 'HEADCOUNT': row['HEADCOUNT']
+        })
+    return pd.DataFrame(all_val_preds), best_delta
+
+# -------------------------
+# 3. Grid-search delta per group (validation-driven)
+# -------------------------
+delta_grid = np.concatenate([np.linspace(0.3,0.95,14), np.array([0.98])])  # include near-1
+val_pred_base_df, best_delta_map = predict_with_delta_delta_grid(train_df, val_df, groups, delta_grid, alpha0, beta0)
+
+# -------------------------
+# 4. Mechanistic hires correction: estimate gamma per group (residual_rate ≈ gamma * hires_rate)
+# -------------------------
+def compute_hires_rate(df_group):
+    # compute hires_t = head_t - head_{t-1} + exits_t ; normalize by head_{t-1}
+    df_group = df_group.sort_values('MONTH').reset_index(drop=True)
+    hires = []
+    hires_rate = []
+    for i in range(len(df_group)):
+        if i==0:
+            hires.append(np.nan)
+            hires_rate.append(np.nan)
+        else:
+            h = df_group.loc[i,'HEADCOUNT'] - df_group.loc[i-1,'HEADCOUNT'] + df_group.loc[i,'VOLUNTARY_EXITS']
+            hires.append(h)
+            denom = max(df_group.loc[i-1,'HEADCOUNT'],1)
+            hires_rate.append(h/denom)
+    df_group['hires'] = hires
+    df_group['hires_rate'] = hires_rate
+    return df_group
+
+# prepare base in-sample predictions on train for gamma estimation
+# for train, predict each train row using weighted posterior but with prediction month = that train row (using earlier months only)
+train_preds = []
+for g in groups:
+    train_g = train_df[train_df['BUSINESS_GROUPS_TA']==g].copy()
+    train_g = compute_hires_rate(train_g)
+    if train_g.shape[0] == 0:
+        continue
+    preds = []
+    for idx,row in train_g.iterrows():
+        # only use earlier months for prediction
+        prev_train = train_g[train_g['MONTH'] < row['MONTH']]
+        if prev_train.shape[0] == 0:
+            a_post, b_post = alpha0, beta0
+        else:
+            # use group's best_delta if available else 0.9
+            d = best_delta_map.get(g, 0.9)
+            a_post, b_post = weighted_posterior_for_group(prev_train, row['MONTH'], d, alpha0, beta0)
+        pred_mean = row['HEADCOUNT'] * (a_post / b_post)
+        preds.append(pred_mean)
+    train_g = train_g.assign(pred_base = preds)
+    train_preds.append(train_g)
+train_preds_df = pd.concat(train_preds, ignore_index=True) if len(train_preds) else pd.DataFrame()
+
+# compute residual_rate and fit gamma per group via OLS closed form
+gamma_map = {}
+for g in groups:
+    sub = train_preds_df[train_preds_df['BUSINESS_GROUPS_TA']==g].dropna(subset=['hires_rate','pred_base'])
+    if sub.shape[0] < 6:
+        gamma_map[g] = 0.0
+        continue
+    # residual rate
+    sub['resid_rate'] = (sub['VOLUNTARY_EXITS'] - sub['pred_base']) / sub['HEADCOUNT']
+    X = sub['hires_rate'].values
+    Y = sub['resid_rate'].values
+    # regularized OLS gamma = sum(XY)/(sum(X^2)+lambda)
+    lam = 1e-6
+    gamma = (X.dot(Y)) / (X.dot(X) + lam)
+    gamma_map[g] = gamma
+
+# -------------------------
+# 5. Build hires-adjusted predictions for validation
+# -------------------------
+val_preds = val_pred_base_df.copy()
+adj_preds = []
+for _, row in val_preds.iterrows():
+    g = row['BUSINESS_GROUPS_TA']
+    # estimate hires_rate for this group's last observed interval using train latest months
+    train_g = train_df[train_df['BUSINESS_GROUPS_TA']==g].sort_values('MONTH')
+    train_g = compute_hires_rate(train_g)
+    if train_g.shape[0] >= 3:
+        # use 3-month average hires_rate (last available)
+        hires_rate_pred = train_g['hires_rate'].dropna().iloc[-3:].mean()
+    elif train_g.shape[0] >= 1:
+        hires_rate_pred = train_g['hires_rate'].dropna().iloc[-1] if not train_g['hires_rate'].dropna().empty else 0.0
+    else:
+        hires_rate_pred = 0.0
+    gamma = gamma_map.get(g, 0.0)
+    base_rate = (row['pred_mean_base'] / row['HEADCOUNT'])
+    adj_rate = base_rate + gamma * hires_rate_pred
+    pred_mean_adj = max(0.0, row['HEADCOUNT'] * adj_rate)
+    adj_preds.append(pred_mean_adj)
+val_preds['pred_mean_hires_adj'] = adj_preds
+
+# -------------------------
+# 6. Ensemble (inverse-MAE weighting using train performance)
+# -------------------------
+# compute train MAE of base and hires-adjusted
+# base train predictions already in train_preds_df
+# compute train preds_hires_adj similarly to above (use gamma_map)
+train_preds_df['pred_hires_adj'] = train_preds_df.apply(
+    lambda r: max(0.0, r['pred_base'] + (gamma_map.get(r['BUSINESS_GROUPS_TA'],0.0) * (r['hires_rate']*r['HEADCOUNT'] if not np.isnan(r['hires_rate']) else 0.0))),
+    axis=1
+)
+
+mae_base_train = train_preds_df.dropna().assign(abs_err = lambda d: np.abs(d['VOLUNTARY_EXITS'] - d['pred_base']))['abs_err'].mean()
+mae_hires_train = train_preds_df.dropna().assign(abs_err = lambda d: np.abs(d['VOLUNTARY_EXITS'] - d['pred_hires_adj']))['abs_err'].mean()
+# weights - inverse MAE
+w_base = (1/mae_base_train) / ((1/mae_base_train) + (1/mae_hires_train)) if mae_base_train>0 and mae_hires_train>0 else 0.5
+w_hires = 1 - w_base
+
+# final ensemble preds on validation
+val_preds['pred_ensemble'] = w_base * val_preds['pred_mean_base'] + w_hires * val_preds['pred_mean_hires_adj']
+
+# -------------------------
+# 7. Metrics & plots
+# -------------------------
+val_preds['abs_err_base'] = np.abs(val_preds['VOLUNTARY_EXITS'] - val_preds['pred_mean_base'])
+val_preds['abs_err_adj']  = np.abs(val_preds['VOLUNTARY_EXITS'] - val_preds['pred_mean_hires_adj'])
+val_preds['abs_err_ens']  = np.abs(val_preds['VOLUNTARY_EXITS'] - val_preds['pred_ensemble'])
+
+def summary_metrics(dfp, col_prefix):
+    return {
+        f'{col_prefix}_MAE': dfp[f'abs_err_{col_prefix}'].mean(),
+        f'{col_prefix}_MAE_pct_of_head': (dfp[f'abs_err_{col_prefix}']/dfp['HEADCOUNT']).mean()
+    }
+
+print("Validation MAE base, adj, ensemble (absolute):", val_preds['abs_err_base'].mean(), val_preds['abs_err_adj'].mean(), val_preds['abs_err_ens'].mean())
+
+# Plot Actual vs Predicted for validation grouped
+for g in groups:
+    sub = val_preds[val_preds['BUSINESS_GROUPS_TA']==g]
+    if sub.empty: continue
+    plt.figure(figsize=(8,4))
+    plt.errorbar(sub['MONTH'], sub['pred_mean_base'], yerr=[sub['pred_mean_base']-sub['pred_lower_base'], sub['pred_upper_base']-sub['pred_mean_base']], fmt='x-', label='Base ±95%CI')
+    plt.plot(sub['MONTH'], sub['pred_mean_hires_adj'], 's--', label='Hires adj')
+    plt.plot(sub['MONTH'], sub['pred_ensemble'], 'd--', label=f'Ensemble w={w_base:.2f}')
+    plt.plot(sub['MONTH'], sub['VOLUNTARY_EXITS'], 'o-', label='Actual')
+    plt.title(f'Validation: {g}')
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+# Residuals & EWMA (for one group example)
+example_group = groups[0]
+res_df = train_preds_df[train_preds_df['BUSINESS_GROUPS_TA']==example_group].copy()
+res_df['resid'] = res_df['VOLUNTARY_EXITS'] - res_df['pred_base']
+res_df['std_resid'] = res_df['resid'] / np.sqrt(res_df['pred_base'] + 1e-6)
+# EWMA
+lambda_ewma = 0.3
+s = []
+s_t = 0.0
+for v in res_df['std_resid'].fillna(0).values:
+    s_t = lambda_ewma * v + (1-lambda_ewma) * s_t
+    s.append(s_t)
+res_df['ewma_std_resid'] = s
+plt.figure(figsize=(8,3))
+plt.plot(res_df['MONTH'], res_df['ewma_std_resid'], '-o', label='EWMA std residual')
+plt.axhline(2.0, color='red', linestyle='--')
+plt.axhline(-2.0, color='red', linestyle='--')
+plt.title(f'EWMA standardized residuals (example group: {example_group})')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ---------------------------------------------------------
 # Install if needed
 # pip install pymc arviz numpyro jax jaxlib matplotlib
