@@ -1,3 +1,113 @@
+# install if needed
+# pip install pymc arviz matplotlib
+
+import pandas as pd
+import numpy as np
+import pymc as pm
+import arviz as az
+import matplotlib.pyplot as plt
+
+# -----------------------------------------
+# 1. Load your data
+# -----------------------------------------
+df = pd.read_excel('monthwise_updated_attrition_dataset.xlsx')
+
+# Sort by group and month
+df = df.sort_values(['BUSINESS_GROUPS_TA','MONTH']).reset_index(drop=True)
+
+# Basic features
+groups = df['BUSINESS_GROUPS_TA'].unique()
+n_groups = len(groups)
+group_idx = df['BUSINESS_GROUPS_TA'].astype('category').cat.codes.values
+
+# Observed counts and exposure
+exits = df['VOLUNTARY_EXITS'].values
+headcount = df['HEADCOUNT'].values
+
+# -----------------------------------------
+# 2. Build hierarchical Bayesian model
+# -----------------------------------------
+with pm.Model() as hier_model:
+    # Hyperpriors for group-level attrition rate (Gamma hyperprior)
+    alpha_hyper = pm.HalfNormal('alpha_hyper', sigma=2.0)
+    beta_hyper  = pm.HalfNormal('beta_hyper', sigma=2.0)
+    
+    # Group-level attrition rates (latent)
+    theta_group = pm.Gamma('theta_group', alpha=alpha_hyper, beta=beta_hyper, shape=n_groups)
+    
+    # Expected exits per row = headcount * theta of that group
+    mu = headcount * theta_group[group_idx]
+    
+    # Likelihood: Poisson observed exits
+    y_obs = pm.Poisson('y_obs', mu=mu, observed=exits)
+    
+    # Predictive posterior
+    trace = pm.sample(2000, tune=2000, target_accept=0.95, random_seed=42)
+
+# -----------------------------------------
+# 3. Summarise posterior
+# -----------------------------------------
+az.summary(trace, var_names=['alpha_hyper','beta_hyper','theta_group'])
+
+# Posterior mean attrition rates per group:
+theta_means = trace.posterior['theta_group'].mean(dim=("chain","draw")).values
+
+group_results = pd.DataFrame({
+    'BUSINESS_GROUPS_TA': groups,
+    'posterior_attrition_rate': theta_means
+})
+
+print(group_results)
+
+# -----------------------------------------
+# 4. Make predictions for each row
+# -----------------------------------------
+# For each draw, predicted exits per row
+theta_draws = trace.posterior['theta_group'].stack(sample=("chain","draw")).values  # shape (n_groups, draws)
+predicted_exits = []
+for i, gidx in enumerate(group_idx):
+    lam_draws = headcount[i] * theta_draws[gidx,:]
+    pred_mean = lam_draws.mean()
+    pred_lower = np.percentile(lam_draws, 2.5)
+    pred_upper = np.percentile(lam_draws, 97.5)
+    predicted_exits.append((pred_mean, pred_lower, pred_upper))
+
+predicted_exits = pd.DataFrame(predicted_exits, columns=['pred_mean','pred_lower','pred_upper'])
+df_pred = pd.concat([df, predicted_exits], axis=1)
+
+# -----------------------------------------
+# 5. Visualise predicted vs actual
+# -----------------------------------------
+plt.figure(figsize=(10,6))
+for g in groups:
+    dfg = df_pred[df_pred['BUSINESS_GROUPS_TA']==g]
+    plt.plot(dfg['MONTH'], dfg['VOLUNTARY_EXITS'], 'o-', label=f'{g} Actual')
+    plt.plot(dfg['MONTH'], dfg['pred_mean'], 'x--', label=f'{g} Predicted')
+plt.xlabel('Month')
+plt.ylabel('Exits')
+plt.title('Actual vs Predicted Exits by Group')
+plt.legend(bbox_to_anchor=(1.05,1))
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Requires: pandas, numpy, scipy
 import pandas as pd
 import numpy as np
