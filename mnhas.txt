@@ -1,3 +1,185 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# -----------------------------
+# CONFIG
+# -----------------------------
+DATA_PATH = 'monthwise_updated_attrition_dataset.xlsx'
+
+# choose training and validation years
+train_years = [2020, 2021, 2022]  # you can change this
+validation_years = [2025]         # you can change this
+
+N_SIMS = 2000
+RANDOM_SEED = 42
+SHOCK_STD_MULT = 1.5
+sns.set(style='whitegrid', context='talk')
+
+# -----------------------------
+np.random.seed(RANDOM_SEED)
+
+# -----------------------------
+# LOAD DATA
+# -----------------------------
+df = pd.read_excel(DATA_PATH)
+
+# make sure columns exist
+cols_needed = ['BUSINESS_GROUPS_TA','MONTH','HEADCOUNT','VOLUNTARY_EXITS','MONTHLY_ATTRITION_RATE']
+assert all(c in df.columns for c in cols_needed), f"Missing columns: {set(cols_needed)-set(df.columns)}"
+
+# ensure attrition as fraction
+if df['MONTHLY_ATTRITION_RATE'].max() > 1:
+    df['attr_frac'] = df['MONTHLY_ATTRITION_RATE'] / 100.0
+else:
+    df['attr_frac'] = df['MONTHLY_ATTRITION_RATE']
+
+# convert MONTH to datetime
+try:
+    df['MONTH'] = pd.to_datetime(df['MONTH'], format='%Y-%m')
+except Exception:
+    df['MONTH'] = pd.to_datetime(df['MONTH'], errors='coerce')
+
+df['YEAR'] = df['MONTH'].dt.year
+
+# -----------------------------
+# HELPER FUNCTIONS
+# -----------------------------
+def fit_beta_moments(p_series, eps=1e-6):
+    m = p_series.mean()
+    v = p_series.var(ddof=0)
+    maxv = m*(1-m) - eps
+    if v >= maxv or v <= 0:
+        phi = max(10.0, (m*(1-m) / (v+eps)) if v>0 else 50.0)
+        alpha = m * phi
+        beta = (1-m) * phi
+    else:
+        common = (m*(1-m)/v) - 1.0
+        alpha = max(eps, m * common)
+        beta = max(eps, (1-m) * common)
+    return float(alpha), float(beta)
+
+def detect_shock_params(p_series, k=SHOCK_STD_MULT):
+    mu = p_series.mean()
+    sigma = p_series.std(ddof=0)
+    threshold = mu + k * sigma
+    shock_mask = p_series > threshold
+    q = shock_mask.sum() / len(p_series)
+    if shock_mask.sum() > 0:
+        mag = p_series[shock_mask].mean() / max(mu, 1e-9)
+    else:
+        mag = 1.0
+    return {'base_mean': mu, 'base_std': sigma, 'threshold': threshold,
+            'shock_prob': float(q), 'shock_mag': float(mag)}
+
+def simulate_future(alpha, beta, shock_prob, shock_mag,
+                    hc_arr, n_sims=2000, shock_memory_decay=0.6):
+    n_months = len(hc_arr)
+    exits_sims = np.zeros((n_sims, n_months), dtype=int)
+    rate_sims = np.zeros((n_sims, n_months), dtype=float)
+    for sim in range(n_sims):
+        q_curr = shock_prob
+        for t in range(n_months):
+            p = np.random.beta(alpha, beta)
+            is_shock = np.random.rand() < q_curr
+            if is_shock:
+                p = min(0.9999, p * shock_mag)
+                q_curr = shock_prob + (1 - shock_prob) * shock_memory_decay
+            else:
+                q_curr = shock_prob + (q_curr - shock_prob) * shock_memory_decay
+            exits = np.random.binomial(hc_arr[t], p)
+            exits_sims[sim, t] = exits
+            rate_sims[sim, t] = p
+    return exits_sims, rate_sims
+
+# -----------------------------
+# MAIN: train/validate per group
+# -----------------------------
+group_names = df['BUSINESS_GROUPS_TA'].unique()
+
+for group_name in group_names:
+    g = df[df['BUSINESS_GROUPS_TA']==group_name].copy().sort_values('MONTH')
+
+    # split train/validation by years
+    train = g[g['YEAR'].isin(train_years)]
+    val = g[g['YEAR'].isin(validation_years)]
+
+    if len(train)==0 or len(val)==0:
+        print(f"Skipping {group_name} (no train or no val data)")
+        continue
+
+    # fit on train only
+    alpha, beta = fit_beta_moments(train['attr_frac'])
+    shock = detect_shock_params(train['attr_frac'])
+
+    shock_prob = shock['shock_prob']
+    shock_mag = max(shock['shock_mag'],1.0)
+
+    hc_future = val['HEADCOUNT'].values
+
+    exits_sims, rate_sims = simulate_future(alpha, beta, shock_prob, shock_mag,
+                                            hc_future, n_sims=N_SIMS, shock_memory_decay=0.6)
+
+    median_pred = np.median(exits_sims, axis=0)
+    p10_pred = np.percentile(exits_sims, 10, axis=0)
+    p90_pred = np.percentile(exits_sims, 90, axis=0)
+
+    # assemble plot df
+    plot_df = pd.DataFrame({
+        'MONTH': val['MONTH'],
+        'ACTUAL_EXITS': val['VOLUNTARY_EXITS'].values,
+        'PRED_MEDIAN': median_pred,
+        'PRED_P10': p10_pred,
+        'PRED_P90': p90_pred
+    })
+
+    # plot actual vs predicted
+    plt.figure(figsize=(12,6))
+    plt.fill_between(plot_df['MONTH'], plot_df['PRED_P10'], plot_df['PRED_P90'],
+                     color='skyblue', alpha=0.3, label='Prediction Interval (10–90%)')
+    plt.plot(plot_df['MONTH'], plot_df['PRED_MEDIAN'],
+             color='blue', linewidth=2, marker='o', label='Predicted Median')
+    plt.plot(plot_df['MONTH'], plot_df['ACTUAL_EXITS'],
+             color='red', linewidth=2, marker='s', label='Actual VOLUNTARY_EXITS')
+
+    plt.title(f"Actual vs Predicted Voluntary Exits — {group_name}")
+    plt.xlabel("Month")
+    plt.ylabel("Voluntary Exits")
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+    # also optional: print basic MAE
+    mae = np.mean(np.abs(plot_df['ACTUAL_EXITS'] - plot_df['PRED_MEDIAN']))
+    print(f"{group_name} MAE on validation period: {mae:.2f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import matplotlib.pyplot as plt
 
 # Loop through each group and plot Actual vs Base
