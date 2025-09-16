@@ -1,3 +1,154 @@
+# ---------------------------------------------------------
+# Install if needed
+# pip install pymc arviz numpyro jax jaxlib matplotlib
+# ---------------------------------------------------------
+
+import pandas as pd
+import numpy as np
+import pymc as pm
+import arviz as az
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------------
+# 1. Load and split data
+# ---------------------------------------------------------
+df = pd.read_excel('monthwise_updated_attrition_dataset.xlsx')
+
+# ensure MONTH is datetime
+df['MONTH'] = pd.to_datetime(df['MONTH'])
+
+# define train and validation masks
+train_mask = df['MONTH'].dt.year.isin([2021, 2022, 2023])
+val_mask   = df['MONTH'].dt.year.isin([2025])
+
+train_df = df[train_mask].copy().sort_values(['BUSINESS_GROUPS_TA','MONTH'])
+val_df   = df[val_mask].copy().sort_values(['BUSINESS_GROUPS_TA','MONTH'])
+
+# categories for groups (must match across train and val)
+groups = df['BUSINESS_GROUPS_TA'].unique()
+n_groups = len(groups)
+group_map = {g:i for i,g in enumerate(groups)}
+
+train_idx = train_df['BUSINESS_GROUPS_TA'].map(group_map).values
+val_idx   = val_df['BUSINESS_GROUPS_TA'].map(group_map).values
+
+# data arrays
+exits_train = train_df['VOLUNTARY_EXITS'].values
+head_train  = train_df['HEADCOUNT'].values
+
+head_val    = val_df['HEADCOUNT'].values
+exits_val   = val_df['VOLUNTARY_EXITS'].values  # for later comparison
+
+# ---------------------------------------------------------
+# 2. Build model on train data only
+# ---------------------------------------------------------
+with pm.Model() as hier_model:
+    # Hyperpriors
+    alpha_hyper = pm.HalfNormal('alpha_hyper', sigma=2.0)
+    beta_hyper  = pm.HalfNormal('beta_hyper', sigma=2.0)
+
+    # Group-level attrition rates
+    theta_group = pm.Gamma('theta_group', alpha=alpha_hyper, beta=beta_hyper, shape=n_groups)
+
+    # Train likelihood
+    mu_train = head_train * theta_group[train_idx]
+    y_obs = pm.Poisson('y_obs', mu=mu_train, observed=exits_train)
+
+    # Fast sampling
+    trace = pm.sampling_jax.sample_numpyro_nuts(
+        draws=1000,
+        tune=1000,
+        target_accept=0.9,
+        random_seed=42
+    )
+
+# ---------------------------------------------------------
+# 3. Predictions for train and validation
+# ---------------------------------------------------------
+theta_draws = trace.posterior['theta_group'].stack(sample=("chain","draw")).values  # shape (n_groups, draws)
+
+# predict function
+def predict_exits(headcounts, indices):
+    pred_mean, pred_lower, pred_upper = [], [], []
+    for i,gidx in enumerate(indices):
+        lam_draws = headcounts[i] * theta_draws[gidx,:]
+        pred_mean.append(lam_draws.mean())
+        pred_lower.append(np.percentile(lam_draws, 2.5))
+        pred_upper.append(np.percentile(lam_draws, 97.5))
+    return pd.DataFrame({
+        'pred_mean':pred_mean,
+        'pred_lower':pred_lower,
+        'pred_upper':pred_upper
+    })
+
+pred_train = predict_exits(head_train, train_idx)
+pred_val   = predict_exits(head_val, val_idx)
+
+train_results = pd.concat([train_df.reset_index(drop=True), pred_train], axis=1)
+val_results   = pd.concat([val_df.reset_index(drop=True), pred_val], axis=1)
+
+# ---------------------------------------------------------
+# 4. Visualisations
+# ---------------------------------------------------------
+# (A) Actual vs Predicted (Train)
+plt.figure(figsize=(12,6))
+for g in groups:
+    dfg = train_results[train_results['BUSINESS_GROUPS_TA']==g]
+    plt.plot(dfg['MONTH'], dfg['VOLUNTARY_EXITS'], 'o-', label=f'{g} Actual')
+    plt.plot(dfg['MONTH'], dfg['pred_mean'], 'x--', label=f'{g} Predicted')
+plt.xlabel('Month')
+plt.ylabel('Exits')
+plt.title('TRAIN DATA: Actual vs Predicted Exits by Group')
+plt.legend(bbox_to_anchor=(1.05,1))
+plt.tight_layout()
+plt.show()
+
+# (B) Actual vs Predicted (Validation)
+plt.figure(figsize=(12,6))
+for g in groups:
+    dfg = val_results[val_results['BUSINESS_GROUPS_TA']==g]
+    if len(dfg)==0:  # skip groups with no val data
+        continue
+    plt.errorbar(dfg['MONTH'], dfg['pred_mean'],
+                 yerr=[dfg['pred_mean']-dfg['pred_lower'], dfg['pred_upper']-dfg['pred_mean']],
+                 fmt='x--', capsize=3, label=f'{g} Predicted ±95% CI')
+    plt.plot(dfg['MONTH'], dfg['VOLUNTARY_EXITS'], 'o-', label=f'{g} Actual')
+plt.xlabel('Month')
+plt.ylabel('Exits')
+plt.title('VALIDATION DATA: Actual vs Predicted Exits by Group (with 95% CI)')
+plt.legend(bbox_to_anchor=(1.05,1))
+plt.tight_layout()
+plt.show()
+
+# (C) Scatter Plot Predicted vs Actual (Validation)
+plt.figure(figsize=(6,6))
+plt.scatter(val_results['VOLUNTARY_EXITS'], val_results['pred_mean'])
+plt.plot([val_results['VOLUNTARY_EXITS'].min(), val_results['VOLUNTARY_EXITS'].max()],
+         [val_results['VOLUNTARY_EXITS'].min(), val_results['VOLUNTARY_EXITS'].max()],
+         'r--', label='Perfect Prediction')
+plt.xlabel('Actual Exits (Validation)')
+plt.ylabel('Predicted Exits (Validation)')
+plt.title('Predicted vs Actual (Validation Data)')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # install if needed
 # pip install pymc arviz matplotlib
 
