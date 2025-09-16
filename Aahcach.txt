@@ -1,3 +1,50 @@
+import matplotlib.pyplot as plt
+
+# Step 1: Pivot data for stacked area
+pivoted = df_with_overall.pivot_table(
+    index="MONTH",
+    columns="BUSINESS_GROUPS_TA",
+    values="MONTHLY_ATTRITION_RATE",
+    aggfunc="sum"
+)
+
+# Step 2: Plot stacked area (all groups except Overall)
+groups_to_plot = [c for c in pivoted.columns if c != "Overall"]
+pivoted[groups_to_plot].plot(
+    kind="area",
+    stacked=True,
+    figsize=(20, 10),
+    alpha=0.6
+)
+
+# Step 3: Overlay "Overall" as dashed line
+plt.plot(
+    pivoted.index,
+    pivoted["Overall"],
+    color="black",         # highlight color
+    linestyle="--",        # dashed line
+    linewidth=2.5,
+    label="Overall (highlighted)"
+)
+
+# Step 4: Formatting
+plt.title("Attrition Contribution by Business Groups (with Overall Highlighted)",
+          fontsize=20, fontweight="bold")
+plt.ylabel("Attrition Rate")
+plt.xlabel("Month")
+plt.legend(loc="upper left", bbox_to_anchor=(1,1))  # push legend outside
+plt.xticks(rotation=45)
+plt.show()
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 
 # Read your dataset
