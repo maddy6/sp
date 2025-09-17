@@ -1,0 +1,211 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# -----------------------
+# PARAMETERS (edit if needed)
+# -----------------------
+BASE_MONTH_HC = 229568            # fallback if group HC missing
+FORECAST_START = "2025-04-01"
+FORECAST_END   = "2025-12-01"
+DIVIDE_BY_100  = True            # attrition rates are in % (True) or fraction (False)
+ROLL_WINDOW = 3                  # SMA/EMA window length
+# -----------------------
+
+# ---- Prepare df (match what I saw in your screenshots) ----
+# ensure MONTH is month-start timestamps (so comparisons with forecast_index work)
+df['MONTH'] = pd.to_datetime(df['MONTH']).dt.to_period('M').dt.to_timestamp()
+df['YEAR']  = df['MONTH'].dt.year
+
+forecast_index = pd.date_range(start=FORECAST_START, end=FORECAST_END, freq="MS")
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+all_rows = []
+
+for g in groups:
+    grp = df[df['BUSINESS_GROUPS_TA'] == g].copy().set_index('MONTH').sort_index()
+
+    # compute SMA and EMA exactly as requested
+    grp['SMA3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=ROLL_WINDOW).mean()
+    grp['EMA3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(span=ROLL_WINDOW, adjust=False).mean()
+
+    # last available SMA/EMA values (fallbacks if NaN)
+    last_sma = grp['SMA3'].iloc[-1] if not grp['SMA3'].empty else np.nan
+    last_ema = grp['EMA3'].iloc[-1] if not grp['EMA3'].empty else np.nan
+
+    # fallback if last_sma or last_ema is NaN (not enough history): use last observed rate
+    last_observed_rate = grp['MONTHLY_ATTRITION_RATE'].iloc[-1] if not grp['MONTHLY_ATTRITION_RATE'].empty else np.nan
+    if pd.isna(last_sma):
+        last_sma = last_observed_rate
+    if pd.isna(last_ema):
+        last_ema = last_observed_rate
+
+    # last known headcount BEFORE forecast start (matches screenshot logic)
+    pre_forecast_hc_series = grp[grp.index < pd.to_datetime(FORECAST_START)]['HEADCOUNT']
+    if not pre_forecast_hc_series.empty:
+        last_known_hc = pre_forecast_hc_series.iloc[-1]
+    else:
+        # safe fallbacks (grp last hc or global base)
+        last_known_hc = grp['HEADCOUNT'].iloc[-1] if (not grp['HEADCOUNT'].empty) else BASE_MONTH_HC
+
+    # build rows for each forecast month (keeping original behavior: still include actuals if present)
+    for fut_ts in forecast_index:
+        # --- actuals (if available in grp) - EXACTLY like your screenshot ---
+        if fut_ts in grp.index:
+            act_rate  = grp.at[fut_ts, 'MONTHLY_ATTRITION_RATE'] if 'MONTHLY_ATTRITION_RATE' in grp.columns else np.nan
+            act_exits = grp.at[fut_ts, 'VOLUNTARY_EXITS'] if 'VOLUNTARY_EXITS' in grp.columns else np.nan
+            act_hc    = grp.at[fut_ts, 'HEADCOUNT'] if 'HEADCOUNT' in grp.columns else np.nan
+        else:
+            act_rate  = np.nan
+            act_exits = np.nan
+            act_hc    = np.nan
+
+        # --- Forecast rates (SMA/EMA). If the fut_ts is historical and SMA/EMA exists for that date,
+        #     use SMA/EMA value at that fut_ts; otherwise use last_sma/last_ema (the usual forecast).
+        if (fut_ts in grp.index) and ('SMA3' in grp.columns) and (not pd.isna(grp.at[fut_ts, 'SMA3'])):
+            fut_rate_sma = grp.at[fut_ts, 'SMA3']
+        else:
+            fut_rate_sma = last_sma
+
+        if (fut_ts in grp.index) and ('EMA3' in grp.columns) and (not pd.isna(grp.at[fut_ts, 'EMA3'])):
+            fut_rate_ema = grp.at[fut_ts, 'EMA3']
+        else:
+            fut_rate_ema = last_ema
+
+        # compute counts (handle NaNs safely)
+        if pd.isna(fut_rate_sma):
+            fut_count_sma = np.nan
+        else:
+            fut_count_sma = (fut_rate_sma / 100.0 * last_known_hc) if DIVIDE_BY_100 else (fut_rate_sma * last_known_hc)
+
+        if pd.isna(fut_rate_ema):
+            fut_count_ema = np.nan
+        else:
+            fut_count_ema = (fut_rate_ema / 100.0 * last_known_hc) if DIVIDE_BY_100 else (fut_rate_ema * last_known_hc)
+
+        # Build row (Future Month kept as Timestamp for easier plotting)
+        row = {
+            "Future Month": fut_ts,                       # timestamp (month start)
+            "Business Group": g,
+            "Fut Vol Attr. Month %_sma": round(fut_rate_sma, 4) if not pd.isna(fut_rate_sma) else np.nan,
+            "Fut Vol Attr. Month %_ema": round(fut_rate_ema, 4) if not pd.isna(fut_rate_ema) else np.nan,
+            "Base Month HC": int(last_known_hc) if not pd.isna(last_known_hc) else np.nan,
+            "Fut Vol. Attr Count_sma": int(round(fut_count_sma)) if (not pd.isna(fut_count_sma)) else np.nan,
+            "Fut Vol. Attr Count_ema": int(round(fut_count_ema)) if (not pd.isna(fut_count_ema)) else np.nan,
+            # actuals (keep same logic / formatting as your original)
+            "Act Vol Attr. Month %": round(act_rate,4) if not pd.isna(act_rate) else np.nan,
+            "Act Vol Attr Count": int(act_exits) if not pd.isna(act_exits) else np.nan,
+            "Actual Headcount": int(act_hc) if not pd.isna(act_hc) else np.nan,
+        }
+        all_rows.append(row)
+
+# Combined forecast DataFrame (SMA & EMA separate)
+forecast_df = pd.DataFrame(all_rows)
+
+# -----------------------
+# PLOTTING
+# 1) Per-group plot: actual (solid) vs SMA (dashed) vs EMA (dashdot)
+# 2) Overall total (aggregated across groups) with forecast dashed
+# -----------------------
+
+# Prepare actual series (rename to match forecast column structure)
+actual_df = df[['MONTH','BUSINESS_GROUPS_TA','MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','MONTHLY_ATTRITION_RATE':'Attrition Rate'})
+actual_df['Type'] = 'Actual'
+
+# prepare forecast sma/ema for plotting
+forecast_sma = forecast_df[['Future Month','Business Group','Fut Vol Attr. Month %_sma']].rename(
+    columns={'Fut Vol Attr. Month %_sma':'Attrition Rate'})
+forecast_sma['Type'] = 'Forecast_SMA'
+
+forecast_ema = forecast_df[['Future Month','Business Group','Fut Vol Attr. Month %_ema']].rename(
+    columns={'Fut Vol Attr. Month %_ema':'Attrition Rate'})
+forecast_ema['Type'] = 'Forecast_EMA'
+
+plot_df = pd.concat([actual_df, forecast_sma, forecast_ema], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])  # ensure datetime dtype
+
+# Per-group plot (may be many groups; you can filter groups if too crowded)
+plt.figure(figsize=(16,8))
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g]
+    # Actual
+    a = sub[sub['Type'] == 'Actual'].sort_values('Future Month')
+    if not a.empty:
+        plt.plot(a['Future Month'], a['Attrition Rate'], label=f"{g} Actual")
+    # SMA forecast
+    s = sub[sub['Type'] == 'Forecast_SMA'].sort_values('Future Month')
+    if not s.empty:
+        plt.plot(s['Future Month'], s['Attrition Rate'], linestyle='--', label=f"{g} SMA Forecast")
+    # EMA forecast
+    e = sub[sub['Type'] == 'Forecast_EMA'].sort_values('Future Month')
+    if not e.empty:
+        plt.plot(e['Future Month'], e['Attrition Rate'], linestyle='-.', label=f"{g} EMA Forecast")
+
+plt.axvline(pd.to_datetime(FORECAST_START), color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate — Actual (solid) vs Forecast SMA (--) & EMA (-.)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=2, fontsize='small')   # compact legend
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# -----------------------
+# Overall aggregated totals plot
+# -----------------------
+# Compute actual overall (weighted by headcount)
+# exits = rate/100 * headcount  -> sum exits / sum hc -> overall rate %
+actual_tot = df.groupby('MONTH').apply(
+    lambda d: pd.Series({
+        'total_exits': (d['MONTHLY_ATTRITION_RATE'] / 100.0 * d['HEADCOUNT']).sum(),
+        'total_hc'   : d['HEADCOUNT'].sum()
+    })
+).reset_index().rename(columns={'MONTH':'Future Month'})
+
+actual_tot['overall_rate'] = actual_tot['total_exits'] / actual_tot['total_hc'] * 100.0
+actual_tot['Type'] = 'Actual_Total'
+actual_tot = actual_tot[['Future Month','overall_rate','Type']].rename(columns={'overall_rate':'Rate'})
+
+# Forecast totals (sum predicted counts and base HC across groups per month)
+# note: forecast_df already repeats Base Month HC per group per month, so summing is fine
+forecast_tot_sma = forecast_df.groupby('Future Month').agg({
+    'Fut Vol. Attr Count_sma': 'sum',
+    'Base Month HC': 'sum'
+}).reset_index()
+forecast_tot_sma['Rate_sma'] = (forecast_tot_sma['Fut Vol. Attr Count_sma'] / forecast_tot_sma['Base Month HC']) * 100.0
+forecast_tot_sma['Type'] = 'Forecast_Total_SMA'
+forecast_tot_sma = forecast_tot_sma[['Future Month','Rate_sma','Type']].rename(columns={'Rate_sma':'Rate'})
+
+forecast_tot_ema = forecast_df.groupby('Future Month').agg({
+    'Fut Vol. Attr Count_ema': 'sum',
+    'Base Month HC': 'sum'
+}).reset_index()
+forecast_tot_ema['Rate_ema'] = (forecast_tot_ema['Fut Vol. Attr Count_ema'] / forecast_tot_ema['Base Month HC']) * 100.0
+forecast_tot_ema['Type'] = 'Forecast_Total_EMA'
+forecast_tot_ema = forecast_tot_ema[['Future Month','Rate_ema','Type']].rename(columns={'Rate_ema':'Rate'})
+
+# combine totals
+tot_plot = pd.concat([actual_tot, forecast_tot_sma, forecast_tot_ema], ignore_index=True)
+tot_plot['Future Month'] = pd.to_datetime(tot_plot['Future Month'])
+
+plt.figure(figsize=(12,5))
+act = tot_plot[tot_plot['Type']=='Actual_Total'].sort_values('Future Month')
+sma = tot_plot[tot_plot['Type']=='Forecast_Total_SMA'].sort_values('Future Month')
+ema = tot_plot[tot_plot['Type']=='Forecast_Total_EMA'].sort_values('Future Month')
+
+if not act.empty:
+    plt.plot(act['Future Month'], act['Rate'], label='Overall Actual', linewidth=2)
+if not sma.empty:
+    plt.plot(sma['Future Month'], sma['Rate'], '--', label='Overall Forecast SMA')
+if not ema.empty:
+    plt.plot(ema['Future Month'], ema['Rate'], '-.', label='Overall Forecast EMA')
+
+plt.axvline(pd.to_datetime(FORECAST_START), color='gray', linestyle=':', linewidth=1)
+plt.title("Overall Attrition Rate (weighted by headcount) — Actual vs Forecast")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
