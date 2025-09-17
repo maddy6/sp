@@ -1,3 +1,90 @@
+# =========================
+# 1. CALCULATE SMA & EMA FOR FULL DATASET
+# =========================
+# we assume df contains all months including pre-forecast
+df_sorted = df.sort_values(['BUSINESS_GROUPS_TA','MONTH'])
+
+# SMA & EMA on full series (including historical)
+df_sorted['SMA_3'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE']\
+    .transform(lambda x: x.rolling(window=3, min_periods=1).mean())
+df_sorted['EMA_3'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE']\
+    .transform(lambda x: x.ewm(span=3, adjust=False).mean())
+
+# Build historical SMA/EMA dataframe
+hist_sma = df_sorted[['MONTH','BUSINESS_GROUPS_TA','SMA_3']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','SMA_3':'Attrition Rate'})
+hist_sma['Type'] = 'Forecast_SMA'
+
+hist_ema = df_sorted[['MONTH','BUSINESS_GROUPS_TA','EMA_3']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','EMA_3':'Attrition Rate'})
+hist_ema['Type'] = 'Forecast_EMA'
+
+# Actual
+actual_df = df_sorted[['MONTH','BUSINESS_GROUPS_TA','MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','MONTHLY_ATTRITION_RATE':'Attrition Rate'})
+actual_df['Type'] = 'Actual'
+
+# Combine all
+plot_df = pd.concat([actual_df, hist_sma, hist_ema], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+
+# Flag forecast months
+plot_df['ForecastFlag'] = (plot_df['Future Month'] >= pd.to_datetime(FORECAST_START))
+
+# =========================
+# 2. PLOT PER-GROUP
+# =========================
+plt.figure(figsize=(16,8))
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g].sort_values('Future Month')
+
+    # function to draw hist and forecast
+    def draw_line(sub, type_name, color, label):
+        hist = sub[(sub['Type']==type_name) & (~sub['ForecastFlag'])]
+        fore = sub[(sub['Type']==type_name) & (sub['ForecastFlag'])]
+        if not hist.empty:
+            plt.plot(hist['Future Month'], hist['Attrition Rate'],
+                     color=color, label=f"{g} {label} Hist")
+        if not fore.empty:
+            plt.plot(fore['Future Month'], fore['Attrition Rate'],
+                     color=color, linestyle=':', label=f"{g} {label} Forecast")
+
+    draw_line(sub,'Actual','black','Actual')
+    draw_line(sub,'Forecast_SMA','blue','SMA')
+    draw_line(sub,'Forecast_EMA','green','EMA')
+
+plt.axvline(pd.to_datetime(FORECAST_START), color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate — Actual vs SMA vs EMA (solid=hist, dotted=forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=2, fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # -----------------------
 # CREATE PLOT_DF WITH FORECAST FLAG
 # -----------------------
