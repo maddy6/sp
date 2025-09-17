@@ -1,0 +1,113 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ---- Parameters ----
+BASE_MONTH_HC = 229568
+FORECAST_START = "2025-04-01"
+FORECAST_END = "2025-12-01"
+DIVIDE_BY_100 = True
+
+# ---- Prepare df ----
+df['MONTH'] = pd.to_datetime(df['MONTH'])
+df['YEAR'] = df['MONTH'].dt.year
+forecast_index = pd.date_range(start=FORECAST_START, end=FORECAST_END, freq="MS")
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+all_rows = []
+
+# ---- Loop over groups ----
+for g in groups:
+    grp = df[df['BUSINESS_GROUPS_TA'] == g].copy().set_index('MONTH').sort_index()
+
+    # Compute SMA(3) & EMA(3)
+    grp['SMA3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=3).mean()
+    grp['EMA3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(span=3, adjust=False).mean()
+
+    # Last known headcount
+    last_known_hc = grp['HEADCOUNT'].iloc[-1]
+
+    # Last available SMA and EMA
+    last_sma = grp['SMA3'].iloc[-1]
+    last_ema = grp['EMA3'].iloc[-1]
+
+    # ---- Create forecasts for future months ----
+    for fut_ts in forecast_index:
+        # actuals not available for future
+        act_rate = np.nan
+        act_exits = np.nan
+        act_hc = np.nan
+
+        # use SMA/EMA average for forecast
+        fut_rate_sma = last_sma
+        fut_rate_ema = last_ema
+
+        fut_count_sma = (fut_rate_sma / 100 * last_known_hc) if DIVIDE_BY_100 else (fut_rate_sma * last_known_hc)
+        fut_count_ema = (fut_rate_ema / 100 * last_known_hc) if DIVIDE_BY_100 else (fut_rate_ema * last_known_hc)
+
+        row = {
+            "Future Month": fut_ts.strftime("%Y-%b"),
+            "Business Group": g,
+            # separate SMA & EMA
+            "Fut Vol Attr. Month %_sma": round(fut_rate_sma, 4),
+            "Fut Vol Attr. Month %_ema": round(fut_rate_ema, 4),
+            "Base Month HC": last_known_hc,
+            "Fut Vol. Attr Count_sma": int(round(fut_count_sma)),
+            "Fut Vol. Attr Count_ema": int(round(fut_count_ema)),
+            # actual columns remain same style
+            "Act Vol Attr. Month %": round(act_rate, 4) if not pd.isna(act_rate) else np.nan,
+            "Act Vol Attr Count": int(act_exits) if not pd.isna(act_exits) else np.nan,
+            "Actual Headcount": int(act_hc) if not pd.isna(act_hc) else np.nan,
+        }
+        all_rows.append(row)
+
+# Combine all rows
+forecast_df = pd.DataFrame(all_rows)
+
+# ---- Merge with actual data for plotting ----
+# We’ll create two sets of forecast series: one SMA, one EMA
+plot_rows = []
+
+# Actual rows
+actual_df = df[['MONTH','BUSINESS_GROUPS_TA','MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','MONTHLY_ATTRITION_RATE':'Attrition Rate'})
+actual_df['Type'] = 'Actual'
+
+# SMA forecast rows
+forecast_sma = forecast_df[['Future Month','Business Group','Fut Vol Attr. Month %_sma']].rename(
+    columns={'Fut Vol Attr. Month %_sma':'Attrition Rate'})
+forecast_sma['Type'] = 'Forecast_SMA'
+
+# EMA forecast rows
+forecast_ema = forecast_df[['Future Month','Business Group','Fut Vol Attr. Month %_ema']].rename(
+    columns={'Fut Vol Attr. Month %_ema':'Attrition Rate'})
+forecast_ema['Type'] = 'Forecast_EMA'
+
+plot_df = pd.concat([actual_df, forecast_sma, forecast_ema], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+
+# ---- Plot ----
+plt.figure(figsize=(15,7))
+
+for g in groups:
+    sub = plot_df[plot_df['Business Group']==g]
+
+    # Actual
+    actual = sub[sub['Type']=='Actual']
+    plt.plot(actual['Future Month'], actual['Attrition Rate'], label=f"{g} Actual")
+
+    # Forecast SMA
+    future_sma = sub[sub['Type']=='Forecast_SMA']
+    plt.plot(future_sma['Future Month'], future_sma['Attrition Rate'],'--', label=f"{g} SMA Forecast")
+
+    # Forecast EMA
+    future_ema = sub[sub['Type']=='Forecast_EMA']
+    plt.plot(future_ema['Future Month'], future_ema['Attrition Rate'],'-.', label=f"{g} EMA Forecast")
+
+plt.axvline(pd.to_datetime(FORECAST_START), color='gray', linestyle=':')
+plt.title("Attrition Rate: Actual vs Forecast (SMA & EMA)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate %")
+plt.legend()
+plt.grid()
+plt.show()
