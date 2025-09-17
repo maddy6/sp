@@ -1,3 +1,197 @@
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+import numpy as np
+
+# ensure datetime
+forecast_df['Future Month'] = pd.to_datetime(forecast_df['Future Month'])
+
+# take only rows where actual and forecasts both exist
+mask_sma = (~forecast_df['Act Vol Attr. Month %'].isna()) & (~forecast_df['Fut Vol Attr. Month %_sma'].isna())
+mask_ema = (~forecast_df['Act Vol Attr. Month %'].isna()) & (~forecast_df['Fut Vol Attr. Month %_ema'].isna())
+
+# actuals and predictions
+actual_sma = forecast_df.loc[mask_sma, 'Act Vol Attr. Month %']
+pred_sma = forecast_df.loc[mask_sma, 'Fut Vol Attr. Month %_sma']
+
+actual_ema = forecast_df.loc[mask_ema, 'Act Vol Attr. Month %']
+pred_ema = forecast_df.loc[mask_ema, 'Fut Vol Attr. Month %_ema']
+
+
+
+mae_sma = mean_absolute_error(actual_sma, pred_sma)
+rmse_sma = mean_squared_error(actual_sma, pred_sma, squared=False)  # RMSE
+mape_sma = np.mean(np.abs((actual_sma - pred_sma) / actual_sma)) * 100
+
+print("SMA Forecast Performance:")
+print(f"MAE  : {mae_sma:.4f}")
+print(f"RMSE : {rmse_sma:.4f}")
+print(f"MAPE : {mape_sma:.2f}%")
+
+
+
+mae_ema = mean_absolute_error(actual_ema, pred_ema)
+rmse_ema = mean_squared_error(actual_ema, pred_ema, squared=False)  # RMSE
+mape_ema = np.mean(np.abs((actual_ema - pred_ema) / actual_ema)) * 100
+
+print("EMA Forecast Performance:")
+print(f"MAE  : {mae_ema:.4f}")
+print(f"RMSE : {rmse_ema:.4f}")
+print(f"MAPE : {mape_ema:.2f}%")
+
+
+metrics_by_group = []
+for g in forecast_df['Business Group'].unique():
+    df_g = forecast_df[forecast_df['Business Group']==g]
+    mask_sma = (~df_g['Act Vol Attr. Month %'].isna()) & (~df_g['Fut Vol Attr. Month %_sma'].isna())
+    mask_ema = (~df_g['Act Vol Attr. Month %'].isna()) & (~df_g['Fut Vol Attr. Month %_ema'].isna())
+    if mask_sma.any():
+        mae_sma = mean_absolute_error(df_g.loc[mask_sma,'Act Vol Attr. Month %'], df_g.loc[mask_sma,'Fut Vol Attr. Month %_sma'])
+        rmse_sma = mean_squared_error(df_g.loc[mask_sma,'Act Vol Attr. Month %'], df_g.loc[mask_sma,'Fut Vol Attr. Month %_sma'], squared=False)
+    else:
+        mae_sma, rmse_sma = np.nan, np.nan
+    if mask_ema.any():
+        mae_ema = mean_absolute_error(df_g.loc[mask_ema,'Act Vol Attr. Month %'], df_g.loc[mask_ema,'Fut Vol Attr. Month %_ema'])
+        rmse_ema = mean_squared_error(df_g.loc[mask_ema,'Act Vol Attr. Month %'], df_g.loc[mask_ema,'Fut Vol Attr. Month %_ema'], squared=False)
+    else:
+        mae_ema, rmse_ema = np.nan, np.nan
+    metrics_by_group.append([g, mae_sma, rmse_sma, mae_ema, rmse_ema])
+
+metrics_df = pd.DataFrame(metrics_by_group, columns=['Business Group','MAE_SMA','RMSE_SMA','MAE_EMA','RMSE_EMA'])
+print(metrics_df)
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+FORECAST_START = pd.to_datetime("2025-04-01")
+FORECAST_END   = pd.to_datetime("2025-12-01")
+
+# Assuming forecast_df already built
+plot_df = pd.melt(
+    forecast_df,
+    id_vars=['Future Month','Business Group'],
+    value_vars=['Act Vol Attr. Month %',
+                'Fut Vol Attr. Month %_sma',
+                'Fut Vol Attr. Month %_ema'],
+    var_name='Metric', value_name='Value'
+)
+
+metric_map = {
+    'Act Vol Attr. Month %': 'Actual',
+    'Fut Vol Attr. Month %_sma': 'SMA Forecast',
+    'Fut Vol Attr. Month %_ema': 'EMA Forecast'
+}
+plot_df['Metric'] = plot_df['Metric'].map(metric_map)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+
+# add Period column
+plot_df['Period'] = np.where(plot_df['Future Month'] < FORECAST_START, 'Historical','Forecast')
+
+
+
+plt.ion()  # interactive mode ON
+
+groups = plot_df['Business Group'].unique()
+colors = {'Actual':'black', 'SMA Forecast':'blue', 'EMA Forecast':'green'}
+
+plt.figure(figsize=(16,8))
+
+for g in groups:
+    sub = plot_df[plot_df['Business Group']==g]
+    for metric in ['Actual','SMA Forecast','EMA Forecast']:
+        s_hist = sub[(sub['Metric']==metric) & (sub['Period']=='Historical')].sort_values('Future Month')
+        s_fore = sub[(sub['Metric']==metric) & (sub['Period']=='Forecast')].sort_values('Future Month')
+
+        # plot solid line for historical
+        if not s_hist.empty:
+            plt.plot(s_hist['Future Month'], s_hist['Value'],
+                     label=f"{g} {metric} (Hist)", 
+                     color=colors[metric], linestyle='-')
+
+        # plot dotted line for forecast
+        if not s_fore.empty:
+            plt.plot(s_fore['Future Month'], s_fore['Value'],
+                     label=f"{g} {metric} (Forecast)", 
+                     color=colors[metric], linestyle=':')
+
+plt.axvline(FORECAST_START, color='gray', linestyle='--', linewidth=1)
+plt.title("Attrition Rate — Actual vs SMA & EMA (solid = past, dotted = forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=3, fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+# Compute metrics per group
+metrics_list = []
+for g in groups:
+    sub = forecast_df[forecast_df['Business Group']==g]
+    # actual vs sma
+    mask = ~sub['Act Vol Attr. Month %'].isna() & ~sub['Fut Vol Attr. Month %_sma'].isna()
+    mae_sma = mean_absolute_error(sub.loc[mask,'Act Vol Attr. Month %'], sub.loc[mask,'Fut Vol Attr. Month %_sma'])
+    rmse_sma = np.sqrt(mean_squared_error(sub.loc[mask,'Act Vol Attr. Month %'], sub.loc[mask,'Fut Vol Attr. Month %_sma']))
+
+    # actual vs ema
+    mask2 = ~sub['Act Vol Attr. Month %'].isna() & ~sub['Fut Vol Attr. Month %_ema'].isna()
+    mae_ema = mean_absolute_error(sub.loc[mask2,'Act Vol Attr. Month %'], sub.loc[mask2,'Fut Vol Attr. Month %_ema'])
+    rmse_ema = np.sqrt(mean_squared_error(sub.loc[mask2,'Act Vol Attr. Month %'], sub.loc[mask2,'Fut Vol Attr. Month %_ema']))
+
+    metrics_list.append([g,mae_sma,rmse_sma,mae_ema,rmse_ema])
+
+metrics_df = pd.DataFrame(metrics_list, columns=['Business Group','MAE_SMA','RMSE_SMA','MAE_EMA','RMSE_EMA'])
+
+
+
+x = np.arange(len(metrics_df))
+width = 0.2
+
+plt.figure(figsize=(12,6))
+plt.bar(x - width, metrics_df['MAE_SMA'], width, label='MAE SMA', color='blue', alpha=0.6)
+plt.bar(x,         metrics_df['MAE_EMA'], width, label='MAE EMA', color='green', alpha=0.6)
+plt.bar(x + width, metrics_df['RMSE_SMA'], width, label='RMSE SMA', color='blue', alpha=0.3)
+plt.bar(x + 2*width, metrics_df['RMSE_EMA'], width, label='RMSE EMA', color='green', alpha=0.3)
+
+plt.xticks(x + width/2, metrics_df['Business Group'], rotation=45)
+plt.title("Error Metrics by Business Group")
+plt.ylabel("Error Value")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ----------------------------
 # 1. CREATE FULL GRID (MONTH × BUSINESS GROUP)
 # ----------------------------
