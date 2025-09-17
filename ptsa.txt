@@ -1,3 +1,59 @@
+metrics_by_group = []
+for g in forecast_df['Business Group'].unique():
+    df_g = forecast_df[forecast_df['Business Group'] == g]
+
+    results = {"Business Group": g}
+
+    # Define pairs: (actual_col, forecast_col, label)
+    methods = [
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_sma", "SMA"),
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_ema", "EMA"),
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_median", "MEDIAN"),
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_wilder", "WILDER"),
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_zlema", "ZLEMA"),
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_dema", "DEMA"),
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_t3", "T3"),
+        ("Act Vol Attr. Month %", "Fut Vol Attr. Month %_kalman", "KALMAN"),
+    ]
+
+    for actual_col, forecast_col, label in methods:
+        mask = (~df_g[actual_col].isna()) & (~df_g[forecast_col].isna())
+        if mask.any():
+            mae = mean_absolute_error(df_g.loc[mask, actual_col], df_g.loc[mask, forecast_col])
+            rmse = mean_squared_error(df_g.loc[mask, actual_col], df_g.loc[mask, forecast_col], squared=False)
+        else:
+            mae, rmse = np.nan, np.nan
+        results[f"MAE_{label}"] = mae
+        results[f"RMSE_{label}"] = rmse
+
+    metrics_by_group.append(results)
+
+metrics_df = pd.DataFrame(metrics_by_group)
+print(metrics_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
