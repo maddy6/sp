@@ -1,3 +1,293 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# -----------------------
+# PARAMETERS
+# -----------------------
+BASE_MONTH_HC = 229568
+FORECAST_START = "2025-04-01"
+FORECAST_END   = "2025-12-01"
+DIVIDE_BY_100  = True
+ROLL_WINDOW = 3
+# -----------------------
+
+# Prepare df
+df['MONTH'] = pd.to_datetime(df['MONTH']).dt.to_period('M').dt.to_timestamp()
+df['YEAR']  = df['MONTH'].dt.year
+
+forecast_index = pd.date_range(start=FORECAST_START, end=FORECAST_END, freq="MS")
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+all_rows = []
+
+for g in groups:
+    grp = df[df['BUSINESS_GROUPS_TA'] == g].copy().set_index('MONTH').sort_index()
+
+    # smoothing: SMA, EMA, Rolling Median, Wilder (alpha = 1/N)
+    grp['SMA3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=ROLL_WINDOW).mean()
+    grp['EMA3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(span=ROLL_WINDOW, adjust=False).mean()
+    grp['MED3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=ROLL_WINDOW).median()
+    alpha_wilder = 1.0 / ROLL_WINDOW
+    grp['WILDER3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(alpha=alpha_wilder, adjust=False).mean()
+
+    # last-available fallback utility
+    def last_valid(col):
+        if (col in grp.columns) and (not grp[col].empty):
+            v = grp[col].iloc[-1]
+            if not pd.isna(v):
+                return v
+        # fallback to last observed raw rate
+        if (not grp['MONTHLY_ATTRITION_RATE'].empty):
+            return grp['MONTHLY_ATTRITION_RATE'].iloc[-1]
+        return np.nan
+
+    last_sma = last_valid('SMA3')
+    last_ema = last_valid('EMA3')
+    last_med = last_valid('MED3')
+    last_wil = last_valid('WILDER3')
+
+    # last known headcount BEFORE forecast start (safe fallbacks)
+    pre_forecast_hc_series = grp[grp.index < pd.to_datetime(FORECAST_START)]['HEADCOUNT']
+    if not pre_forecast_hc_series.empty:
+        last_known_hc = pre_forecast_hc_series.iloc[-1]
+    else:
+        last_known_hc = grp['HEADCOUNT'].iloc[-1] if (not grp['HEADCOUNT'].empty) else BASE_MONTH_HC
+
+    # build rows for every forecast_index month (keeps actuals if present)
+    for fut_ts in forecast_index:
+        # actuals if present in original group
+        if fut_ts in grp.index:
+            act_rate  = grp.at[fut_ts, 'MONTHLY_ATTRITION_RATE'] if 'MONTHLY_ATTRITION_RATE' in grp.columns else np.nan
+            act_exits = grp.at[fut_ts, 'VOLUNTARY_EXITS'] if 'VOLUNTARY_EXITS' in grp.columns else np.nan
+            act_hc    = grp.at[fut_ts, 'HEADCOUNT'] if 'HEADCOUNT' in grp.columns else np.nan
+        else:
+            act_rate  = np.nan
+            act_exits = np.nan
+            act_hc    = np.nan
+
+        # get smoothed value at that date if exists else use last_valid
+        def get_smoothed(col, last_val):
+            if (fut_ts in grp.index) and (col in grp.columns) and (not pd.isna(grp.at[fut_ts, col])):
+                return grp.at[fut_ts, col]
+            return last_val
+
+        fut_rate_sma = get_smoothed('SMA3', last_sma)
+        fut_rate_ema = get_smoothed('EMA3', last_ema)
+        fut_rate_med = get_smoothed('MED3', last_med)
+        fut_rate_wil = get_smoothed('WILDER3', last_wil)
+
+        # compute counts safely
+        def to_count(rate):
+            if pd.isna(rate):
+                return np.nan
+            return (rate / 100.0 * last_known_hc) if DIVIDE_BY_100 else (rate * last_known_hc)
+
+        fut_count_sma = to_count(fut_rate_sma)
+        fut_count_ema = to_count(fut_rate_ema)
+        fut_count_med = to_count(fut_rate_med)
+        fut_count_wil = to_count(fut_rate_wil)
+
+        # --- ROW: using the exact naming you had previously ---
+        row = {
+            "Future Month": fut_ts,                       # timestamp (month start)
+            "Business Group": g,
+            "Fut Vol Attr. Month %_sma": round(fut_rate_sma, 4) if not pd.isna(fut_rate_sma) else np.nan,
+            "Fut Vol Attr. Month %_ema": round(fut_rate_ema, 4) if not pd.isna(fut_rate_ema) else np.nan,
+            "Fut Vol Attr. Month %_med": round(fut_rate_med, 4) if not pd.isna(fut_rate_med) else np.nan,
+            "Fut Vol Attr. Month %_wilder": round(fut_rate_wil, 4) if not pd.isna(fut_rate_wil) else np.nan,
+            "Base Month HC": int(last_known_hc) if not pd.isna(last_known_hc) else np.nan,
+            "Fut Vol. Attr Count_sma": int(round(fut_count_sma)) if (not pd.isna(fut_count_sma)) else np.nan,
+            "Fut Vol. Attr Count_ema": int(round(fut_count_ema)) if (not pd.isna(fut_count_ema)) else np.nan,
+            "Fut Vol. Attr Count_med": int(round(fut_count_med)) if (not pd.isna(fut_count_med)) else np.nan,
+            "Fut Vol. Attr Count_wilder": int(round(fut_count_wil)) if (not pd.isna(fut_count_wil)) else np.nan,
+            # actuals (kept exact naming)
+            "Act Vol Attr. Month %": round(act_rate,4) if not pd.isna(act_rate) else np.nan,
+            "Act Vol Attr Count": int(act_exits) if not pd.isna(act_exits) else np.nan,
+            "Actual Headcount": int(act_hc) if not pd.isna(act_hc) else np.nan,
+        }
+        all_rows.append(row)
+
+# Combined forecast DataFrame (names preserved)
+forecast_df = pd.DataFrame(all_rows)
+
+# -----------------------
+# PLOTTING (per-group) - solid before forecast, dotted for forecast window
+# -----------------------
+# Prepare actual series (rename to match forecast column structure)
+actual_df = df[['MONTH','BUSINESS_GROUPS_TA','MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','MONTHLY_ATTRITION_RATE':'Attrition Rate'})
+actual_df['Type'] = 'Actual'
+
+# helper to make forecast subsets (keeps naming consistent)
+def make_forecast_subset(col, label):
+    tmp = forecast_df[['Future Month','Business Group',col]].rename(columns={col:'Attrition Rate'})
+    tmp['Type'] = label
+    return tmp
+
+forecast_sma = make_forecast_subset('Fut Vol Attr. Month %_sma','Forecast_SMA')
+forecast_ema = make_forecast_subset('Fut Vol Attr. Month %_ema','Forecast_EMA')
+forecast_med = make_forecast_subset('Fut Vol Attr. Month %_med','Forecast_MED')
+forecast_wilder = make_forecast_subset('Fut Vol Attr. Month %_wilder','Forecast_WILDER')
+
+plot_df = pd.concat([actual_df, forecast_sma, forecast_ema, forecast_med, forecast_wilder], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+
+# plotting per-group
+plt.figure(figsize=(16,8))
+forecast_start_dt = pd.to_datetime(FORECAST_START)
+
+colors = {
+    'Actual': 'black',
+    'Forecast_SMA': 'blue',
+    'Forecast_EMA': 'green',
+    'Forecast_MED': 'orange',
+    'Forecast_WILDER': 'purple'
+}
+
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g].sort_values('Future Month')
+
+    for typ in ['Actual','Forecast_SMA','Forecast_EMA','Forecast_MED','Forecast_WILDER']:
+        data = sub[sub['Type'] == typ]
+        if data.empty:
+            continue
+        # historical (solid)
+        hist = data[data['Future Month'] < forecast_start_dt]
+        if not hist.empty:
+            plt.plot(hist['Future Month'], hist['Attrition Rate'], color=colors[typ], label=f"{g} {typ} (Hist)")
+        # forecast (dotted)
+        fore = data[data['Future Month'] >= forecast_start_dt]
+        if not fore.empty:
+            plt.plot(fore['Future Month'], fore['Attrition Rate'], linestyle=':', color=colors[typ], label=f"{g} {typ} (Forecast)")
+
+plt.axvline(forecast_start_dt, color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate — Actual vs SMA/EMA/Median/Wilder (solid=hist, dotted=forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=2, fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# -----------------------
+# OVERALL AGGREGATED TOTALS (weighted by headcount), preserving original naming & style
+# -----------------------
+# Actual overall (weighted)
+actual_tot = df.groupby('MONTH').apply(
+    lambda d: pd.Series({
+        'total_exits': (d['MONTHLY_ATTRITION_RATE'] / 100.0 * d['HEADCOUNT']).sum(),
+        'total_hc'   : d['HEADCOUNT'].sum()
+    })
+).reset_index().rename(columns={'MONTH':'Future Month'})
+actual_tot['overall_rate'] = actual_tot['total_exits'] / actual_tot['total_hc'] * 100.0
+actual_tot['Type'] = 'Actual_Total'
+actual_tot = actual_tot[['Future Month','overall_rate','Type']].rename(columns={'overall_rate':'Rate'})
+
+# Forecast totals aggregating the forecast_df counts (uses Base Month HC for denominator)
+forecast_tot_sma = forecast_df.groupby('Future Month').agg({
+    'Fut Vol. Attr Count_sma': 'sum',
+    'Base Month HC': 'sum'
+}).reset_index()
+forecast_tot_sma['Rate_sma'] = (forecast_tot_sma['Fut Vol. Attr Count_sma'] / forecast_tot_sma['Base Month HC']) * 100.0
+forecast_tot_sma['Type'] = 'Forecast_Total_SMA'
+forecast_tot_sma = forecast_tot_sma[['Future Month','Rate_sma','Type']].rename(columns={'Rate_sma':'Rate'})
+
+forecast_tot_ema = forecast_df.groupby('Future Month').agg({
+    'Fut Vol. Attr Count_ema': 'sum',
+    'Base Month HC': 'sum'
+}).reset_index()
+forecast_tot_ema['Rate_ema'] = (forecast_tot_ema['Fut Vol. Attr Count_ema'] / forecast_tot_ema['Base Month HC']) * 100.0
+forecast_tot_ema['Type'] = 'Forecast_Total_EMA'
+forecast_tot_ema = forecast_tot_ema[['Future Month','Rate_ema','Type']].rename(columns={'Rate_ema':'Rate'})
+
+forecast_tot_med = forecast_df.groupby('Future Month').agg({
+    'Fut Vol. Attr Count_med': 'sum',
+    'Base Month HC': 'sum'
+}).reset_index()
+forecast_tot_med['Rate_med'] = (forecast_tot_med['Fut Vol. Attr Count_med'] / forecast_tot_med['Base Month HC']) * 100.0
+forecast_tot_med['Type'] = 'Forecast_Total_MED'
+forecast_tot_med = forecast_tot_med[['Future Month','Rate_med','Type']].rename(columns={'Rate_med':'Rate'})
+
+forecast_tot_wilder = forecast_df.groupby('Future Month').agg({
+    'Fut Vol. Attr Count_wilder': 'sum',
+    'Base Month HC': 'sum'
+}).reset_index()
+forecast_tot_wilder['Rate_wilder'] = (forecast_tot_wilder['Fut Vol. Attr Count_wilder'] / forecast_tot_wilder['Base Month HC']) * 100.0
+forecast_tot_wilder['Type'] = 'Forecast_Total_WILDER'
+forecast_tot_wilder = forecast_tot_wilder[['Future Month','Rate_wilder','Type']].rename(columns={'Rate_wilder':'Rate'})
+
+# combine totals and plot
+tot_plot = pd.concat([actual_tot, forecast_tot_sma, forecast_tot_ema, forecast_tot_med, forecast_tot_wilder], ignore_index=True)
+tot_plot['Future Month'] = pd.to_datetime(tot_plot['Future Month'])
+tot_plot['ForecastFlag'] = tot_plot['Future Month'] >= forecast_start_dt
+
+plt.figure(figsize=(12,6))
+
+def draw_total_line(type_name, color, label):
+    hist = tot_plot[(tot_plot['Type']==type_name) & (~tot_plot['ForecastFlag'])].sort_values('Future Month')
+    fore = tot_plot[(tot_plot['Type']==type_name) & (tot_plot['ForecastFlag'])].sort_values('Future Month')
+    if not hist.empty:
+        plt.plot(hist['Future Month'], hist['Rate'], color=color, label=f"{label} (Hist)", linewidth=2)
+    if not fore.empty:
+        plt.plot(fore['Future Month'], fore['Rate'], color=color, linestyle=':', label=f"{label} (Forecast)", linewidth=2)
+
+draw_total_line('Actual_Total','black','Overall Actual')
+draw_total_line('Forecast_Total_SMA','blue','Overall SMA')
+draw_total_line('Forecast_Total_EMA','green','Overall EMA')
+draw_total_line('Forecast_Total_MED','orange','Overall MEDIAN')
+draw_total_line('Forecast_Total_WILDER','purple','Overall WILDER')
+
+plt.axvline(forecast_start_dt, color='gray', linestyle=':', linewidth=1)
+plt.title("Overall Attrition Rate (weighted) — Actual vs SMA/EMA/Median/Wilder")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import numpy as np
 
