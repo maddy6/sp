@@ -1,3 +1,142 @@
+# =========================
+# 1. CALCULATE EMA, MEDIAN, ZLEMA, DEMA FOR FULL DATASET
+# =========================
+df_sorted = df.sort_values(['BUSINESS_GROUPS_TA','MONTH'])
+
+# EMA (span=3)
+df_sorted['EMA_3'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE']\
+    .transform(lambda x: x.ewm(span=3, adjust=False).mean())
+
+# Median (rolling window=3)
+df_sorted['MED_3'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE']\
+    .transform(lambda x: x.rolling(window=3, min_periods=1).median())
+
+# Zero-Lag EMA (ZLEMA)
+def zlema(series, period=3):
+    lag = (period - 1) // 2
+    diff = series - series.shift(lag)
+    ema_input = series + diff
+    return ema_input.ewm(span=period, adjust=False).mean()
+
+df_sorted['ZLEMA_3'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE']\
+    .transform(lambda x: zlema(x, period=3))
+
+# Double EMA (DEMA)
+def dema(series, span=3):
+    ema1 = series.ewm(span=span, adjust=False).mean()
+    ema2 = ema1.ewm(span=span, adjust=False).mean()
+    return 2*ema1 - ema2
+
+df_sorted['DEMA_3'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE']\
+    .transform(lambda x: dema(x, span=3))
+
+# =========================
+# 2. BUILD HISTORICAL DATAFRAMES
+# =========================
+hist_ema = df_sorted[['MONTH','BUSINESS_GROUPS_TA','EMA_3']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','EMA_3':'Attrition Rate'})
+hist_ema['Type'] = 'Forecast_EMA'
+
+hist_med = df_sorted[['MONTH','BUSINESS_GROUPS_TA','MED_3']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','MED_3':'Attrition Rate'})
+hist_med['Type'] = 'Forecast_MED'
+
+hist_zlema = df_sorted[['MONTH','BUSINESS_GROUPS_TA','ZLEMA_3']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','ZLEMA_3':'Attrition Rate'})
+hist_zlema['Type'] = 'Forecast_ZLEMA'
+
+hist_dema = df_sorted[['MONTH','BUSINESS_GROUPS_TA','DEMA_3']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','DEMA_3':'Attrition Rate'})
+hist_dema['Type'] = 'Forecast_DEMA'
+
+# Actual
+actual_df = df_sorted[['MONTH','BUSINESS_GROUPS_TA','MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','MONTHLY_ATTRITION_RATE':'Attrition Rate'})
+actual_df['Type'] = 'Actual'
+
+# Combine all
+plot_df = pd.concat([actual_df, hist_ema, hist_med, hist_zlema, hist_dema], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+plot_df['ForecastFlag'] = (plot_df['Future Month'] >= pd.to_datetime(FORECAST_START))
+
+# =========================
+# 3. PLOT PER-GROUP
+# =========================
+plt.figure(figsize=(16,8))
+
+colors = {
+    'Actual':'black',
+    'Forecast_EMA':'green',
+    'Forecast_MED':'orange',
+    'Forecast_ZLEMA':'red',
+    'Forecast_DEMA':'blue'
+}
+
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g].sort_values('Future Month')
+
+    def draw_line(sub, type_name, color, label):
+        hist = sub[(sub['Type']==type_name) & (~sub['ForecastFlag'])]
+        fore = sub[(sub['Type']==type_name) & (sub['ForecastFlag'])]
+        if not hist.empty:
+            plt.plot(hist['Future Month'], hist['Attrition Rate'],
+                     color=color, label=f"{g} {label} Hist")
+        if not fore.empty:
+            plt.plot(fore['Future Month'], fore['Attrition Rate'],
+                     color=color, linestyle=':', label=f"{g} {label} Forecast")
+
+    draw_line(sub,'Actual',colors['Actual'],'Actual')
+    draw_line(sub,'Forecast_EMA',colors['Forecast_EMA'],'EMA')
+    draw_line(sub,'Forecast_MED',colors['Forecast_MED'],'MED')
+    draw_line(sub,'Forecast_ZLEMA',colors['Forecast_ZLEMA'],'ZLEMA')
+    draw_line(sub,'Forecast_DEMA',colors['Forecast_DEMA'],'DEMA')
+
+plt.axvline(pd.to_datetime(FORECAST_START), color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate — Actual vs EMA / MED / ZLEMA / DEMA (solid=hist, dotted=forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=2, fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 metrics_by_group = []
 for g in forecast_df['Business Group'].unique():
     df_g = forecast_df[forecast_df['Business Group'] == g]
