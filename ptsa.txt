@@ -1,3 +1,57 @@
+# ----------------------------
+# 1. CREATE FULL GRID (MONTH × BUSINESS GROUP)
+# ----------------------------
+# all months you want to cover
+months = pd.date_range(start=FORECAST_START, end=FORECAST_END, freq='MS')  # MS = Month Start
+
+# all business groups from your df
+business_groups = df['BUSINESS_GROUPS_TA'].unique()
+
+# create full index
+full_index = pd.MultiIndex.from_product(
+    [months, business_groups],
+    names=['Future Month', 'Business Group']
+)
+
+full_df = pd.DataFrame(index=full_index).reset_index()  # DataFrame with Future Month + Business Group
+
+
+
+
+# ensure your forecast_df Future Month is datetime
+forecast_df['Future Month'] = pd.to_datetime(forecast_df['Future Month'])
+
+# merge full grid with forecast_df
+forecast_df = pd.merge(
+    full_df,
+    forecast_df,
+    on=['Future Month','Business Group'],
+    how='left'
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =========================
 # 1. CALCULATE SMA & EMA FOR FULL DATASET
 # =========================
