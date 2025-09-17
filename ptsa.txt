@@ -1,6 +1,166 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+# ----------------------
+# 1) Compute Metrics
+# ----------------------
+# Historical part (before forecast start)
+eval_df = forecast_df[forecast_df['Future Month'] < pd.to_datetime(FORECAST_START)].copy()
+
+metrics = []
+for g in eval_df['Business Group'].unique():
+    sub = eval_df[eval_df['Business Group']==g]
+    actual = sub['Act Vol Attr. Month %']  # actual rates
+    sma = sub['Fut Vol Attr. Month %_sma']
+    ema = sub['Fut Vol Attr. Month %_ema']
+    med = sub.get('Fut Vol Attr. Month %_med', pd.Series(np.nan, index=sub.index))
+    wil = sub.get('Fut Vol Attr. Month %_wilder', pd.Series(np.nan, index=sub.index))
+
+    for name, pred in [('SMA',sma),('EMA',ema),('MEDIAN',med),('WILDER',wil)]:
+        mask = ~np.isnan(actual) & ~np.isnan(pred)
+        if mask.sum() == 0:
+            continue
+        mae = mean_absolute_error(actual[mask], pred[mask])
+        rmse = mean_squared_error(actual[mask], pred[mask], squared=False)
+        mape = np.mean(np.abs((actual[mask]-pred[mask])/(actual[mask]+1e-8)))*100
+        metrics.append({
+            'Business Group': g,
+            'Method': name,
+            'MAE': mae,
+            'RMSE': rmse,
+            'MAPE%': mape
+        })
+
+metrics_df = pd.DataFrame(metrics)
+
+# overall average per method (across groups)
+overall_metrics = metrics_df.groupby('Method')[['MAE','RMSE','MAPE%']].mean().reset_index()
+
+print("\n🔹 Per Business Group Metrics:")
+print(metrics_df)
+print("\n🔹 Overall Average Metrics Across Groups:")
+print(overall_metrics)
+
+# ----------------------
+# 2) Overall Metrics Bar Charts
+# ----------------------
+methods = overall_metrics['Method']
+mae = overall_metrics['MAE']
+rmse = overall_metrics['RMSE']
+mape = overall_metrics['MAPE%']
+
+plt.figure(figsize=(14,4))
+plt.subplot(1,3,1)
+plt.bar(methods, mae, color=['#4daf4a','#377eb8','#ff7f00','#984ea3'])
+plt.title("Mean Absolute Error (MAE)")
+plt.ylabel("Error")
+
+plt.subplot(1,3,2)
+plt.bar(methods, rmse, color=['#4daf4a','#377eb8','#ff7f00','#984ea3'])
+plt.title("Root Mean Squared Error (RMSE)")
+plt.ylabel("Error")
+
+plt.subplot(1,3,3)
+plt.bar(methods, mape, color=['#4daf4a','#377eb8','#ff7f00','#984ea3'])
+plt.title("Mean Absolute Percentage Error (MAPE%)")
+plt.ylabel("Error (%)")
+
+plt.suptitle("Overall Metrics Comparison of Moving Averages", fontsize=14)
+plt.tight_layout(rect=[0,0,1,0.95])
+plt.show()
+
+# ----------------------
+# 3) Heatmaps per Business Group
+# ----------------------
+def plot_heatmap(pivot_df, title):
+    fig, ax = plt.subplots(figsize=(10, max(4,len(pivot_df)*0.4)))
+    cax = ax.imshow(pivot_df.values, cmap='viridis', aspect='auto')
+    ax.set_xticks(np.arange(len(pivot_df.columns)))
+    ax.set_xticklabels(pivot_df.columns)
+    ax.set_yticks(np.arange(len(pivot_df.index)))
+    ax.set_yticklabels(pivot_df.index)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
+    for i in range(len(pivot_df.index)):
+        for j in range(len(pivot_df.columns)):
+            val = pivot_df.iloc[i, j]
+            if not pd.isna(val):
+                ax.text(j, i, f"{val:.2f}", ha='center', va='center', color='white', fontsize=8)
+    ax.set_title(title)
+    fig.colorbar(cax, ax=ax, orientation='vertical', label='Error')
+    plt.tight_layout()
+    plt.show()
+
+# Prepare pivot tables
+pivot_mae = metrics_df.pivot(index='Business Group', columns='Method', values='MAE')
+pivot_rmse = metrics_df.pivot(index='Business Group', columns='Method', values='RMSE')
+pivot_mape = metrics_df.pivot(index='Business Group', columns='Method', values='MAPE%')
+
+# Plot heatmaps
+plot_heatmap(pivot_mae, "MAE by Business Group and Method")
+plot_heatmap(pivot_rmse, "RMSE by Business Group and Method")
+plot_heatmap(pivot_mape, "MAPE% by Business Group and Method")
+
+# optional: also print pivot tables to inspect numbers
+print("\n🔹 MAE by Business Group and Method:")
+print(pivot_mae)
+print("\n🔹 RMSE by Business Group and Method:")
+print(pivot_rmse)
+print("\n🔹 MAPE% by Business Group and Method:")
+print(pivot_mape)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
 # -----------------------
 # PARAMETERS
