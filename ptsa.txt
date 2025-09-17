@@ -1,6 +1,392 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
+# -----------------------
+# PARAMETERS
+# -----------------------
+BASE_MONTH_HC = 229568
+FORECAST_START = "2025-04-01"
+FORECAST_END   = "2025-12-01"
+DIVIDE_BY_100  = True
+ROLL_WINDOW = 3
+# -----------------------
+
+# --------------------------------
+# EXTRA MOVING AVERAGE FUNCTIONS
+# --------------------------------
+def zlema(series, period):
+    lag = (period - 1) // 2
+    shifted = series.shift(lag, fill_value=series.iloc[0])
+    adjusted = series + (series - shifted)
+    return adjusted.ewm(span=period, adjust=False).mean()
+
+def dema(series, period):
+    ema1 = series.ewm(span=period, adjust=False).mean()
+    ema2 = ema1.ewm(span=period, adjust=False).mean()
+    return 2 * ema1 - ema2
+
+def t3(series, period, v=0.7):
+    # conservative implementation for small series
+    e1 = series.ewm(span=period, adjust=False).mean()
+    e2 = e1.ewm(span=period, adjust=False).mean()
+    e3 = e2.ewm(span=period, adjust=False).mean()
+    e4 = e3.ewm(span=period, adjust=False).mean()
+    e5 = e4.ewm(span=period, adjust=False).mean()
+    e6 = e5.ewm(span=period, adjust=False).mean()
+
+    c1 = -v**3
+    c2 = 3*v**2 + 3*v**3
+    c3 = -6*v**2 - 3*v - 3*v**3
+    c4 = 1 + 3*v + v**3 + 3*v**2
+
+    return c1*e6 + c2*e5 + c3*e4 + c4*e3
+
+def kalman_filter(series, process_var=1e-5, measurement_var=0.01):
+    # simple 1D Kalman filter
+    n = len(series)
+    if n == 0:
+        return pd.Series(dtype=float)
+    xhat = np.zeros(n)
+    P = np.zeros(n)
+    # handle potential nan at start
+    first_valid_idx = 0
+    while first_valid_idx < n and pd.isna(series.iloc[first_valid_idx]):
+        first_valid_idx += 1
+    if first_valid_idx == n:
+        # all NaN -> return series of NaN
+        return pd.Series([np.nan]*n, index=series.index)
+    xhat[first_valid_idx] = series.iloc[first_valid_idx]
+    P[first_valid_idx] = 1.0
+    # fill earlier values with initial (so output aligns)
+    for i in range(0, first_valid_idx):
+        xhat[i] = xhat[first_valid_idx]
+        P[i] = P[first_valid_idx]
+
+    for k in range(first_valid_idx+1, n):
+        # Predict
+        xhat_pred = xhat[k-1]
+        P_pred = P[k-1] + process_var
+
+        # Update (handle nan measurements)
+        if pd.isna(series.iloc[k]):
+            xhat[k] = xhat_pred
+            P[k] = P_pred
+        else:
+            K = P_pred / (P_pred + measurement_var)
+            xhat[k] = xhat_pred + K * (series.iloc[k] - xhat_pred)
+            P[k] = (1 - K) * P_pred
+
+    return pd.Series(xhat, index=series.index)
+
+# -----------------------
+# Prepare df
+# -----------------------
+# ensure MONTH is month-start timestamp (same as your original)
+df['MONTH'] = pd.to_datetime(df['MONTH']).dt.to_period('M').dt.to_timestamp()
+df['YEAR']  = df['MONTH'].dt.year
+
+forecast_index = pd.date_range(start=FORECAST_START, end=FORECAST_END, freq="MS")
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+all_rows = []
+
+for g in groups:
+    grp = df[df['BUSINESS_GROUPS_TA'] == g].copy().set_index('MONTH').sort_index()
+
+    # smoothing: SMA, EMA, Rolling Median, Wilder (alpha = 1/N)
+    grp['SMA3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=ROLL_WINDOW).mean()
+    grp['EMA3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(span=ROLL_WINDOW, adjust=False).mean()
+    grp['MED3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=ROLL_WINDOW).median()
+    alpha_wilder = 1.0 / ROLL_WINDOW
+    grp['WILDER3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(alpha=alpha_wilder, adjust=False).mean()
+
+    # advanced: ZLEMA, DEMA, T3, Kalman
+    grp['ZLEMA3'] = zlema(grp['MONTHLY_ATTRITION_RATE'], ROLL_WINDOW)
+    grp['DEMA3']  = dema(grp['MONTHLY_ATTRITION_RATE'], ROLL_WINDOW)
+    grp['T3_3']   = t3(grp['MONTHLY_ATTRITION_RATE'], ROLL_WINDOW)
+    grp['KALMAN'] = kalman_filter(grp['MONTHLY_ATTRITION_RATE'])
+
+    # last-available fallback utility
+    def last_valid(col):
+        if (col in grp.columns) and (not grp[col].empty):
+            v = grp[col].iloc[-1]
+            if not pd.isna(v):
+                return v
+        if (not grp['MONTHLY_ATTRITION_RATE'].empty):
+            return grp['MONTHLY_ATTRITION_RATE'].iloc[-1]
+        return np.nan
+
+    last_sma = last_valid('SMA3')
+    last_ema = last_valid('EMA3')
+    last_med = last_valid('MED3')
+    last_wil = last_valid('WILDER3')
+    last_zlema = last_valid('ZLEMA3')
+    last_dema  = last_valid('DEMA3')
+    last_t3    = last_valid('T3_3')
+    last_kal   = last_valid('KALMAN')
+
+    # last known headcount BEFORE forecast start (safe fallbacks)
+    pre_forecast_hc_series = grp[grp.index < pd.to_datetime(FORECAST_START)]['HEADCOUNT']
+    if not pre_forecast_hc_series.empty:
+        last_known_hc = pre_forecast_hc_series.iloc[-1]
+    else:
+        last_known_hc = grp['HEADCOUNT'].iloc[-1] if (not grp['HEADCOUNT'].empty) else BASE_MONTH_HC
+
+    # build rows for every forecast_index month (keeps actuals if present)
+    for fut_ts in forecast_index:
+        # actuals if present
+        if fut_ts in grp.index:
+            act_rate  = grp.at[fut_ts, 'MONTHLY_ATTRITION_RATE'] if 'MONTHLY_ATTRITION_RATE' in grp.columns else np.nan
+            act_exits = grp.at[fut_ts, 'VOLUNTARY_EXITS'] if 'VOLUNTARY_EXITS' in grp.columns else np.nan
+            act_hc    = grp.at[fut_ts, 'HEADCOUNT'] if 'HEADCOUNT' in grp.columns else np.nan
+        else:
+            act_rate  = np.nan
+            act_exits = np.nan
+            act_hc    = np.nan
+
+        def get_smoothed(col, last_val):
+            if (fut_ts in grp.index) and (col in grp.columns) and (not pd.isna(grp.at[fut_ts, col])):
+                return grp.at[fut_ts, col]
+            return last_val
+
+        fut_rate_sma   = get_smoothed('SMA3', last_sma)
+        fut_rate_ema   = get_smoothed('EMA3', last_ema)
+        fut_rate_med   = get_smoothed('MED3', last_med)
+        fut_rate_wil   = get_smoothed('WILDER3', last_wil)
+        fut_rate_zlema = get_smoothed('ZLEMA3', last_zlema)
+        fut_rate_dema  = get_smoothed('DEMA3', last_dema)
+        fut_rate_t3    = get_smoothed('T3_3', last_t3)
+        fut_rate_kal   = get_smoothed('KALMAN', last_kal)
+
+        def to_count(rate):
+            if pd.isna(rate):
+                return np.nan
+            return (rate / 100.0 * last_known_hc) if DIVIDE_BY_100 else (rate * last_known_hc)
+
+        fut_count_sma   = to_count(fut_rate_sma)
+        fut_count_ema   = to_count(fut_rate_ema)
+        fut_count_med   = to_count(fut_rate_med)
+        fut_count_wil   = to_count(fut_rate_wil)
+        fut_count_zlema = to_count(fut_rate_zlema)
+        fut_count_dema  = to_count(fut_rate_dema)
+        fut_count_t3    = to_count(fut_rate_t3)
+        fut_count_kal   = to_count(fut_rate_kal)
+
+        row = {
+            "Future Month": fut_ts,
+            "Business Group": g,
+            "Fut Vol Attr. Month %_sma": round(fut_rate_sma, 4) if not pd.isna(fut_rate_sma) else np.nan,
+            "Fut Vol Attr. Month %_ema": round(fut_rate_ema, 4) if not pd.isna(fut_rate_ema) else np.nan,
+            "Fut Vol Attr. Month %_med": round(fut_rate_med, 4) if not pd.isna(fut_rate_med) else np.nan,
+            "Fut Vol Attr. Month %_wilder": round(fut_rate_wil, 4) if not pd.isna(fut_rate_wil) else np.nan,
+            "Fut Vol Attr. Month %_zlema": round(fut_rate_zlema, 4) if not pd.isna(fut_rate_zlema) else np.nan,
+            "Fut Vol Attr. Month %_dema": round(fut_rate_dema, 4) if not pd.isna(fut_rate_dema) else np.nan,
+            "Fut Vol Attr. Month %_t3": round(fut_rate_t3, 4) if not pd.isna(fut_rate_t3) else np.nan,
+            "Fut Vol Attr. Month %_kalman": round(fut_rate_kal, 4) if not pd.isna(fut_rate_kal) else np.nan,
+            "Base Month HC": int(last_known_hc) if not pd.isna(last_known_hc) else np.nan,
+            "Fut Vol. Attr Count_sma": int(round(fut_count_sma)) if (not pd.isna(fut_count_sma)) else np.nan,
+            "Fut Vol. Attr Count_ema": int(round(fut_count_ema)) if (not pd.isna(fut_count_ema)) else np.nan,
+            "Fut Vol. Attr Count_med": int(round(fut_count_med)) if (not pd.isna(fut_count_med)) else np.nan,
+            "Fut Vol. Attr Count_wilder": int(round(fut_count_wil)) if (not pd.isna(fut_count_wil)) else np.nan,
+            "Fut Vol. Attr Count_zlema": int(round(fut_count_zlema)) if (not pd.isna(fut_count_zlema)) else np.nan,
+            "Fut Vol. Attr Count_dema": int(round(fut_count_dema)) if (not pd.isna(fut_count_dema)) else np.nan,
+            "Fut Vol. Attr Count_t3": int(round(fut_count_t3)) if (not pd.isna(fut_count_t3)) else np.nan,
+            "Fut Vol. Attr Count_kalman": int(round(fut_count_kal)) if (not pd.isna(fut_count_kal)) else np.nan,
+            "Act Vol Attr. Month %": round(act_rate,4) if not pd.isna(act_rate) else np.nan,
+            "Act Vol Attr Count": int(act_exits) if not pd.isna(act_exits) else np.nan,
+            "Actual Headcount": int(act_hc) if not pd.isna(act_hc) else np.nan,
+        }
+        all_rows.append(row)
+
+# Combined forecast DataFrame
+forecast_df = pd.DataFrame(all_rows)
+
+# -----------------------
+# PLOTTING (per-group)
+# -----------------------
+actual_df = df[['MONTH','BUSINESS_GROUPS_TA','MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH':'Future Month','BUSINESS_GROUPS_TA':'Business Group','MONTHLY_ATTRITION_RATE':'Attrition Rate'})
+actual_df['Type'] = 'Actual'
+
+def make_forecast_subset(col, label):
+    tmp = forecast_df[['Future Month','Business Group',col]].rename(columns={col:'Attrition Rate'})
+    tmp['Type'] = label
+    return tmp
+
+forecast_sma    = make_forecast_subset('Fut Vol Attr. Month %_sma','Forecast_SMA')
+forecast_ema    = make_forecast_subset('Fut Vol Attr. Month %_ema','Forecast_EMA')
+forecast_med    = make_forecast_subset('Fut Vol Attr. Month %_med','Forecast_MED')
+forecast_wilder = make_forecast_subset('Fut Vol Attr. Month %_wilder','Forecast_WILDER')
+forecast_zlema  = make_forecast_subset('Fut Vol Attr. Month %_zlema','Forecast_ZLEMA')
+forecast_dema   = make_forecast_subset('Fut Vol Attr. Month %_dema','Forecast_DEMA')
+forecast_t3     = make_forecast_subset('Fut Vol Attr. Month %_t3','Forecast_T3')
+forecast_kal    = make_forecast_subset('Fut Vol Attr. Month %_kalman','Forecast_KALMAN')
+
+plot_df = pd.concat([
+    actual_df, forecast_sma, forecast_ema, forecast_med, forecast_wilder,
+    forecast_zlema, forecast_dema, forecast_t3, forecast_kal
+], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+
+plt.figure(figsize=(16,8))
+forecast_start_dt = pd.to_datetime(FORECAST_START)
+
+colors = {
+    'Actual': 'black',
+    'Forecast_SMA': 'blue',
+    'Forecast_EMA': 'green',
+    'Forecast_MED': 'orange',
+    'Forecast_WILDER': 'purple',
+    'Forecast_ZLEMA': 'red',
+    'Forecast_DEMA': 'brown',
+    'Forecast_T3': 'cyan',
+    'Forecast_KALMAN': 'magenta'
+}
+
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g].sort_values('Future Month')
+
+    for typ in colors.keys():
+        data = sub[sub['Type'] == typ]
+        if data.empty:
+            continue
+        # historical (solid)
+        hist = data[data['Future Month'] < forecast_start_dt]
+        if not hist.empty:
+            plt.plot(hist['Future Month'], hist['Attrition Rate'], color=colors[typ], label=f"{g} {typ} (Hist)")
+        # forecast (dotted)
+        fore = data[data['Future Month'] >= forecast_start_dt]
+        if not fore.empty:
+            plt.plot(fore['Future Month'], fore['Attrition Rate'], linestyle=':', color=colors[typ], label=f"{g} {typ} (Forecast)")
+
+plt.axvline(forecast_start_dt, color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate — Actual vs SMA/EMA/Median/Wilder/ZLEMA/DEMA/T3/Kalman")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=2, fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# -----------------------
+# OVERALL TOTALS
+# -----------------------
+actual_tot = df.groupby('MONTH').apply(
+    lambda d: pd.Series({
+        'total_exits': (d['MONTHLY_ATTRITION_RATE'] / 100.0 * d['HEADCOUNT']).sum(),
+        'total_hc'   : d['HEADCOUNT'].sum()
+    })
+).reset_index().rename(columns={'MONTH':'Future Month'})
+actual_tot['overall_rate'] = actual_tot['total_exits'] / actual_tot['total_hc'] * 100.0
+actual_tot['Type'] = 'Actual_Total'
+actual_tot = actual_tot[['Future Month','overall_rate','Type']].rename(columns={'overall_rate':'Rate'})
+
+def make_total(forecast_df, count_col, type_name):
+    tmp = forecast_df.groupby('Future Month').agg({
+        count_col: 'sum',
+        'Base Month HC': 'sum'
+    }).reset_index()
+    tmp['Rate'] = (tmp[count_col] / tmp['Base Month HC']) * 100.0
+    tmp['Type'] = type_name
+    return tmp[['Future Month','Rate','Type']]
+
+forecast_tot_sma    = make_total(forecast_df,'Fut Vol. Attr Count_sma','Forecast_Total_SMA')
+forecast_tot_ema    = make_total(forecast_df,'Fut Vol. Attr Count_ema','Forecast_Total_EMA')
+forecast_tot_med    = make_total(forecast_df,'Fut Vol. Attr Count_med','Forecast_Total_MED')
+forecast_tot_wilder = make_total(forecast_df,'Fut Vol. Attr Count_wilder','Forecast_Total_WILDER')
+forecast_tot_zlema  = make_total(forecast_df,'Fut Vol. Attr Count_zlema','Forecast_Total_ZLEMA')
+forecast_tot_dema   = make_total(forecast_df,'Fut Vol. Attr Count_dema','Forecast_Total_DEMA')
+forecast_tot_t3     = make_total(forecast_df,'Fut Vol. Attr Count_t3','Forecast_Total_T3')
+forecast_tot_kal    = make_total(forecast_df,'Fut Vol. Attr Count_kalman','Forecast_Total_KALMAN')
+
+tot_plot = pd.concat([
+    actual_tot, forecast_tot_sma, forecast_tot_ema, forecast_tot_med, forecast_tot_wilder,
+    forecast_tot_zlema, forecast_tot_dema, forecast_tot_t3, forecast_tot_kal
+], ignore_index=True)
+tot_plot['Future Month'] = pd.to_datetime(tot_plot['Future Month'])
+tot_plot['ForecastFlag'] = tot_plot['Future Month'] >= forecast_start_dt
+
+plt.figure(figsize=(12,6))
+
+def draw_total_line(type_name, color, label):
+    hist = tot_plot[(tot_plot['Type']==type_name) & (~tot_plot['ForecastFlag'])].sort_values('Future Month')
+    fore = tot_plot[(tot_plot['Type']==type_name) & (tot_plot['ForecastFlag'])].sort_values('Future Month')
+    if not hist.empty:
+        plt.plot(hist['Future Month'], hist['Rate'], color=color, label=f"{label} (Hist)", linewidth=2)
+    if not fore.empty:
+        plt.plot(fore['Future Month'], fore['Rate'], color=color, linestyle=':', label=f"{label} (Forecast)", linewidth=2)
+
+draw_total_line('Actual_Total','black','Overall Actual')
+draw_total_line('Forecast_Total_SMA','blue','Overall SMA')
+draw_total_line('Forecast_Total_EMA','green','Overall EMA')
+draw_total_line('Forecast_Total_MED','orange','Overall MEDIAN')
+draw_total_line('Forecast_Total_WILDER','purple','Overall WILDER')
+draw_total_line('Forecast_Total_ZLEMA','red','Overall ZLEMA')
+draw_total_line('Forecast_Total_DEMA','brown','Overall DEMA')
+draw_total_line('Forecast_Total_T3','cyan','Overall T3')
+draw_total_line('Forecast_Total_KALMAN','magenta','Overall KALMAN')
+
+plt.axvline(forecast_start_dt, color='gray', linestyle=':', linewidth=1)
+plt.title("Overall Attrition Rate (weighted) — Actual vs SMA/EMA/Median/Wilder/ZLEMA/DEMA/T3/Kalman")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=2)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 # ----------------------
