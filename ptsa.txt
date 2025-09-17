@@ -1,3 +1,138 @@
+# -----------------------
+# CREATE PLOT_DF WITH FORECAST FLAG
+# -----------------------
+plot_df = pd.concat([actual_df, forecast_sma, forecast_ema], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+plot_df['ForecastFlag'] = plot_df['Future Month'] >= pd.to_datetime(FORECAST_START)
+
+plt.figure(figsize=(16,8))
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g].sort_values('Future Month')
+
+    # ---- ACTUAL ----
+    a_hist = sub[(sub['Type'] == 'Actual') & (~sub['ForecastFlag'])]
+    a_fore = sub[(sub['Type'] == 'Actual') & (sub['ForecastFlag'])]
+
+    if not a_hist.empty:
+        plt.plot(a_hist['Future Month'], a_hist['Attrition Rate'],
+                 color='black', label=f"{g} Actual (Hist)")
+    if not a_fore.empty:
+        plt.plot(a_fore['Future Month'], a_fore['Attrition Rate'],
+                 color='black', linestyle=':', label=f"{g} Actual (Forecast)")
+
+    # ---- SMA ----
+    s_hist = sub[(sub['Type'] == 'Forecast_SMA') & (~sub['ForecastFlag'])]
+    s_fore = sub[(sub['Type'] == 'Forecast_SMA') & (sub['ForecastFlag'])]
+
+    if not s_hist.empty:
+        plt.plot(s_hist['Future Month'], s_hist['Attrition Rate'],
+                 color='blue', label=f"{g} SMA (Hist)")
+    if not s_fore.empty:
+        plt.plot(s_fore['Future Month'], s_fore['Attrition Rate'],
+                 color='blue', linestyle=':', label=f"{g} SMA (Forecast)")
+
+    # ---- EMA ----
+    e_hist = sub[(sub['Type'] == 'Forecast_EMA') & (~sub['ForecastFlag'])]
+    e_fore = sub[(sub['Type'] == 'Forecast_EMA') & (sub['ForecastFlag'])]
+
+    if not e_hist.empty:
+        plt.plot(e_hist['Future Month'], e_hist['Attrition Rate'],
+                 color='green', label=f"{g} EMA (Hist)")
+    if not e_fore.empty:
+        plt.plot(e_fore['Future Month'], e_fore['Attrition Rate'],
+                 color='green', linestyle=':', label=f"{g} EMA (Forecast)")
+
+plt.axvline(pd.to_datetime(FORECAST_START), color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate — Actual vs SMA vs EMA (solid=hist, dotted=forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(ncol=2, fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+# -----------------------
+# OVERALL TOTALS WITH FORECAST FLAG
+# -----------------------
+tot_plot['ForecastFlag'] = tot_plot['Future Month'] >= pd.to_datetime(FORECAST_START)
+
+plt.figure(figsize=(12,5))
+
+# --- Actual Total ---
+act_hist = tot_plot[(tot_plot['Type']=='Actual_Total') & (~tot_plot['ForecastFlag'])]
+act_fore = tot_plot[(tot_plot['Type']=='Actual_Total') & (tot_plot['ForecastFlag'])]
+
+if not act_hist.empty:
+    plt.plot(act_hist['Future Month'], act_hist['Rate'],
+             color='black', label='Overall Actual (Hist)', linewidth=2)
+if not act_fore.empty:
+    plt.plot(act_fore['Future Month'], act_fore['Rate'],
+             color='black', linestyle=':', label='Overall Actual (Forecast)', linewidth=2)
+
+# --- SMA Total ---
+sma_hist = tot_plot[(tot_plot['Type']=='Forecast_Total_SMA') & (~tot_plot['ForecastFlag'])]
+sma_fore = tot_plot[(tot_plot['Type']=='Forecast_Total_SMA') & (tot_plot['ForecastFlag'])]
+
+if not sma_hist.empty:
+    plt.plot(sma_hist['Future Month'], sma_hist['Rate'],
+             color='blue', label='Overall SMA (Hist)', linewidth=2)
+if not sma_fore.empty:
+    plt.plot(sma_fore['Future Month'], sma_fore['Rate'],
+             color='blue', linestyle=':', label='Overall SMA (Forecast)', linewidth=2)
+
+# --- EMA Total ---
+ema_hist = tot_plot[(tot_plot['Type']=='Forecast_Total_EMA') & (~tot_plot['ForecastFlag'])]
+ema_fore = tot_plot[(tot_plot['Type']=='Forecast_Total_EMA') & (tot_plot['ForecastFlag'])]
+
+if not ema_hist.empty:
+    plt.plot(ema_hist['Future Month'], ema_hist['Rate'],
+             color='green', label='Overall EMA (Hist)', linewidth=2)
+if not ema_fore.empty:
+    plt.plot(ema_fore['Future Month'], ema_fore['Rate'],
+             color='green', linestyle=':', label='Overall EMA (Forecast)', linewidth=2)
+
+plt.axvline(pd.to_datetime(FORECAST_START), color='gray', linestyle=':', linewidth=1)
+plt.title("Overall Attrition Rate (weighted) — Actual vs SMA vs EMA (solid=hist, dotted=forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import matplotlib.pyplot as plt
 import pandas as pd
 
