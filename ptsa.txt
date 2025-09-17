@@ -1,3 +1,68 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Set forecast start and end
+FORECAST_START = pd.to_datetime("2025-04-01")
+FORECAST_END   = pd.to_datetime("2025-12-01")
+
+# ----- Create forecast flag -----
+plot_df['ForecastFlag'] = plot_df['Future Month'] >= FORECAST_START
+
+plt.figure(figsize=(15,7))
+
+for g in plot_df['Business Group'].unique():
+    sub = plot_df[plot_df['Business Group'] == g]
+    
+    # --- Actual ---
+    actual = sub[sub['Type'] == 'Actual']
+    plt.plot(actual['Future Month'], actual['Attrition Rate'],
+             label=f"{g} Actual", color='black')   # solid line
+    
+    # --- SMA ---
+    sma_hist = sub[(sub['Type'] == 'SMA') & (sub['ForecastFlag'] == False)]
+    sma_fore = sub[(sub['Type'] == 'SMA') & (sub['ForecastFlag'] == True)]
+    
+    plt.plot(sma_hist['Future Month'], sma_hist['Attrition Rate'],
+             label=f"{g} SMA (Hist)", color='blue')  # solid
+    plt.plot(sma_fore['Future Month'], sma_fore['Attrition Rate'],
+             linestyle=':', color='blue', label=f"{g} SMA (Forecast)")  # dotted
+    
+    # --- EMA ---
+    ema_hist = sub[(sub['Type'] == 'EMA') & (sub['ForecastFlag'] == False)]
+    ema_fore = sub[(sub['Type'] == 'EMA') & (sub['ForecastFlag'] == True)]
+    
+    plt.plot(ema_hist['Future Month'], ema_hist['Attrition Rate'],
+             label=f"{g} EMA (Hist)", color='green')  # solid
+    plt.plot(ema_fore['Future Month'], ema_fore['Attrition Rate'],
+             linestyle=':', color='green', label=f"{g} EMA (Forecast)")  # dotted
+
+# vertical line at forecast start
+plt.axvline(FORECAST_START, color='gray', linestyle='--', label='Forecast Start')
+
+plt.title("Attrition Rate: Actual vs SMA vs EMA (solid = past, dotted = forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate %")
+plt.legend()
+plt.grid()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
