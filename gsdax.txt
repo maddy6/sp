@@ -1,3 +1,17 @@
+1️⃣ What the plot is showing
+
+Each node (circle) = a business group.
+
+Node size = CURRENT_HEADCOUNT — bigger circle = more employees.
+
+Node color (red shade) = attrition_frac — darker red = higher voluntary attrition rate.
+
+Lines between nodes (edges) = similarity of risk profiles between business groups (based on attrition + error %).
+
+Edge thickness = how strongly similar they are.
+
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
