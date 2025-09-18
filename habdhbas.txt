@@ -1,0 +1,449 @@
+# Run in a Jupyter / Anaconda notebook
+# Requirements: pandas, numpy, matplotlib, plotly
+# Install if needed:
+# !pip install pandas numpy matplotlib plotly
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
+
+# ---------------------------
+# CONFIG / INPUT
+# ---------------------------
+# Replace this with your real DataFrame 'df'. If you already have df, comment out the sample below.
+# ---------------------------
+# SAMPLE (comment out if you have real df)
+# df = pd.DataFrame({
+#     'BUSINESS_GROUPS': ['BG A','BG B','BG C','BG D','BG E'],
+#     'CURRENT_HEADCOUNT': [120, 45, 300, 80, 22],
+#     'VOLUNTARY_ATTRITION_RATE': ['7%','0.06','0.12','5%','3%'],            # various formats
+#     'PROJECTED_VOL': [1100, 300, 4500, 900, 120],
+#     'New Projected Vol': [1050, 290, 4300, 950, 115],
+#     'Actual Vol Terms': [1000, 320, 4200, 880, 140],
+#     '% (Existing) Vs Actuals': ['10%','-6%','7%','2%','-18%'],
+#     '% (new) Vs Actuals': ['5%','-9%','2%','8%','-17%'],
+#     'PROJECTED_HEADCOUNT': [115, 48, 310, 78, 20],
+#     'New Projected Headcount': [118, 46, 300, 85, 23],
+#     'Actual Headcount June': [120, 50, 320, 90, 25],
+#     'Projected (Existing Vs June)': ['-4%','-4%','-3%','-13%','-20%'],
+#     'Projected (New Vs June)': ['-1%','-8%','-6%','-5%','-8%'],
+# })
+# ---------------------------
+
+# If you have an existing df variable, make sure it's the dataframe you want. Now ensure required columns exist:
+required_cols = [
+    'BUSINESS_GROUPS','CURRENT_HEADCOUNT',
+    'VOLUNTARY_ATTRITION_RATE','PROJECTED_VOL','New Projected Vol','Actual Vol Terms',
+    '% (Existing) Vs Actuals','% (new) Vs Actuals',
+    'PROJECTED_HEADCOUNT','New Projected Headcount','Actual Headcount June',
+    'Projected (Existing Vs June)','Projected (New Vs June)'
+]
+missing = [c for c in required_cols if c not in df.columns]
+if missing:
+    raise ValueError(f"Missing required columns (exact names): {missing}")
+
+# ---------------------------
+# Helpers to parse percentages / numbers robustly
+# ---------------------------
+def to_fraction(s):
+    # returns numpy array of fractions in [0,1] (for attrition rate)
+    ser = s.astype(str).str.replace('%','').str.replace(',','').str.strip()
+    num = pd.to_numeric(ser, errors='coerce')
+    if pd.isna(num).all():
+        return num
+    # if values look like 7, 12, 100 -> treat as percent -> divide by 100
+    if num.max() > 1.5:
+        num = num / 100.0
+    return num.fillna(0.0)
+
+def to_percent_number(s):
+    # returns numeric percent value (e.g., '5%' -> 5.0; '0.05' -> 5.0)
+    ser = s.astype(str).str.replace('%','').str.replace(',','').str.strip()
+    num = pd.to_numeric(ser, errors='coerce')
+    if pd.isna(num).all():
+        return num
+    # if values are <=1.5, assume fraction (0.05 -> 5%)
+    if num.max() <= 1.5:
+        num = num * 100.0
+    return num.fillna(0.0)
+
+# Standardize numeric columns (volumes and headcounts) to numeric
+num_cols = ['CURRENT_HEADCOUNT','PROJECTED_VOL','New Projected Vol','Actual Vol Terms',
+            'PROJECTED_HEADCOUNT','New Projected Headcount','Actual Headcount June']
+for c in num_cols:
+    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0.0)
+
+# Parse rates and percent errors
+df['attrition_frac'] = to_fraction(df['VOLUNTARY_ATTRITION_RATE'])          # 0-1
+df['existing_error_pct'] = to_percent_number(df['% (Existing) Vs Actuals']) # percent (5 => 5%)
+df['new_error_pct'] = to_percent_number(df['% (new) Vs Actuals'])           # percent
+df['error_improvement_pct'] = df['existing_error_pct'] - df['new_error_pct'] # positive -> new is better (smaller error)
+
+# useful derived numbers
+df['attrition_count_expected'] = (df['CURRENT_HEADCOUNT'] * df['attrition_frac']).round(1)
+df['net_change_new_vs_june'] = df['New Projected Headcount'] - df['Actual Headcount June']
+df['net_change_existing_vs_june'] = df['PROJECTED_HEADCOUNT'] - df['Actual Headcount June']
+df['abs_new_error_pct'] = df['new_error_pct'].abs()
+
+# Sort convenience
+df = df.sort_values('Actual Vol Terms', ascending=False).reset_index(drop=True)
+
+# ---------------------------
+# 1) Grouped bar: Actual vs Projected (Existing) vs New (EMA)
+# ---------------------------
+fig1 = px.bar(
+    df,
+    x='BUSINESS_GROUPS',
+    y=['Actual Vol Terms','PROJECTED_VOL','New Projected Vol'],
+    barmode='group',
+    title='Volume: Actual vs Projected (Existing vs EMA New)',
+    labels={'value':'Volume','BUSINESS_GROUPS':'Business Group'},
+    hover_data={'CURRENT_HEADCOUNT':True, 'attrition_frac':True}
+)
+fig1.update_layout(xaxis_tickangle=-45, height=450)
+fig1.show()
+
+# ---------------------------
+# 2) Diverging horizontal bars: Existing error vs New error (so you can see improvement/worsening)
+# ---------------------------
+df_err = df.copy()
+df_err = df_err.sort_values('error_improvement_pct', ascending=True) # worst improvements first (new worse at top)
+y = df_err['BUSINESS_GROUPS']
+
+fig2 = go.Figure()
+fig2.add_trace(go.Bar(
+    x=df_err['existing_error_pct'],
+    y=y,
+    orientation='h',
+    name='Existing model error (%)',
+    hovertemplate='%{x:.2f}%%'
+))
+fig2.add_trace(go.Bar(
+    x=df_err['new_error_pct'],
+    y=y,
+    orientation='h',
+    name='New EMA model error (%)',
+    hovertemplate='%{x:.2f}%%'
+))
+fig2.update_layout(
+    title='Model error vs Actuals: Existing vs New (horizontal diverging view)',
+    barmode='group',
+    height=480,
+    xaxis_title='Percent error vs Actuals (%)'
+)
+fig2.show()
+
+# ---------------------------
+# 3) Scatter: Attrition risk vs New-model error — CEO can see "big headcount groups with high attrition & poor model fit"
+#    - x: new model error (abs) or error_improvement (choose), y: voluntary attrition rate
+#    - size: current headcount, color: improvement (positive = improvement)
+# ---------------------------
+fig3 = px.scatter(
+    df,
+    x='new_error_pct',
+    y='attrition_frac',
+    size='CURRENT_HEADCOUNT',
+    color='error_improvement_pct',
+    hover_name='BUSINESS_GROUPS',
+    labels={'new_error_pct':'New model error (%)','attrition_frac':'Voluntary attrition (frac)'},
+    title='Attrition vs New-model error — size = headcount; color = improvement (existing - new)'
+)
+fig3.update_layout(height=520)
+fig3.update_yaxes(tickformat='.0%')
+fig3.show()
+
+# ---------------------------
+# 4) Waterfall per top N groups: Actual Headcount June -> expected attrition -> hires/adjustment -> New Projected Headcount
+#    (gives a clear story from Jun to new projection)
+# ---------------------------
+def waterfall_for_group(row):
+    actual = row['Actual Headcount June']
+    attrition_cnt = row['attrition_count_expected']
+    after_attrition = actual - attrition_cnt
+    final = row['New Projected Headcount']
+    # hires (could be negative)
+    hires = final - after_attrition
+    steps = [
+        ('Actual Jun', actual),
+        ('- Expected Attrition', -attrition_cnt),
+        ('Adjustment / Hires', hires),
+        ('New Projected', final)  # final is just for reference
+    ]
+    # Build plot
+    labels, vals = zip(*steps)
+    cum = [0]
+    for v in vals[:-1]:  # cumulative bars
+        cum.append(cum[-1] + v)
+    # bars: use waterfall style
+    fig, ax = plt.subplots(figsize=(7,4))
+    cum_base = np.array([0] + list(np.cumsum(vals[:-1])))
+    for i, (lab, val) in enumerate(steps[:-1]):
+        ax.bar(i, val, bottom=cum_base[i], edgecolor='k')
+        ax.text(i, cum_base[i] + val/2, f"{val:.0f}", ha='center', va='center', fontsize=10, color='white')
+    # final marker
+    ax.set_xticks(range(len(labels)-1))
+    ax.set_xticklabels(labels[:-1], rotation=30)
+    ax.set_title(f"Waterfall for {row['BUSINESS_GROUPS']} (Jun -> New Projected)")
+    ax.axhline(0, color='black', linewidth=0.8)
+    plt.tight_layout()
+    plt.show()
+
+# show waterfalls for top 4 headcount groups (by Actual Headcount June)
+topN = 4
+for _, r in df.sort_values('Actual Headcount June', ascending=False).head(topN).iterrows():
+    waterfall_for_group(r)
+
+# ---------------------------
+# 5) Composite "Action Priority" / Risk Score
+#    - combines attrition_frac (higher worse), abs new error pct (higher worse), and shrinkage vs June (net_change negative => worse)
+#    - all normalized 0-1 and weighted; CEO sees top candidates for intervention
+# ---------------------------
+def minmax_norm(s):
+    if s.max() == s.min():
+        return (s*0.0)
+    return (s - s.min()) / (s.max() - s.min())
+
+df_risk = df.copy()
+df_risk['norm_attrition'] = minmax_norm(df_risk['attrition_frac'])
+df_risk['norm_error'] = minmax_norm(df_risk['abs_new_error_pct'])
+# net change risk: more negative net_change_new_vs_june -> higher risk
+neg_net = (-df_risk['net_change_new_vs_june']).clip(lower=0)
+df_risk['norm_shrink_risk'] = minmax_norm(neg_net)
+# weights (tweakable): attrition 45%, error 40%, shrink 15%
+df_risk['composite_risk'] = 0.45*df_risk['norm_attrition'] + 0.40*df_risk['norm_error'] + 0.15*df_risk['norm_shrink_risk']
+
+df_risk = df_risk.sort_values('composite_risk', ascending=False)
+top_k = 8
+fig5 = go.Figure(go.Bar(
+    x=df_risk['composite_risk'].head(top_k)[::-1],
+    y=df_risk['BUSINESS_GROUPS'].head(top_k)[::-1],
+    orientation='h',
+    text=[f"{v:.2f}" for v in df_risk['composite_risk'].head(top_k)][::-1],
+    textposition='inside'
+))
+fig5.update_layout(title=f"Top {top_k} Business Groups by Composite Risk (attrition + new-error + shrinkage)",
+                   xaxis_title='Composite risk (0-1)', height=420)
+fig5.show()
+
+# ---------------------------
+# 6) Small multiples: mini cards showing Actual Vol / Existing proj / New proj & percent errors - compact for quick scanning
+# ---------------------------
+ncols = 3
+n = min(9, len(df))  # show up to 9 groups
+nrows = (n + ncols - 1) // ncols
+fig, axes = plt.subplots(nrows, ncols, figsize=(14, nrows*2.5))
+axes = axes.flatten()
+for i, (_, row) in enumerate(df.head(n).iterrows()):
+    ax = axes[i]
+    bars = [row['Actual Vol Terms'], row['PROJECTED_VOL'], row['New Projected Vol']]
+    ax.bar(['Actual','Proj Existing','Proj New'], bars)
+    ax.set_title(row['BUSINESS_GROUPS'], fontsize=10)
+    ax.set_ylim(0, max(bars)*1.25 if max(bars)>0 else 1)
+    ax.text(0, bars[0], f"{int(bars[0])}", va='bottom')
+    ax.text(1, bars[1], f"{int(bars[1])}", va='bottom')
+    ax.text(2, bars[2], f"{int(bars[2])}", va='bottom')
+    # annotate errors
+    ax.annotate(f"Err(existing): {row['existing_error_pct']:.1f}%", xy=(0.02,0.88), xycoords='axes fraction', fontsize=8)
+    ax.annotate(f"Err(new): {row['new_error_pct']:.1f}%", xy=(0.02,0.78), xycoords='axes fraction', fontsize=8)
+for j in range(i+1, len(axes)):
+    axes[j].axis('off')
+plt.suptitle('Mini-cards: Actual vs Projections (quick scanning)', fontsize=12)
+plt.tight_layout(rect=[0,0,1,0.96])
+plt.show()
+
+# ---------------------------
+# END: Print a short summary table for CEO quick copy/paste (top risks + improvements)
+# ---------------------------
+summary_cols = [
+    'BUSINESS_GROUPS','CURRENT_HEADCOUNT','Actual Vol Terms','PROJECTED_VOL','New Projected Vol',
+    'existing_error_pct','new_error_pct','error_improvement_pct','attrition_frac',
+    'Actual Headcount June','New Projected Headcount','net_change_new_vs_june','composite_risk'
+]
+print("\nTop rows of the summary table (CEO quick view):\n")
+display(df_risk[summary_cols].head(12).style.format({
+    'existing_error_pct':'{:.1f}%',
+    'new_error_pct':'{:.1f}%',
+    'error_improvement_pct':'{:.1f}%',
+    'attrition_frac':'{:.1%}',
+    'composite_risk':'{:.2f}'
+}))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ----------------------------------------------
+
+  ----------------------------------------------
+
+
+
+
+  # Innovative Attrition Visualizations Notebook
+# ===========================================
+# Requirements: pandas, numpy, matplotlib, plotly, networkx, scikit-learn
+# Install if needed:
+# !pip install pandas numpy matplotlib plotly networkx scikit-learn
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
+import networkx as nx
+from sklearn.metrics.pairwise import cosine_similarity
+from plotly.subplots import make_subplots
+
+# ---------------------------------------
+# 0. Data Prep & Helpers
+# ---------------------------------------
+required_cols = [
+    'BUSINESS_GROUPS','CURRENT_HEADCOUNT',
+    'VOLUNTARY_ATTRITION_RATE','PROJECTED_VOL','New Projected Vol','Actual Vol Terms',
+    '% (Existing) Vs Actuals','% (new) Vs Actuals',
+    'PROJECTED_HEADCOUNT','New Projected Headcount','Actual Headcount June',
+    'Projected (Existing Vs June)','Projected (New Vs June)'
+]
+missing = [c for c in required_cols if c not in df.columns]
+if missing:
+    raise ValueError(f"Missing required columns (exact names): {missing}")
+
+def to_fraction(s):
+    ser = s.astype(str).str.replace('%','').str.replace(',','').str.strip()
+    num = pd.to_numeric(ser, errors='coerce')
+    if num.max()>1.5: num=num/100
+    return num.fillna(0.0)
+
+def to_percent_number(s):
+    ser = s.astype(str).str.replace('%','').str.replace(',','').str.strip()
+    num = pd.to_numeric(ser, errors='coerce')
+    if num.max()<=1.5: num=num*100
+    return num.fillna(0.0)
+
+# parse numeric columns
+num_cols = ['CURRENT_HEADCOUNT','PROJECTED_VOL','New Projected Vol','Actual Vol Terms',
+            'PROJECTED_HEADCOUNT','New Projected Headcount','Actual Headcount June']
+for c in num_cols:
+    df[c]=pd.to_numeric(df[c],errors='coerce').fillna(0.0)
+
+df['attrition_frac']=to_fraction(df['VOLUNTARY_ATTRITION_RATE'])
+df['existing_error_pct']=to_percent_number(df['% (Existing) Vs Actuals'])
+df['new_error_pct']=to_percent_number(df['% (new) Vs Actuals'])
+df['error_improvement_pct']=df['existing_error_pct']-df['new_error_pct']
+df['attrition_count_expected']=(df['CURRENT_HEADCOUNT']*df['attrition_frac']).round(1)
+df['net_change_new_vs_june']=df['New Projected Headcount']-df['Actual Headcount June']
+df['abs_new_error_pct']=df['new_error_pct'].abs()
+
+# ---------------------------------------
+# 1. Network Graph: Business Group Risk Map
+# ---------------------------------------
+features=np.c_[df['attrition_frac'],df['new_error_pct']]
+sim=cosine_similarity(features);np.fill_diagonal(sim,0)
+threshold=0.9
+G=nx.Graph()
+for i,g in enumerate(df['BUSINESS_GROUPS']):
+    G.add_node(g,size=df['CURRENT_HEADCOUNT'].iloc[i],color=df['attrition_frac'].iloc[i])
+for i in range(len(df)):
+    for j in range(i+1,len(df)):
+        if sim[i,j]>threshold:
+            G.add_edge(df['BUSINESS_GROUPS'].iloc[i],df['BUSINESS_GROUPS'].iloc[j],weight=sim[i,j])
+plt.figure(figsize=(10,8))
+pos=nx.spring_layout(G,k=0.5)
+sizes=[G.nodes[n]['size']*5 for n in G.nodes()]
+colors=[G.nodes[n]['color'] for n in G.nodes()]
+nx.draw(G,pos,node_size=sizes,node_color=colors,cmap=plt.cm.Reds,with_labels=True,edge_color='gray')
+plt.title("Business Group Risk Map (size=headcount, color=attrition%)")
+plt.colorbar(plt.cm.ScalarMappable(cmap=plt.cm.Reds),label='Attrition fraction')
+plt.show()
+
+# ---------------------------------------
+# 2. Sankey Flow: People Journey
+# ---------------------------------------
+labels=[];sources=[];targets=[];values=[]
+for i,row in df.iterrows():
+    start=len(labels);labels+=[
+        f"{row['BUSINESS_GROUPS']} Jun",
+        f"{row['BUSINESS_GROUPS']} Attrition",
+        f"{row['BUSINESS_GROUPS']} Adjust/Hires",
+        f"{row['BUSINESS_GROUPS']} NewProj"
+    ]
+    actual=row['Actual Headcount June']
+    attr=row['attrition_count_expected']
+    hires=row['New Projected Headcount']-(actual-attr)
+    new=row['New Projected Headcount']
+    sources+=[start,start+1,start+2]
+    targets+=[start+1,start+2,start+3]
+    values+=[attr,hires,new]
+fig=go.Figure(go.Sankey(node=dict(label=labels,pad=15,thickness=10),
+                        link=dict(source=sources,target=targets,value=values)))
+fig.update_layout(title_text="People Flow Across Stages",font_size=10,height=600)
+fig.show()
+
+# ---------------------------------------
+# 3. Risk Quadrant Battlefield
+# ---------------------------------------
+df['risk_quadrant']=np.where((df['error_improvement_pct']>0)&(df['attrition_frac']>0.05),'High Attrition/Better Model',
+                      np.where((df['error_improvement_pct']>0),'Better Model',
+                      np.where(df['attrition_frac']>0.05,'High Attrition/Worse Model','Low Attrition/Worse Model')))
+fig=px.scatter(df,x='error_improvement_pct',y='attrition_frac',size='CURRENT_HEADCOUNT',
+               color='risk_quadrant',hover_name='BUSINESS_GROUPS',
+               title='Attrition vs Model Improvement Quadrant Map')
+fig.update_yaxes(tickformat='.0%')
+fig.show()
+
+# ---------------------------------------
+# 4. Gauges: Attrition Risk Thermometers
+# ---------------------------------------
+groups_to_show=min(5,len(df))
+fig=make_subplots(rows=1,cols=groups_to_show,subplot_titles=df['BUSINESS_GROUPS'].head(groups_to_show))
+for i,(idx,row) in enumerate(df.head(groups_to_show).iterrows()):
+    fig.add_trace(go.Indicator(mode="gauge+number",
+                               value=row['attrition_frac']*100,
+                               gauge={'axis':{'range':[0,15]},
+                                      'bar':{'color':'red'},
+                                      'steps':[{'range':[0,5],'color':'green'},
+                                               {'range':[5,10],'color':'yellow'},
+                                               {'range':[10,15],'color':'red'}]},
+                               title={'text':row['BUSINESS_GROUPS']}),row=1,col=i+1)
+fig.update_layout(height=300,title="Attrition Risk Thermometers")
+fig.show()
+
+# ---------------------------------------
+# 5. Scorecard Table With Icons
+# ---------------------------------------
+summary=df[['BUSINESS_GROUPS','CURRENT_HEADCOUNT','attrition_frac','new_error_pct','error_improvement_pct']].copy()
+summary['AttritionIcon']=summary['attrition_frac'].apply(lambda x:'🔴' if x>0.1 else ('🟡' if x>0.05 else '🟢'))
+summary['ModelIcon']=summary['error_improvement_pct'].apply(lambda x:'⬆️Better' if x>0 else '⬇️Worse')
+display(summary[['BUSINESS_GROUPS','AttritionIcon','ModelIcon','CURRENT_HEADCOUNT']])
+
+# ---------------------------------------
+# 6. Radar/Spider Charts per Group
+# ---------------------------------------
+for i,row in df.iterrows():
+    categories=['Attrition%','AbsNewError%','Shrinkage%']
+    values=[row['attrition_frac']*100, abs(row['new_error_pct']), -row['net_change_new_vs_june']]
+    fig=go.Figure()
+    fig.add_trace(go.Scatterpolar(r=values,theta=categories,fill='toself',name=row['BUSINESS_GROUPS']))
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True)),showlegend=False,
+                     title=f"Risk Radar - {row['BUSINESS_GROUPS']}")
+    fig.show()
+
+print("All visualizations rendered.")
