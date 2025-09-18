@@ -1,4 +1,154 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+COL_BUS = 'BUSINESS_GROUPS'
+COL_HC = 'CURRENT_HEADCOUNT'
+COL_PROJ_EXIST = 'PROJECTED_VOL'
+COL_PROJ_NEW = 'New Projected Vol'
+COL_ACTUAL_VOL = 'Actual Vol Terms'
+COL_PROJ_HC = 'PROJECTED_HEADCOUNT'
+COL_PROJ_HC_NEW = 'New Projected Headcount'
+COL_ACTUAL_HC_JUNE = 'Actual Headcount June'
+COL_PCT_NEW_VS_ACT = '% (new) Vs Actuals'
+
+df = pd.read_csv("your_input.csv")
+
+# -----------------------------
+# 1. Attrition Funnel
+# -----------------------------
+totals = {
+    "Current HC": df[COL_HC].sum(),
+    "Proj Exits (Exist)": df[COL_PROJ_EXIST].sum(),
+    "Proj Exits (New)": df[COL_PROJ_NEW].sum(),
+    "Actual Exits": df[COL_ACTUAL_VOL].sum(),
+}
+plt.figure(figsize=(8,6))
+plt.plot(list(totals.keys()), list(totals.values()), marker="o", linewidth=3, color="teal")
+plt.fill_between(list(totals.keys()), list(totals.values()), alpha=0.2, color="teal")
+plt.title("Attrition Funnel: Headcount → Projections → Actuals")
+plt.ylabel("Headcount")
+plt.tight_layout()
+plt.savefig("funnel_attrition.png")
+plt.close()
+
+# -----------------------------
+# 2. Radar Chart (per Business Group)
+# -----------------------------
+import math
+
+groups = df[COL_BUS].unique()[:6]  # top 6 groups for clarity
+labels = ["Proj Exist", "Proj New", "Actual"]
+
+angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist()
+angles += angles[:1]
+
+plt.figure(figsize=(6,6))
+ax = plt.subplot(111, polar=True)
+for g in groups:
+    vals = df.loc[df[COL_BUS]==g, [COL_PROJ_EXIST, COL_PROJ_NEW, COL_ACTUAL_VOL]].values.flatten().tolist()
+    vals += vals[:1]
+    ax.plot(angles, vals, label=g, linewidth=2)
+    ax.fill(angles, vals, alpha=0.15)
+
+ax.set_xticks(angles[:-1])
+ax.set_xticklabels(labels)
+plt.title("Radar Chart: Projections vs Actual (Sample Groups)")
+plt.legend(bbox_to_anchor=(1.1,1.05))
+plt.tight_layout()
+plt.savefig("radar_projection.png")
+plt.close()
+
+# -----------------------------
+# 3. Accuracy Gauge (Speedometer)
+# -----------------------------
+ema_err = abs(df[COL_PROJ_NEW].sum() - df[COL_ACTUAL_VOL].sum())
+exist_err = abs(df[COL_PROJ_EXIST].sum() - df[COL_ACTUAL_VOL].sum())
+
+ema_acc = max(0, 100 - (ema_err/df[COL_ACTUAL_VOL].sum()*100))
+exist_acc = max(0, 100 - (exist_err/df[COL_ACTUAL_VOL].sum()*100))
+
+fig, ax = plt.subplots(figsize=(6,3), subplot_kw={'projection':'polar'})
+theta = np.linspace(-np.pi/2, np.pi/2, 100)
+r = np.ones_like(theta)
+ax.plot(theta, r, linewidth=10, color="lightgray")
+
+# EMA pointer
+ax.plot([(-np.pi/2)+(ema_acc/100*np.pi)], [1], marker="o", markersize=15, color="green")
+# Existing pointer
+ax.plot([(-np.pi/2)+(exist_acc/100*np.pi)], [1], marker="o", markersize=15, color="red")
+
+ax.set_rticks([]); ax.set_xticks([])
+ax.set_yticklabels([]); ax.set_xticklabels([])
+plt.title(f"Prediction Accuracy: EMA {ema_acc:.1f}% | Existing {exist_acc:.1f}%")
+plt.tight_layout()
+plt.savefig("accuracy_gauge.png")
+plt.close()
+
+# -----------------------------
+# 4. Treemap of Attrition
+# -----------------------------
+import squarify
+
+sizes = df[COL_HC]
+colors = df[COL_PCT_NEW_VS_ACT]
+labels = [f"{b}\nHC:{hc}\nErr:{err:.1f}%" for b,hc,err in zip(df[COL_BUS], sizes, colors)]
+
+plt.figure(figsize=(12,8))
+squarify.plot(sizes=sizes, label=labels, color=sns.color_palette("coolwarm", len(sizes)), alpha=0.8)
+plt.axis("off")
+plt.title("Treemap: Business Groups by Headcount (colored by % error New vs Actual)")
+plt.tight_layout()
+plt.savefig("treemap_attrition.png")
+plt.close()
+
+# -----------------------------
+# 5. Scenario Simulation Curve
+# -----------------------------
+base = df[COL_PROJ_NEW].sum()
+actual = df[COL_ACTUAL_VOL].sum()
+x = np.linspace(-20, 20, 41)  # +/- 20% deviation
+y = df[COL_HC].sum() - (base * (1 + x/100))
+
+plt.figure(figsize=(8,6))
+plt.plot(x, y, color="blue", linewidth=2)
+plt.axvline(0, color="gray", linestyle="--")
+plt.axhline(df[COL_ACTUAL_HC_JUNE].sum(), color="red", linestyle="--", label="Actual June HC")
+plt.title("Scenario Simulation: Headcount Impact if Attrition deviates from EMA")
+plt.xlabel("Deviation from EMA Projection (%)")
+plt.ylabel("Remaining Headcount")
+plt.legend()
+plt.tight_layout()
+plt.savefig("scenario_simulation.png")
+plt.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
