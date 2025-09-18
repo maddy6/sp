@@ -1,3 +1,300 @@
+# Copy-paste this cell into Jupyter and run (make sure df is loaded with the exact columns you listed)
+import pandas as pd
+import numpy as np
+import networkx as nx
+from sklearn.metrics.pairwise import cosine_similarity
+
+# ---------- Helpers to parse input columns robustly ----------
+def to_fraction(col):
+    ser = pd.Series(col).astype(str).str.replace('%','').str.replace(',','').str.strip()
+    num = pd.to_numeric(ser, errors='coerce').fillna(0.0)
+    if (num.max() > 1.5):
+        num = num / 100.0
+    return num
+
+def to_percent_number(col):
+    ser = pd.Series(col).astype(str).str.replace('%','').str.replace(',','').str.strip()
+    num = pd.to_numeric(ser, errors='coerce').fillna(0.0)
+    if (num.max() <= 1.5):
+        num = num * 100.0
+    return num
+
+# ---------- Core function ----------
+def interpret_attrition_network(df,
+                                sim_threshold=0.9,
+                                headcount_pctile=75,
+                                attrition_pctile=75,
+                                error_pctile=75,
+                                verbose=True):
+    """
+    Build similarity graph from (attrition_frac, new_error_pct), compute metrics,
+    and produce CEO-level interpretation per group and per-cluster tables.
+
+    Inputs:
+      - df: dataframe with the exact columns you provided.
+      - sim_threshold: cosine similarity threshold to create an edge between groups.
+      - headcount_pctile / attrition_pctile / error_pctile: percentiles used to detect 'high' flags.
+    Returns:
+      - group_table (DataFrame): one row per BUSINESS_GROUPS with metrics, flags, suggested_action, exec_summary
+      - cluster_table (DataFrame): per-cluster aggregated summary and recommended action
+    """
+    # Required columns (exact names)
+    req = [
+        'BUSINESS_GROUPS','CURRENT_HEADCOUNT','VOLUNTARY_ATTRITION_RATE',
+        'New Projected Vol','Actual Vol Terms','PROJECTED_VOL',
+        '% (Existing) Vs Actuals','% (new) Vs Actuals',
+        'PROJECTED_HEADCOUNT','New Projected Headcount','Actual Headcount June',
+        'Projected (Existing Vs June)','Projected (New Vs June)'
+    ]
+    miss = [c for c in req if c not in df.columns]
+    if miss:
+        raise ValueError("Missing required columns (exact names): " + ", ".join(miss))
+
+    d = df.copy()
+
+    # Parse numeric fields we will use
+    d['CURRENT_HEADCOUNT'] = pd.to_numeric(d['CURRENT_HEADCOUNT'], errors='coerce').fillna(0.0)
+    d['attrition_frac'] = to_fraction(d['VOLUNTARY_ATTRITION_RATE'])
+    d['new_error_pct'] = to_percent_number(d['% (new) Vs Actuals']).fillna(0.0)    # percent (e.g. 5.0)
+    d['existing_error_pct'] = to_percent_number(d['% (Existing) Vs Actuals']).fillna(0.0)
+    d['attrition_count_expected'] = (d['CURRENT_HEADCOUNT'] * d['attrition_frac']).round(1)
+    d['net_change_new_vs_june'] = d['New Projected Headcount'].astype(float) - d['Actual Headcount June'].astype(float)
+    d['abs_new_error_pct'] = d['new_error_pct'].abs()
+
+    # Build similarity graph on (attrition_frac, new_error_pct)
+    features = np.vstack([d['attrition_frac'].astype(float), d['new_error_pct'].astype(float)]).T
+    sim = cosine_similarity(features)
+    np.fill_diagonal(sim, 0.0)
+
+    G = nx.Graph()
+    for i, gname in enumerate(d['BUSINESS_GROUPS']):
+        G.add_node(gname,
+                   headcount=float(d.loc[i, 'CURRENT_HEADCOUNT']),
+                   attrition=float(d.loc[i, 'attrition_frac']),
+                   new_error=float(d.loc[i, 'new_error_pct']))
+
+    # add edges where similarity > threshold
+    n = len(d)
+    for i in range(n):
+        for j in range(i+1, n):
+            if sim[i, j] >= sim_threshold:
+                G.add_edge(d.loc[i, 'BUSINESS_GROUPS'], d.loc[j, 'BUSINESS_GROUPS'], weight=float(sim[i,j]))
+
+    # Graph metrics
+    degree = dict(G.degree())
+    # weighted degree = sum of weights of edges incident on node (use 0 if no edges)
+    weighted_degree = {}
+    for node in G.nodes():
+        s = 0.0
+        for nbr in G.neighbors(node):
+            s += G.edges[node, nbr].get('weight', 1.0)
+        weighted_degree[node] = s
+    deg_cent = nx.degree_centrality(G) if G.number_of_nodes()>0 else {n:0 for n in G.nodes()}
+    btw = nx.betweenness_centrality(G) if G.number_of_nodes()>0 else {n:0 for n in G.nodes()}
+    cls = nx.closeness_centrality(G) if G.number_of_nodes()>0 else {n:0 for n in G.nodes()}
+
+    # Cluster / connected component analysis
+    components = list(nx.connected_components(G))
+    # Map node -> comp_id
+    node2comp = {}
+    comp_summaries = []
+    for cid, comp in enumerate(components, start=1):
+        comp_nodes = list(comp)
+        comp_headcount = sum([G.nodes[n]['headcount'] for n in comp_nodes])
+        comp_attr = np.mean([G.nodes[n]['attrition'] for n in comp_nodes])
+        comp_error = np.mean([G.nodes[n]['new_error'] for n in comp_nodes])
+        comp_summaries.append({
+            'cluster_id': cid,
+            'n_groups': len(comp_nodes),
+            'groups': comp_nodes,
+            'total_headcount': comp_headcount,
+            'avg_attrition_frac': comp_attr,
+            'avg_new_error_pct': comp_error
+        })
+        for n in comp_nodes:
+            node2comp[n] = cid
+    # Nodes not in any component (isolated nodes) become single-node clusters
+    isolated = [n for n in G.nodes() if n not in node2comp]
+    for iso in isolated:
+        cid = len(comp_summaries) + 1
+        node2comp[iso] = cid
+        comp_summaries.append({
+            'cluster_id': cid,
+            'n_groups': 1,
+            'groups': [iso],
+            'total_headcount': G.nodes[iso]['headcount'],
+            'avg_attrition_frac': G.nodes[iso]['attrition'],
+            'avg_new_error_pct': G.nodes[iso]['new_error']
+        })
+
+    # Build per-group table
+    rows = []
+    # thresholds using percentiles (plus sensible minimums)
+    headcount_high_thresh = np.percentile(d['CURRENT_HEADCOUNT'], headcount_pctile)
+    attrition_high_thresh = max(np.percentile(d['attrition_frac'], attrition_pctile), 0.07)  # at least 7%
+    error_high_thresh = np.percentile(d['abs_new_error_pct'], error_pctile)
+
+    # For composite risk score: normalize three signals
+    def minmax(s):
+        if s.max()==s.min():
+            return (s*0.0)
+        return (s - s.min()) / (s.max() - s.min())
+
+    norm_attr = minmax(d['attrition_frac'])
+    norm_head = minmax(d['CURRENT_HEADCOUNT'])
+    norm_err  = minmax(d['abs_new_error_pct'])
+    composite = 0.55*norm_attr + 0.35*norm_head + 0.10*norm_err
+
+    for i, row in d.iterrows():
+        name = row['BUSINESS_GROUPS']
+        hc = float(row['CURRENT_HEADCOUNT'])
+        attr = float(row['attrition_frac'])
+        attr_pct = attr * 100.0
+        err = float(row['new_error_pct'])
+        deg = degree.get(name, 0)
+        wdeg = weighted_degree.get(name, 0.0)
+        dc = deg_cent.get(name, 0.0)
+        bw = btw.get(name, 0.0)
+        cl = cls.get(name, 0.0)
+        comp_id = node2comp.get(name, None)
+        comp_info = next((c for c in comp_summaries if c['cluster_id']==comp_id), None)
+
+        # flags
+        is_large = hc >= headcount_high_thresh
+        is_high_attr = attr >= attrition_high_thresh
+        is_high_error = abs(err) >= error_high_thresh
+        is_high_degree = deg >= np.percentile(list(degree.values()) if degree else [0], 75) if degree else False
+
+        # suggested action rules (simple template)
+        actions = []
+        if is_large and is_high_attr:
+            actions.append("Immediate retention program & leadership review")
+            actions.append("Comp/benefits audit for this group")
+        elif is_large and is_high_error:
+            actions.append("Model review & local forecast adjustment (large group)")
+        elif is_high_attr:
+            actions.append("Targeted retention actions (stay interviews, incentives)")
+        elif is_high_error:
+            actions.append("Model tuning: EMA under/over-performs; investigate drivers")
+        else:
+            actions.append("Monitor; maintain current programs")
+
+        # cluster-level augmentation
+        if comp_info and comp_info['avg_attrition_frac'] >= attrition_high_thresh and comp_info['n_groups']>1:
+            actions.append("Cluster-level intervention recommended (systemic driver likely)")
+
+        # centrality advice
+        if dc >= np.percentile(list(dc for dc in deg_cent.values()) if deg_cent else [0], 75):
+            actions.append("High centrality: stabilizing this group can reduce system risk")
+
+        suggested_action = " / ".join(actions)
+
+        # auto-generated CEO-level sentence (concise)
+        neighbors = list(G.neighbors(name)) if name in G.nodes() else []
+        neighbor_text = ""
+        if neighbors:
+            neighbor_text = f" Similar groups: {', '.join(neighbors[:4]) + ('...' if len(neighbors)>4 else '')}."
+        cluster_text = ""
+        if comp_info:
+            cluster_text = f" Part of cluster #{comp_id} (size={comp_info['n_groups']}, total HC={int(comp_info['total_headcount'])})."
+        exec_summary = (f"{name}: {('LARGE' if is_large else 'SMALLER')} team (HC={int(hc)}), "
+                        f"attrition ~ {attr_pct:.1f}%. Model error ~ {err:.1f}%.{neighbor_text}{cluster_text} "
+                        f"Recommended: {suggested_action}.")
+
+        rows.append({
+            'BUSINESS_GROUPS': name,
+            'CURRENT_HEADCOUNT': int(hc),
+            'Attrition_pct': attr_pct,
+            'New_error_pct': err,
+            'Degree': deg,
+            'Weighted_degree': round(wdeg, 3),
+            'Degree_centrality': round(dc, 3),
+            'Betweenness': round(bw, 4),
+            'Cluster_id': comp_id,
+            'Cluster_size': comp_info['n_groups'] if comp_info else 1,
+            'Cluster_total_headcount': int(comp_info['total_headcount']) if comp_info else int(hc),
+            'Is_large_headcount': bool(is_large),
+            'Is_high_attrition': bool(is_high_attr),
+            'Is_high_error': bool(is_high_error),
+            'Composite_risk': round(float(composite.iloc[i]), 3),
+            'Suggested_action': suggested_action,
+            'Exec_summary': exec_summary
+        })
+
+    group_table = pd.DataFrame(rows).sort_values('Composite_risk', ascending=False).reset_index(drop=True)
+
+    # Build cluster summary table
+    crows = []
+    for c in comp_summaries:
+        cid = c['cluster_id']
+        avg_attr_pct = c['avg_attrition_frac']*100.0
+        avg_err = c['avg_new_error_pct']
+        rec = "Cluster-level review" if (c['avg_attrition_frac'] >= attrition_high_thresh and c['n_groups']>1) else "No cluster alarm"
+        # escalate if very large cluster headcount
+        if c['total_headcount'] >= np.percentile(d['CURRENT_HEADCOUNT'], 75):
+            rec += " / High-impact cluster"
+        crows.append({
+            'cluster_id': cid,
+            'n_groups': c['n_groups'],
+            'groups': ", ".join(c['groups']),
+            'total_headcount': int(c['total_headcount']),
+            'avg_attrition_pct': round(avg_attr_pct, 2),
+            'avg_new_error_pct': round(avg_err, 2),
+            'recommended_action': rec
+        })
+    cluster_table = pd.DataFrame(crows).sort_values('total_headcount', ascending=False).reset_index(drop=True)
+
+    # Top-level textual executive summary
+    top_by_risk = group_table.head(5)
+    top_list = "; ".join([f"{r['BUSINESS_GROUPS']} (HC={r['CURRENT_HEADCOUNT']}, Attr={r['Attrition_pct']:.1f}%)" for _, r in top_by_risk.iterrows()])
+
+    overall_summary = (
+        f"Executive Summary:\n"
+        f"- Top risk groups (by composite score): {top_list}.\n"
+        f"- Number of detected clusters (connected groups): {len(comp_summaries)}. "
+        f"{sum(1 for c in comp_summaries if c['avg_attrition_frac']>=attrition_high_thresh)} clusters have above-threshold attrition.\n"
+        f"- Thresholds used: headcount >= {int(headcount_high_thresh)} (>= {headcount_pctile}th pct), "
+        f"attrition >= {attrition_high_thresh:.2%}, error >= {error_high_thresh:.2f}%.\n"
+        f"- Immediate recommended actions: prioritize the big & high-attrition groups for retention programs and leadership reviews; "
+        f"investigate groups where the new model error is high (model tuning/local adjustments)."
+    )
+
+    if verbose:
+        print(overall_summary)
+        print("\nTop 10 groups with suggested action (first 10 rows):\n")
+        display(group_table.head(10))
+        print("\nCluster summary:\n")
+        display(cluster_table)
+
+    return group_table, cluster_table
+
+# ---------- Example usage ----------
+# group_table, cluster_table = interpret_attrition_network(df, sim_threshold=0.9)
+# group_table.to_csv('attrition_group_interpretation.csv', index=False)
+# cluster_table.to_csv('attrition_cluster_summary.csv', index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Robust Network Graph with reliable colorbar (use in Jupyter)
 import numpy as np
 import pandas as pd
