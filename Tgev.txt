@@ -1,0 +1,17 @@
+import pandas as pd
+
+# convert Future.Month to datetime if not already
+forecast_df["Future.Month"] = pd.to_datetime(forecast_df["Future.Month"])
+
+# filter Apr–Jun
+mask = forecast_df["Future.Month"].dt.month.isin([4,5,6])
+
+# group and sum for Apr–Jun
+totals = (forecast_df[mask]
+          .groupby("Business Group")["Fut Vol. Attr Count_ema"]
+          .sum()
+          .rename("New_proj_apr_june"))
+
+# merge back only for Apr–Jun rows
+forecast_df = forecast_df.merge(totals, on="Business Group", how="left")
+forecast_df.loc[~mask, "New_proj_apr_june"] = None
