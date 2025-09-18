@@ -1,3 +1,157 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+# -----------------------------
+# Config
+# -----------------------------
+COL_BUS = 'BUSINESS_GROUPS'
+COL_HC = 'CURRENT_HEADCOUNT'
+COL_ATTR = 'VOLUNTARY_ATTRITION_RATE'
+COL_PROJ_EXIST = 'PROJECTED_VOL'
+COL_PROJ_NEW = 'New Projected Vol'
+COL_ACTUAL_VOL = 'Actual Vol Terms'
+COL_PCT_EXIST_VS_ACT = '% (Existing) Vs Actuals'
+COL_PCT_NEW_VS_ACT = '% (new) Vs Actuals'
+COL_PROJ_HC = 'PROJECTED_HEADCOUNT'
+COL_PROJ_HC_NEW = 'New Projected Headcount'
+COL_ACTUAL_HC_JUNE = 'Actual Headcount June'
+COL_PROJ_EXIST_VS_JUNE = 'Projected (Existing Vs June)'
+COL_PROJ_NEW_VS_JUNE = 'Projected (New Vs June)'
+
+OUTDIR = "hr_viz_static"
+os.makedirs(OUTDIR, exist_ok=True)
+
+# -----------------------------
+# Load data
+# -----------------------------
+df = pd.read_csv("your_input.csv")
+
+# -----------------------------
+# KPI summary (big picture bar chart)
+# -----------------------------
+totals = {
+    "Existing Projection": df[COL_PROJ_EXIST].sum(),
+    "New (EMA) Projection": df[COL_PROJ_NEW].sum(),
+    "Actual Terms": df[COL_ACTUAL_VOL].sum()
+}
+plt.figure(figsize=(8,5))
+sns.barplot(x=list(totals.keys()), y=list(totals.values()), palette="Set2")
+plt.title("Overall Attrition Terms: Existing vs EMA vs Actual")
+plt.ylabel("Headcount")
+plt.tight_layout()
+plt.savefig(f"{OUTDIR}/kpi_summary.png")
+plt.close()
+
+# -----------------------------
+# Business group comparison (clustered bars)
+# -----------------------------
+df_group = df[[COL_BUS, COL_PROJ_EXIST, COL_PROJ_NEW, COL_ACTUAL_VOL]].set_index(COL_BUS)
+df_group.plot(kind="bar", figsize=(12,6))
+plt.title("Business Group: Projected vs Actual Attrition")
+plt.ylabel("Headcount")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.savefig(f"{OUTDIR}/group_comparison.png")
+plt.close()
+
+# -----------------------------
+# Prediction error heatmap
+# -----------------------------
+df["Error_New"] = df[COL_PROJ_NEW] - df[COL_ACTUAL_VOL]
+df["Error_Exist"] = df[COL_PROJ_EXIST] - df[COL_ACTUAL_VOL]
+
+err_mat = df[[COL_BUS, "Error_New", "Error_Exist"]].set_index(COL_BUS)
+plt.figure(figsize=(10,6))
+sns.heatmap(err_mat, annot=True, fmt=".0f", cmap="coolwarm", center=0)
+plt.title("Prediction Error Heatmap (Projection - Actual)")
+plt.tight_layout()
+plt.savefig(f"{OUTDIR}/prediction_error_heatmap.png")
+plt.close()
+
+# -----------------------------
+# Pareto chart for EMA projections
+# -----------------------------
+df_pareto = df.groupby(COL_BUS)[COL_PROJ_NEW].sum().sort_values(ascending=False)
+cum_pct = df_pareto.cumsum() / df_pareto.sum() * 100
+
+fig, ax1 = plt.subplots(figsize=(12,6))
+df_pareto.plot(kind="bar", ax=ax1, color="skyblue")
+ax1.set_ylabel("New Projected Vol")
+ax2 = ax1.twinx()
+cum_pct.plot(ax=ax2, color="red", marker="o")
+ax2.set_ylabel("Cumulative %")
+plt.title("Pareto Analysis: New Projected Vol (EMA)")
+plt.tight_layout()
+plt.savefig(f"{OUTDIR}/pareto_new_proj.png")
+plt.close()
+
+# -----------------------------
+# Risk scatter (quadrant style)
+# -----------------------------
+plt.figure(figsize=(8,6))
+x = df[COL_ATTR]*100
+y = df[COL_PCT_NEW_VS_ACT]
+sizes = df[COL_HC]/df[COL_HC].max()*1000
+plt.scatter(x, y, s=sizes, alpha=0.6, c="teal", edgecolor="k")
+
+# quadrant lines
+plt.axhline(y.median(), color="gray", linestyle="--")
+plt.axvline(x.median(), color="gray", linestyle="--")
+
+for i, row in df.iterrows():
+    plt.text(row[COL_ATTR]*100, row[COL_PCT_NEW_VS_ACT], row[COL_BUS], fontsize=8)
+
+plt.xlabel("Voluntary Attrition Rate (%)")
+plt.ylabel("% (New) Vs Actuals")
+plt.title("Risk Quadrant: Attrition vs Prediction Gap")
+plt.tight_layout()
+plt.savefig(f"{OUTDIR}/risk_quadrant.png")
+plt.close()
+
+# -----------------------------
+# Distribution of % error
+# -----------------------------
+plt.figure(figsize=(8,6))
+sns.violinplot(y=df[COL_PCT_NEW_VS_ACT], inner="box", color="lightblue")
+sns.swarmplot(y=df[COL_PCT_NEW_VS_ACT], color="k", size=4)
+plt.title("Distribution of % (New) Vs Actuals")
+plt.ylabel("Prediction Error %")
+plt.tight_layout()
+plt.savefig(f"{OUTDIR}/error_distribution.png")
+plt.close()
+
+print(f"All static figures saved in: {OUTDIR}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Copy-paste this cell into Jupyter and run (make sure df is loaded with the exact columns you listed)
 import pandas as pd
 import numpy as np
