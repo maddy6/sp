@@ -1,3 +1,125 @@
+# Robust Network Graph with reliable colorbar (use in Jupyter)
+import numpy as np
+import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from sklearn.metrics.pairwise import cosine_similarity
+
+# ---------- (OPTIONAL) sample df for quick test ----------
+# Comment out if you already have df loaded
+# df = pd.DataFrame({
+#     'BUSINESS_GROUPS': ['A','B','C','D'],
+#     'CURRENT_HEADCOUNT': [120, 45, 300, 80],
+#     'attrition_frac': [0.07, 0.12, 0.03, 0.20],
+#     'new_error_pct': [5.0, 12.0, 3.0, 8.0]
+# })
+
+# ---------- Validate df columns ----------
+req = ['BUSINESS_GROUPS','CURRENT_HEADCOUNT','attrition_frac','new_error_pct']
+missing = [c for c in req if c not in df.columns]
+if missing:
+    raise ValueError("Missing required columns in df: " + ", ".join(missing))
+
+# ---------- Compute pairwise similarity and build graph ----------
+features = np.c_[df['attrition_frac'].astype(float), df['new_error_pct'].astype(float)]
+sim = cosine_similarity(features)
+np.fill_diagonal(sim, 0.0)
+threshold = 0.9  # tweak as needed
+
+G = nx.Graph()
+for i, gname in enumerate(df['BUSINESS_GROUPS']):
+    G.add_node(gname,
+               size=float(df['CURRENT_HEADCOUNT'].iloc[i]),
+               color=float(df['attrition_frac'].iloc[i]) )
+
+for i in range(len(df)):
+    for j in range(i+1, len(df)):
+        if sim[i, j] > threshold:
+            G.add_edge(df['BUSINESS_GROUPS'].iloc[i],
+                       df['BUSINESS_GROUPS'].iloc[j],
+                       weight=float(sim[i, j]))
+
+if G.number_of_nodes() == 0:
+    raise RuntimeError("Graph has no nodes (check df).")
+
+# ---------- Layout and drawing ----------
+fig, ax = plt.subplots(figsize=(10, 8))
+pos = nx.spring_layout(G, k=0.5, seed=42)  # reproducible layout
+
+# node sizes and colors
+nodes_list = list(G.nodes())
+sizes = [G.nodes[n]['size'] * 5 for n in nodes_list]   # scale factor
+colors = [G.nodes[n]['color'] for n in nodes_list]
+
+# fix degenerate vmin/vmax
+vmin = min(colors)
+vmax = max(colors)
+if np.isclose(vmin, vmax):
+    vmin = vmin - 1e-3
+    vmax = vmax + 1e-3
+
+# draw nodes (use draw_networkx_nodes which returns a PathCollection)
+nodes_pc = nx.draw_networkx_nodes(G, pos,
+                                  nodelist=nodes_list,
+                                  node_size=sizes,
+                                  node_color=colors,
+                                  cmap='Reds',
+                                  vmin=vmin,
+                                  vmax=vmax,
+                                  ax=ax)
+nx.draw_networkx_labels(G, pos, ax=ax, font_size=10)
+# draw edges with width proportional to weight (if present)
+if G.number_of_edges() > 0:
+    widths = [G[u][v].get('weight', 0.2) * 3.0 for u, v in G.edges()]
+    nx.draw_networkx_edges(G, pos, ax=ax, edge_color='gray', width=widths, alpha=0.7)
+
+ax.set_title("Business Group Risk Map (size=headcount, color=attrition%)")
+ax.axis('off')
+
+# ---------- Add colorbar robustly ----------
+try:
+    # preferred: create ScalarMappable with same cmap and norm then attach to the figure
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = mpl.cm.ScalarMappable(cmap=mpl.cm.get_cmap('Reds'), norm=norm)
+    # set_array must be non-empty to avoid ambiguous mappable behavior in some backends
+    sm.set_array(np.asarray(colors))
+    # attach colorbar to the figure, specifying the axis to steal space from
+    cbar = fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Attrition Fraction')
+except Exception as e:
+    # fallback: use scatter + colorbar (more explicit mappable)
+    print("Primary colorbar method failed, using fallback scatter-based colorbar. Error:", e)
+    xs = [pos[n][0] for n in nodes_list]
+    ys = [pos[n][1] for n in nodes_list]
+    sc = ax.scatter(xs, ys, s=sizes, c=colors, cmap='Reds', vmin=vmin, vmax=vmax)
+    cbar = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Attrition Fraction')
+
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 import networkx as nx
