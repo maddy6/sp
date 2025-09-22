@@ -1,3 +1,22 @@
+import pandas as pd
+
+# assuming your dataframe is named dft as in the screenshot
+# Group by PERIOD and BUSINESS_GROUPS_TA, summing the OPENINGS_AVAILABLE_EX_CAMP
+grouped_df = (
+    dft
+    .groupby(['PERIOD', 'BUSINESS_GROUPS_TA'], as_index=False)['OPENINGS_AVAILABLE_EX_CAMP']
+    .sum()
+    .rename(columns={'OPENINGS_AVAILABLE_EX_CAMP': 'NEW_OPENINGS_COUNT'})
+)
+
+# This will give you total new openings per period per business group
+print(grouped_df.head())
+
+
+
+
+
+
 1️⃣ What the plot is showing
 
 Each node (circle) = a business group.
