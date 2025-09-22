@@ -1,3 +1,127 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# -----------------------
+# PARAMETERS
+# -----------------------
+BASE_MONTH_HC = 229568
+FORECAST_START = "202504"
+FORECAST_END   = "202512"
+DIVIDE_BY_100  = True
+ROLL_WINDOW = 3
+# -----------------------
+
+# Convert MONTH (yyyymm) → datetime (month start)
+df['MONTH'] = pd.to_datetime(df['MONTH'].astype(str), format='%Y%m')
+df['YEAR']  = df['MONTH'].dt.year
+
+# Forecast index (month start timestamps)
+forecast_index = pd.date_range(start=pd.to_datetime(FORECAST_START, format="%Y%m"),
+                               end=pd.to_datetime(FORECAST_END, format="%Y%m"),
+                               freq="MS")
+
+groups = df['BUSINESS_GROUPS_TA'].unique()
+all_rows = []
+
+for g in groups:
+    grp = df[df['BUSINESS_GROUPS_TA'] == g].copy().set_index('MONTH').sort_index()
+
+    # smoothing: SMA, EMA, Rolling Median, Wilder (alpha = 1/N)
+    if 'MONTHLY_ATTRITION_RATE' not in grp.columns:
+        print(f"⚠️ Warning: MONTHLY_ATTRITION_RATE not in dataset for group {g}")
+        continue
+
+    grp['SMA3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=ROLL_WINDOW).mean()
+    grp['EMA3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(span=ROLL_WINDOW, adjust=False).mean()
+    grp['MED3'] = grp['MONTHLY_ATTRITION_RATE'].rolling(window=ROLL_WINDOW).median()
+    alpha_wilder = 1.0 / ROLL_WINDOW
+    grp['WILDER3'] = grp['MONTHLY_ATTRITION_RATE'].ewm(alpha=alpha_wilder, adjust=False).mean()
+
+    # last-available fallback utility
+    def last_valid(col):
+        if (col in grp.columns) and (not grp[col].empty):
+            v = grp[col].iloc[-1]
+            if not pd.isna(v):
+                return v
+        if (not grp['MONTHLY_ATTRITION_RATE'].empty):
+            return grp['MONTHLY_ATTRITION_RATE'].iloc[-1]
+        return np.nan
+
+    last_sma = last_valid('SMA3')
+    last_ema = last_valid('EMA3')
+    last_med = last_valid('MED3')
+    last_wil = last_valid('WILDER3')
+
+    # last known headcount BEFORE forecast start
+    pre_forecast_hc_series = grp[grp.index < pd.to_datetime(FORECAST_START, format="%Y%m")]['HEADCOUNT']
+    if not pre_forecast_hc_series.empty:
+        last_known_hc = pre_forecast_hc_series.iloc[-1]
+    else:
+        last_known_hc = grp['HEADCOUNT'].iloc[-1] if (not grp['HEADCOUNT'].empty) else BASE_MONTH_HC
+
+    # build rows for every forecast_index month
+    for fut_ts in forecast_index:
+        # actuals if present
+        if fut_ts in grp.index:
+            act_rate  = grp.at[fut_ts, 'MONTHLY_ATTRITION_RATE'] if 'MONTHLY_ATTRITION_RATE' in grp.columns else np.nan
+            act_exits = grp.at[fut_ts, 'VOLUNTARY_EXITS'] if 'VOLUNTARY_EXITS' in grp.columns else np.nan
+            act_hc    = grp.at[fut_ts, 'HEADCOUNT'] if 'HEADCOUNT' in grp.columns else np.nan
+        else:
+            act_rate  = np.nan
+            act_exits = np.nan
+            act_hc    = np.nan
+
+        # smoothed values
+        def get_smoothed(col, last_val):
+            if (fut_ts in grp.index) and (col in grp.columns) and (not pd.isna(grp.at[fut_ts, col])):
+                return grp.at[fut_ts, col]
+            return last_val
+
+        fut_rate_sma = get_smoothed('SMA3', last_sma)
+        fut_rate_ema = get_smoothed('EMA3', last_ema)
+        fut_rate_med = get_smoothed('MED3', last_med)
+        fut_rate_wil = get_smoothed('WILDER3', last_wil)
+
+        # convert % → counts
+        def to_count(rate):
+            if pd.isna(rate):
+                return np.nan
+            return (rate / 100.0 * last_known_hc) if DIVIDE_BY_100 else (rate * last_known_hc)
+
+        fut_count_sma = to_count(fut_rate_sma)
+        fut_count_ema = to_count(fut_rate_ema)
+        fut_count_med = to_count(fut_rate_med)
+        fut_count_wil = to_count(fut_rate_wil)
+
+        # final row
+        row = {
+            "Future Month": fut_ts,
+            "Business Group": g,
+            "Fut Vol Attr. Month %_sma": round(fut_rate_sma, 4) if not pd.isna(fut_rate_sma) else np.nan,
+            "Fut Vol Attr. Month %_ema": round(fut_rate_ema, 4) if not pd.isna(fut_rate_ema) else np.nan,
+            "Fut Vol Attr. Month %_med": round(fut_rate_med, 4) if not pd.isna(fut_rate_med) else np.nan,
+            "Fut Vol Attr. Month %_wilder": round(fut_rate_wil, 4) if not pd.isna(fut_rate_wil) else np.nan,
+            "Base Month HC": int(last_known_hc) if not pd.isna(last_known_hc) else np.nan,
+            "Fut Vol. Attr Count_sma": int(round(fut_count_sma)) if (not pd.isna(fut_count_sma)) else np.nan,
+            "Fut Vol. Attr Count_ema": int(round(fut_count_ema)) if (not pd.isna(fut_count_ema)) else np.nan,
+            "Fut Vol. Attr Count_med": int(round(fut_count_med)) if (not pd.isna(fut_count_med)) else np.nan,
+            "Fut Vol. Attr Count_wilder": int(round(fut_count_wil)) if (not pd.isna(fut_count_wil)) else np.nan,
+            "Act Vol Attr. Month %": round(act_rate,4) if not pd.isna(act_rate) else np.nan,
+            "Act Vol Attr Count": int(act_exits) if not pd.isna(act_exits) else np.nan,
+            "Actual Headcount": int(act_hc) if not pd.isna(act_hc) else np.nan,
+        }
+        all_rows.append(row)
+
+# Final forecast DataFrame
+forecast_df = pd.DataFrame(all_rows)
+
+
+
+
+
+
+
 # -----------------------
 # PARAMETERS
 # -----------------------
