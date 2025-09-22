@@ -1,3 +1,36 @@
+def draw_line(sub, type_name, color, label, force_solid=False):
+    hist = sub[(sub['TYPE'] == type_name) & (~sub['ForecastFlag'])]
+    fore = sub[(sub['TYPE'] == type_name) & (sub['ForecastFlag'])]
+    
+    if not hist.empty:
+        plt.plot(hist['Future Month'], hist['Attrition Rate'], 
+                 color=color, label=f'{label} Hist')
+    
+    if not fore.empty:
+        plt.plot(fore['Future Month'], fore['Attrition Rate'], 
+                 color=color, 
+                 linestyle='-' if force_solid else '--',   # Actual solid, forecast dotted
+                 label=f'{label} Forecast')
+
+# Draw lines
+draw_line(sub, 'Actual', colors['Actual'], 'Actual', force_solid=True)   # <-- Always solid
+draw_line(sub, 'Forecast_SMA', colors['Forecast_SMA'], 'SMA')
+draw_line(sub, 'Forecast_EMA', colors['Forecast_EMA'], 'EMA')
+draw_line(sub, 'Forecast_MED', colors['Forecast_MED'], 'MED')
+draw_line(sub, 'Forecast_ZLEMA', colors['Forecast_ZLEMA'], 'ZLEMA')
+draw_line(sub, 'Forecast_DEMA', colors['Forecast_DEMA'], 'DEMA')
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
