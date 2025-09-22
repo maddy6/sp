@@ -1,3 +1,36 @@
+# -----------------------
+# PARAMETERS
+# -----------------------
+BASE_MONTH_HC = 229568
+FORECAST_START = "202504"  # YYYYMM
+FORECAST_END   = "202512"  # YYYYMM
+DIVIDE_BY_100  = True
+ROLL_WINDOW = 3
+# -----------------------
+
+# Prepare df — internally datetime, plus string for joining/display
+df['MONTH'] = pd.to_datetime(df['MONTH'].astype(str), format='%Y-%m', errors='coerce') \
+                .dt.to_period('M').dt.to_timestamp()
+df['MONTH_YYYYMM'] = df['MONTH'].dt.strftime('%Y%m')   # <-- new
+df['YEAR']  = df['MONTH'].dt.year
+
+# forecast index also as datetime
+forecast_index = pd.date_range(
+    start=pd.to_datetime(FORECAST_START, format='%Y%m'),
+    end=pd.to_datetime(FORECAST_END, format='%Y%m'),
+    freq="MS"
+)
+
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+
+
+
+
+
+
+
+
 
 import pandas as pd
 import numpy as np
