@@ -1,3 +1,39 @@
+
+import pandas as pd
+
+# --- Example: df1 already loaded ---
+# df1 = pd.read_excel('monthwise_updated_attrition_dataset.xlsx')
+
+# --- Step 1: Convert MONTH from YYYY-MM to YYYYMM format ---
+df1['MONTH_YYYYMM'] = pd.to_datetime(df1['MONTH']).dt.strftime('%Y%m').astype(int)
+
+# --- Step 2: Filter only the columns we need (MONTH + HEADCOUNT) ---
+df_headcount = df1[['MONTH_YYYYMM', 'HEADCOUNT']]
+
+# --- Step 3: Assume grouped_df already loaded ---
+# grouped_df has a column 'MONTH' in YYYYMM format
+# Make sure its MONTH column is also int
+grouped_df['MONTH'] = grouped_df['MONTH'].astype(int)
+
+# --- Step 4: Left join on MONTH ---
+merged_df = pd.merge(
+    grouped_df,
+    df_headcount,
+    how='left',
+    left_on='MONTH',
+    right_on='MONTH_YYYYMM'
+)
+
+# --- Step 5: Drop helper column if needed ---
+merged_df.drop(columns=['MONTH_YYYYMM'], inplace=True)
+
+# --- Check ---
+print(merged_df.head())
+
+
+
+
+
 import pandas as pd
 
 # assuming your dataframe is named dft as in the screenshot
