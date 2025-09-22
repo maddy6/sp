@@ -1,5 +1,82 @@
 
 import pandas as pd
+import numpy as np
+
+# --- Convert PERIOD (YYYYMM) to proper datetime ---
+df['PERIOD'] = pd.to_datetime(df['PERIOD'].astype(str), format='%Y%m')
+df['YEAR'] = df['PERIOD'].dt.year
+
+# --- Forecast index (if needed) ---
+forecast_index = pd.date_range(start=FORECAST_START, end=FORECAST_END, freq="MS")
+groups = df['BUSINESS_GROUPS_TA'].unique()
+
+all_rows = []
+
+# --- Parameters ---
+ROLL_WINDOW = 3    # example rolling window
+alpha_wilder = 1 / ROLL_WINDOW
+
+# --- Define Zero Lag EMA ---
+def zlema(series, period):
+    ema1 = series.ewm(span=period, adjust=False).mean()
+    lag = int(np.floor((period - 1) / 2))
+    lag_series = series.shift(lag)
+    zlema_series = (2 * series - lag_series).ewm(span=period, adjust=False).mean()
+    return zlema_series
+
+# --- Define DEMA ---
+def dema(series, period):
+    ema1 = series.ewm(span=period, adjust=False).mean()
+    ema2 = ema1.ewm(span=period, adjust=False).mean()
+    return 2 * ema1 - ema2
+
+# --- Define T3 ---
+def t3(series, period, vfactor=0.7):
+    e1 = series.ewm(span=period, adjust=False).mean()
+    e2 = e1.ewm(span=period, adjust=False).mean()
+    e3 = e2.ewm(span=period, adjust=False).mean()
+    e4 = e3.ewm(span=period, adjust=False).mean()
+    e5 = e4.ewm(span=period, adjust=False).mean()
+    e6 = e5.ewm(span=period, adjust=False).mean()
+    c1 = -vfactor ** 3
+    c2 = 3 * (vfactor ** 2 + vfactor ** 3)
+    c3 = -3 * (vfactor + vfactor ** 2 + vfactor ** 3)
+    c4 = 1 + 3 * vfactor + vfactor ** 3 + 3 * vfactor ** 2
+    return c1 * e6 + c2 * e5 + c3 * e4 + c4 * e3
+
+# --- Example Kalman filter (simple) ---
+def kalman_filter(series):
+    n = len(series)
+    Q = 1e-5  # process variance
+    xhat = np.zeros(n)
+    P = np.zeros(n)
+    xhatminus = np.zeros(n)
+    Pminus = np.zeros(n)
+    K = np.zeros(n)
+    xhat[0] = series.iloc[0]
+    P[0] = 1.0
+    for k in range(1, n):
+        xhatminus[k] = xhat[k-1]
+        Pminus[k] = P[k-1] + Q
+        K[k] = Pminus[k] / (Pminus[k] + 1)
+        xhat[k] = xhatminus[k] + K[k] * (series.iloc[k] - xhatminus[k])
+        P[k] = (1 - K[k]) * Pminus[k]
+    return pd.Series(xhat, index=series.index)
+
+# --- Loop by Business Group ---
+for g in groups:
+    grp = df[df['BUSINESS_GROUPS_TA'] == g].copy().set_index('PERIOD').sort_index()
+
+    # Smoothing calculations
+    grp['SMA'] = grp['NEW_OPENINGS_COUNT'].rolling(window=ROLL_WINDOW).mean()
+    grp['EMA'] = grp['NEW_OPENINGS_C]()
+
+
+
+
+
+
+import pandas as pd
 
 # --- Example: df1 already loaded ---
 # df1 = pd.read_excel('monthwise_updated_attrition_dataset.xlsx')
