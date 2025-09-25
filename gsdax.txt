@@ -1,3 +1,129 @@
+# ==============================
+# 1. Prepare historical data with SMA/EMA
+# ==============================
+hist_df = df[['MONTH', 'BUSINESS_GROUPS_TA', 'MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH': 'Future Month',
+             'BUSINESS_GROUPS_TA': 'Business Group',
+             'MONTHLY_ATTRITION_RATE': 'Attrition Rate'}
+)
+hist_df['Future Month'] = pd.to_datetime(hist_df['Future Month'])
+hist_df['Type'] = 'Actual'
+
+# compute pre-forecast SMA/EMA on historical attrition
+df_sorted = df.sort_values(['BUSINESS_GROUPS_TA', 'MONTH']).copy()
+df_sorted['SMA'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE'].transform(
+    lambda x: x.rolling(window=3, min_periods=1).mean()
+)
+df_sorted['EMA'] = df_sorted.groupby('BUSINESS_GROUPS_TA')['MONTHLY_ATTRITION_RATE'].transform(
+    lambda x: x.ewm(span=3, adjust=False).mean()
+)
+
+sma_hist = df_sorted[['MONTH', 'BUSINESS_GROUPS_TA', 'SMA']].rename(
+    columns={'MONTH': 'Future Month', 'BUSINESS_GROUPS_TA': 'Business Group', 'SMA': 'Attrition Rate'}
+)
+sma_hist['Future Month'] = pd.to_datetime(sma_hist['Future Month'])
+sma_hist['Type'] = 'Forecast_SMA'
+
+ema_hist = df_sorted[['MONTH', 'BUSINESS_GROUPS_TA', 'EMA']].rename(
+    columns={'MONTH': 'Future Month', 'BUSINESS_GROUPS_TA': 'Business Group', 'EMA': 'Attrition Rate'}
+)
+ema_hist['Future Month'] = pd.to_datetime(ema_hist['Future Month'])
+ema_hist['Type'] = 'Forecast_EMA'
+
+# ==============================
+# 2. Prepare forecast part (already in forecast_df)
+# ==============================
+def make_forecast_subset(col, label):
+    tmp = forecast_df[['Future Month', 'Business Group', col]].rename(
+        columns={col: 'Attrition Rate'}
+    )
+    tmp['Future Month'] = pd.to_datetime(tmp['Future Month'])
+    tmp['Type'] = label
+    return tmp
+
+forecast_sma = make_forecast_subset('Fut Vol Attr. Month %_sma', 'Forecast_SMA')
+forecast_ema = make_forecast_subset('Fut Vol Attr. Month %_ema', 'Forecast_EMA')
+
+forecast_actual = forecast_df[['Future Month', 'Business Group', 'Act Vol Attr-Month %']].rename(
+    columns={'Act Vol Attr-Month %': 'Attrition Rate'}
+)
+forecast_actual['Future Month'] = pd.to_datetime(forecast_actual['Future Month'])
+forecast_actual['Type'] = 'Actual'
+
+# ==============================
+# 3. Combine all
+# ==============================
+plot_df = pd.concat(
+    [hist_df, sma_hist, ema_hist, forecast_sma, forecast_ema, forecast_actual],
+    ignore_index=True
+)
+
+# ==============================
+# 4. Plot with styles
+# ==============================
+forecast_start_dt = pd.to_datetime(FORECAST_START)
+
+plt.figure(figsize=(16, 8))
+colors = {'Actual': 'black', 'Forecast_SMA': 'blue', 'Forecast_EMA': 'green'}
+groups = ['Banking']
+
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g].sort_values('Future Month')
+
+    for typ in ['Actual', 'Forecast_SMA', 'Forecast_EMA']:
+        data = sub[sub['Type'] == typ]
+
+        if data.empty:
+            continue
+
+        pre = data[data['Future Month'] < forecast_start_dt]
+        post = data[data['Future Month'] >= forecast_start_dt]
+
+        # plot pre (solid)
+        if not pre.empty:
+            plt.plot(pre['Future Month'], pre['Attrition Rate'],
+                     color=colors[typ],
+                     linestyle='-',
+                     label=f"{typ} Pre" if typ != 'Actual' else "Actual")
+
+        # plot post (dotted for forecasts, solid for actual)
+        if not post.empty:
+            linestyle = '-' if typ == 'Actual' else '--'
+            plt.plot(post['Future Month'], post['Attrition Rate'],
+                     color=colors[typ],
+                     linestyle=linestyle,
+                     label=f"{typ} Forecast")
+
+plt.axvline(forecast_start_dt, color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate Actual vs SMA/EMA (Solid=History, Dotted=Forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # -----------------------
 # 1. Prepare combined data
 # -----------------------
