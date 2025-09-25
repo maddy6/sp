@@ -5,6 +5,93 @@ import pandas as pd
 df["MONTH"] = pd.to_datetime(df["MONTH"])
 forecast_df["Future Month"] = pd.to_datetime(forecast_df["Future Month"])
 
+# Forecast boundaries
+FORECAST_START = pd.to_datetime("2025-04-01")
+FORECAST_END = pd.to_datetime("2026-12-01")
+
+plt.figure(figsize=(14,6))
+
+# =========================
+# Pre-forecast (till FORECAST_START-1)
+# =========================
+mask_pre = df["MONTH"] < FORECAST_START
+mask_pre_forecast = forecast_df["Future Month"] < FORECAST_START
+
+# Actual - solid
+plt.plot(df.loc[mask_pre, "MONTH"], 
+         df.loc[mask_pre, "Act Vol Attr Count"], 
+         label="Actual (History)", color="black", linestyle="-", linewidth=2)
+
+# EMA - solid
+plt.plot(forecast_df.loc[mask_pre_forecast, "Future Month"], 
+         forecast_df.loc[mask_pre_forecast, "Fut Vol. Attr Count_ema"], 
+         label="EMA (History)", color="orange", linestyle="-", linewidth=2)
+
+# SMA - solid
+plt.plot(forecast_df.loc[mask_pre_forecast, "Future Month"], 
+         forecast_df.loc[mask_pre_forecast, "Fut Vol. Attr Count_sma"], 
+         label="SMA (History)", color="green", linestyle="-", linewidth=2)
+
+# =========================
+# Forecast period
+# =========================
+mask_fore = (forecast_df["Future Month"] >= FORECAST_START) & (forecast_df["Future Month"] <= FORECAST_END)
+
+# Actual - solid
+plt.plot(forecast_df.loc[mask_fore, "Future Month"], 
+         forecast_df.loc[mask_fore, "Act Vol Attr Count"], 
+         label="Actual (Forecast Period)", color="black", linestyle="-", linewidth=2)
+
+# EMA - dotted
+plt.plot(forecast_df.loc[mask_fore, "Future Month"], 
+         forecast_df.loc[mask_fore, "Fut Vol. Attr Count_ema"], 
+         label="EMA Forecast", color="orange", linestyle="--", linewidth=2)
+
+# SMA - dotted
+plt.plot(forecast_df.loc[mask_fore, "Future Month"], 
+         forecast_df.loc[mask_fore, "Fut Vol. Attr Count_sma"], 
+         label="SMA Forecast", color="green", linestyle="--", linewidth=2)
+
+# =========================
+# Formatting
+# =========================
+plt.axvline(x=FORECAST_START, color="red", linestyle="--", alpha=0.7, label="Forecast Start")
+plt.xlabel("Month")
+plt.ylabel("Attrition Count")
+plt.title("Actual vs SMA & EMA Forecast - Attrition Count")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Ensure datetime format
+df["MONTH"] = pd.to_datetime(df["MONTH"])
+forecast_df["Future Month"] = pd.to_datetime(forecast_df["Future Month"])
+
 # Define cutoff (first forecast date)
 cutoff_date = forecast_df["Future Month"].min()
 
