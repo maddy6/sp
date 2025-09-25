@@ -1,0 +1,30 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Ensure datetime format
+df["MONTH"] = pd.to_datetime(df["MONTH"])
+forecast_df["Future Month"] = pd.to_datetime(forecast_df["Future Month"])
+
+plt.figure(figsize=(12,6))
+
+# === Actuals (History) ===
+plt.plot(df["MONTH"], df["Act Vol Attr Count"], 
+         label="Actual Attrition Count", color="blue", linewidth=2)
+
+# === Forecasts (Future) ===
+# EMA Forecast
+plt.plot(forecast_df["Future Month"], forecast_df["Fut Vol. Attr Count_ema"], 
+         label="EMA Forecast Attrition Count", color="orange", linestyle="--", linewidth=2)
+
+# SMA Forecast
+plt.plot(forecast_df["Future Month"], forecast_df["Fut Vol. Attr Count_sma"], 
+         label="SMA Forecast Attrition Count", color="green", linestyle="--", linewidth=2)
+
+# Labels and formatting
+plt.xlabel("Month")
+plt.ylabel("Attrition Count")
+plt.title("Actual vs SMA & EMA Forecast - Attrition Count")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.tight_layout()
+plt.show()
