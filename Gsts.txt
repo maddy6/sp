@@ -5,6 +5,69 @@ import pandas as pd
 df["MONTH"] = pd.to_datetime(df["MONTH"])
 forecast_df["Future Month"] = pd.to_datetime(forecast_df["Future Month"])
 
+# Define cutoff (first forecast date)
+cutoff_date = forecast_df["Future Month"].min()
+
+plt.figure(figsize=(12,6))
+
+# === Actuals (History) ===
+plt.plot(df["MONTH"], df["Act Vol Attr Count"], 
+         label="Actual Attrition Count", color="blue", linewidth=2)
+
+# === EMA Forecast ===
+# Pre-forecast part (solid)
+plt.plot(df["MONTH"][df["MONTH"] < cutoff_date], 
+         df["Act Vol Attr Count"].rolling(window=3).mean(),  # <-- if you stored EMA for history, replace this
+         color="orange", linewidth=2, label="EMA (Fitted)")
+
+# Forecast part (dashed)
+plt.plot(forecast_df["Future Month"], forecast_df["Fut Vol. Attr Count_ema"], 
+         color="orange", linestyle="--", linewidth=2, label="EMA Forecast")
+
+# === SMA Forecast ===
+# Pre-forecast part (solid)
+plt.plot(df["MONTH"][df["MONTH"] < cutoff_date], 
+         df["Act Vol Attr Count"].rolling(window=3).mean(),  # <-- if you stored SMA for history, replace this
+         color="green", linewidth=2, label="SMA (Fitted)")
+
+# Forecast part (dashed)
+plt.plot(forecast_df["Future Month"], forecast_df["Fut Vol. Attr Count_sma"], 
+         color="green", linestyle="--", linewidth=2, label="SMA Forecast")
+
+# Labels and formatting
+plt.xlabel("Month")
+plt.ylabel("Attrition Count")
+plt.title("Actual vs SMA & EMA Forecast (History + Forecast)")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Ensure datetime format
+df["MONTH"] = pd.to_datetime(df["MONTH"])
+forecast_df["Future Month"] = pd.to_datetime(forecast_df["Future Month"])
+
 plt.figure(figsize=(12,6))
 
 # === Actuals (History) ===
