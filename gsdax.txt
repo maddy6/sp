@@ -1,3 +1,102 @@
+# -----------------------
+# 1. Prepare combined data
+# -----------------------
+actual_df = df[['MONTH', 'BUSINESS_GROUPS_TA', 'MONTHLY_ATTRITION_RATE']].rename(
+    columns={'MONTH': 'Future Month',
+             'BUSINESS_GROUPS_TA': 'Business Group',
+             'MONTHLY_ATTRITION_RATE': 'Attrition Rate'}
+)
+actual_df['Type'] = 'Actual'
+
+def make_forecast_subset(col, label):
+    tmp = forecast_df[['Future Month', 'Business Group', col]].rename(
+        columns={col: 'Attrition Rate'}
+    )
+    tmp['Type'] = label
+    return tmp
+
+forecast_sma = make_forecast_subset('Fut Vol Attr. Month %_sma', 'Forecast_SMA')
+forecast_ema = make_forecast_subset('Fut Vol Attr. Month %_ema', 'Forecast_EMA')
+
+# combine
+plot_df = pd.concat([actual_df, forecast_sma, forecast_ema], ignore_index=True)
+plot_df['Future Month'] = pd.to_datetime(plot_df['Future Month'])
+
+# define forecast start date
+forecast_start_dt = pd.to_datetime(FORECAST_START)
+
+# -----------------------
+# 2. Plot with pre vs post styles
+# -----------------------
+plt.figure(figsize=(16, 8))
+
+colors = {
+    'Actual': 'black',
+    'Forecast_SMA': 'blue',
+    'Forecast_EMA': 'green'
+}
+
+groups = ['Banking']
+
+for g in groups:
+    sub = plot_df[plot_df['Business Group'] == g].sort_values('Future Month')
+
+    for typ in ['Actual', 'Forecast_SMA', 'Forecast_EMA']:
+        data = sub[sub['Type'] == typ]
+
+        if data.empty:
+            continue
+
+        # split pre and post forecast
+        pre = data[data['Future Month'] < forecast_start_dt]
+        post = data[data['Future Month'] >= forecast_start_dt]
+
+        # plot pre (solid)
+        if not pre.empty:
+            plt.plot(pre['Future Month'], pre['Attrition Rate'],
+                     color=colors[typ],
+                     linestyle='-',
+                     label=f"{typ} Pre" if typ != 'Actual' else "Actual")
+
+        # plot post (dotted for forecasts, solid for actual)
+        if not post.empty:
+            post_linestyle = '-' if typ == 'Actual' else '--'
+            plt.plot(post['Future Month'], post['Attrition Rate'],
+                     color=colors[typ],
+                     linestyle=post_linestyle,
+                     label=f"{typ} Forecast")
+
+plt.axvline(forecast_start_dt, color='gray', linestyle=':', linewidth=1)
+plt.title("Attrition Rate Actual vs SMA/EMA (Solid=History, Dotted=Forecast)")
+plt.xlabel("Month")
+plt.ylabel("Attrition Rate (%)")
+plt.legend(fontsize='small')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
