@@ -1,3 +1,205 @@
+import pandas as pd
+import numpy as np
+from sklearn.metrics import mean_absolute_percentage_error
+
+# ---------- 0. Helper & params (tune these) ----------
+ALPHA_BASE = 0.25     # EWMA alpha for baseline (0.25 = medium memory). Tune 0.05-0.5
+ALPHA_SHORT = 0.6     # EWMA alpha for short-term (trend numerator)
+ALPHA_LONG = 0.07     # EWMA alpha for long-term (trend denominator)
+SHRINK_K = 5.0        # shrinkage constant (higher -> more shrink to 1)
+WINSOR_P = 0.01       # winsorize tails on rates
+SEASON_SMOOTH_KERNEL = np.array([0.25, 0.5, 0.25])  # neighbor smoothing
+EPS = 1e-9
+
+# ---------- 1. Preprocess ----------
+df = df.copy()
+df['MONTH'] = df['MONTH'].astype(int)
+df['YEAR'] = df['YEAR'].astype(int)
+# If MONTH stored as YYYYMM:
+df['month_num'] = df['MONTH'] % 100
+# time index for ordering
+df['time_idx'] = df['YEAR'] * 100 + df['month_num']
+
+# compute rate (openings per headcount)
+df['rate'] = df['NEW_OPENINGS_COUNT'] / df['HEADCOUNT'].replace(0, np.nan)
+df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=['rate','HEADCOUNT'])
+
+# sort
+df = df.sort_values(['BUSINESS_GROUPS_TA','time_idx']).reset_index(drop=True)
+
+# ---------- 2. Winsorize rate per group to remove spikes (robust)
+def winsorize_group(g):
+    low = g['rate'].quantile(WINSOR_P)
+    high = g['rate'].quantile(1-WINSOR_P)
+    g['rate_w'] = g['rate'].clip(low, high)
+    return g
+df = df.groupby('BUSINESS_GROUPS_TA').apply(winsorize_group).reset_index(drop=True)
+
+# ---------- 3. Seasonal index (robust) per group-month ----------
+# median rate per (group, month)
+season_med = df.groupby(['BUSINESS_GROUPS_TA','month_num'])['rate_w'].median().unstack(fill_value=np.nan)
+
+# baseline group median (robust)
+group_med = df.groupby('BUSINESS_GROUPS_TA')['rate_w'].median()
+
+# seasonal multiplier = month_median / group_median (multiplicative)
+seasonal = season_med.div(group_med, axis=0).fillna(1.0)  # fill missing as neutral
+
+# smoothing across months (wrap-around)
+def smooth_row(arr):
+    # arr is length 12 (month 1..12). handle missing by treating NaN as 1
+    a = np.where(np.isnan(arr), 1.0, arr)
+    # wrap
+    a_roll_plus = np.roll(a, -1)
+    a_roll_minus = np.roll(a, 1)
+    sm = (SEASON_SMOOTH_KERNEL[0]*a_roll_minus +
+          SEASON_SMOOTH_KERNEL[1]*a +
+          SEASON_SMOOTH_KERNEL[2]*a_roll_plus)
+    return sm
+
+season_smoothed = seasonal.apply(lambda r: smooth_row(r.values), axis=1, result_type='expand')
+season_smoothed.columns = seasonal.columns
+
+# ---------- 4. Shrink seasonal index toward 1 based on observation counts ----------
+counts = df.groupby(['BUSINESS_GROUPS_TA','month_num'])['rate_w'].count().unstack(fill_value=0)
+# shrink weight lambda = n / (n + K) so when n small -> go toward 1
+lambda_w = counts / (counts + SHRINK_K)
+lambda_w = lambda_w.reindex_like(season_smoothed).fillna(0)
+season_shrunk = (lambda_w * season_smoothed) + ((1 - lambda_w) * 1.0)
+
+# ---------- 5. Baseline (EWMA last available) & trend (EWMA short/long ratio) ----------
+def compute_group_baseline_trend(g):
+    g = g.sort_values('time_idx').copy()
+    # EWMA baseline (alpha = ALPHA_BASE) on winsorized rate
+    g['ewm_base'] = g['rate_w'].ewm(alpha=ALPHA_BASE, adjust=False).mean()
+    g['ewm_short'] = g['rate_w'].ewm(alpha=ALPHA_SHORT, adjust=False).mean()
+    g['ewm_long'] = g['rate_w'].ewm(alpha=ALPHA_LONG, adjust=False).mean()
+    return g
+
+df = df.groupby('BUSINESS_GROUPS_TA').apply(compute_group_baseline_trend).reset_index(drop=True)
+
+# Get last baseline per group (to use for next-month forecast)
+last_baseline = df.groupby('BUSINESS_GROUPS_TA').apply(lambda g: g.iloc[-1]['ewm_base'] if len(g)>0 else np.nan)
+last_short = df.groupby('BUSINESS_GROUPS_TA').apply(lambda g: g.iloc[-1]['ewm_short'] if len(g)>0 else np.nan)
+last_long = df.groupby('BUSINESS_GROUPS_TA').apply(lambda g: g.iloc[-1]['ewm_long'] if len(g)>0 else np.nan)
+trend_ratio = (last_short / (last_long + EPS)).fillna(1.0).clip(lower=0.5, upper=1.5)  # cap extremes
+
+# ---------- 6. Forecast function for a target month (leave-last-month-out backtest uses this) ----------
+def forecast_for_target_month(df_train, df_target):
+    # df_train: train data (all months < target)
+    # df_target: rows for the target month (contains HEADCOUNT for month we want to predict)
+    # Build seasonal, baseline, trend from df_train
+    # 1) seasonal medians
+    season_med = df_train.groupby(['BUSINESS_GROUPS_TA','month_num'])['rate_w'].median().unstack(fill_value=np.nan)
+    group_med = df_train.groupby('BUSINESS_GROUPS_TA')['rate_w'].median()
+    seasonal = season_med.div(group_med, axis=0).fillna(1.0)
+    # smooth
+    season_smoothed = seasonal.apply(lambda r: smooth_row(r.values), axis=1, result_type='expand')
+    season_smoothed.columns = seasonal.columns
+    # counts & shrink
+    counts = df_train.groupby(['BUSINESS_GROUPS_TA','month_num'])['rate_w'].count().unstack(fill_value=0)
+    lambda_w = counts / (counts + SHRINK_K)
+    lambda_w = lambda_w.reindex_like(season_smoothed).fillna(0)
+    season_shrunk = (lambda_w * season_smoothed) + ((1 - lambda_w) * 1.0)
+    # baseline & trend from EWM
+    g_ewm = df_train.groupby('BUSINESS_GROUPS_TA').apply(compute_group_baseline_trend).reset_index(drop=True)
+    last_base = g_ewm.groupby('BUSINESS_GROUPS_TA').apply(lambda g: g.iloc[-1]['ewm_base'] if len(g)>0 else np.nan)
+    last_short = g_ewm.groupby('BUSINESS_GROUPS_TA').apply(lambda g: g.iloc[-1]['ewm_short'] if len(g)>0 else np.nan)
+    last_long = g_ewm.groupby('BUSINESS_GROUPS_TA').apply(lambda g: g.iloc[-1]['ewm_long'] if len(g)>0 else np.nan)
+    trend_ratio = (last_short / (last_long + EPS)).fillna(1.0).clip(lower=0.5, upper=1.5)
+
+    # fallback values (for unseen groups)
+    global_base = g_ewm['ewm_base'].median() if 'ewm_base' in g_ewm else df_train['rate_w'].median()
+    # build predictions
+    preds = []
+    for idx, row in df_target.iterrows():
+        g = row['BUSINESS_GROUPS_TA']
+        m = int(row['month_num'])
+        head = row['HEADCOUNT']
+        s = 1.0
+        if (g in season_shrunk.index) and (m in season_shrunk.columns):
+            s = season_shrunk.loc[g, m]
+            # if NaN, fallback to 1
+            if pd.isna(s):
+                s = 1.0
+        # baseline
+        base = last_base.get(g, np.nan)
+        if pd.isna(base):
+            base = global_base
+        trend = trend_ratio.get(g, 1.0)
+        # final predicted rate and count
+        pred_rate = base * s * trend
+        pred_count = pred_rate * head
+        preds.append(pred_count)
+    df_target = df_target.copy()
+    df_target['pred_count_simple'] = preds
+    return df_target
+
+# ---------- 7. Simple leave-last-month-out backtest ----------
+# We'll predict the latest MONTH value in your dataset using all earlier months.
+last_month = df['MONTH'].max()
+train = df[df['MONTH'] < last_month].copy()
+test = df[df['MONTH'] == last_month].copy()
+
+pred_df = forecast_for_target_month(train, test)
+# Evaluate MAPE (ignore rows with 0 actuals)
+mask = pred_df['NEW_OPENINGS_COUNT'] > 0
+mape = mean_absolute_percentage_error(pred_df.loc[mask, 'NEW_OPENINGS_COUNT'],
+                                      pred_df.loc[mask, 'pred_count_simple'])
+print("Simple seasonal+EWMA MAPE on last month:", mape)
+
+# See per-group errors
+pred_df['pct_err'] = (pred_df['pred_count_simple'] - pred_df['NEW_OPENINGS_COUNT']) / (pred_df['NEW_OPENINGS_COUNT'] + EPS) * 100
+display = pred_df[['BUSINESS_GROUPS_TA','NEW_OPENINGS_COUNT','pred_count_simple','pct_err']].sort_values('pct_err')
+print(display.head(20))
+
+# ---------- 8. If you want hyperparameter tuning (alpha, SHRINK_K) do a small grid search ----------
+def evaluate_params(df, alphas=[0.1,0.25,0.5], shrink_ks=[2,5,10]):
+    best = {'mape': 1e9, 'params':None}
+    # use simple holdout: last month as test
+    last_month = df['MONTH'].max()
+    train = df[df['MONTH'] < last_month].copy()
+    test = df[df['MONTH'] == last_month].copy()
+    for a in alphas:
+        for ks in shrink_ks:
+            global ALPHA_BASE, ALPHA_SHORT, ALPHA_LONG, SHRINK_K
+            ALPHA_BASE, ALPHA_SHORT, ALPHA_LONG, SHRINK_K = a, 0.6, 0.07, ks
+            pred = forecast_for_target_month(train, test)
+            mask = pred['NEW_OPENINGS_COUNT'] > 0
+            m = mean_absolute_percentage_error(pred.loc[mask, 'NEW_OPENINGS_COUNT'], pred.loc[mask, 'pred_count_simple'])
+            if m < best['mape']:
+                best = {'mape': m, 'params': (a, ks)}
+    return best
+
+# Uncomment to run tuning (may take a little while)
+#best = evaluate_params(df, alphas=[0.05,0.1,0.25,0.5], shrink_ks=[1,3,5,10])
+#print("Best:", best)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Forecast pipeline (run in Python 3.8+)
 # Required packages: pandas, numpy, statsmodels, scikit-learn, joblib
 # pip install pandas numpy statsmodels scikit-learn joblib
