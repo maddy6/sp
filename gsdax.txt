@@ -1,3 +1,81 @@
+
+def adaptive_forecast(df, start_forecast, end_forecast, base_span=3, method="EMA"):
+    df = df.copy()
+    df['MONTH'] = df['MONTH'].astype(int)
+    df['year'] = df['MONTH'] // 100
+    df['month_num'] = df['MONTH'] % 100
+    
+    # Rate per headcount
+    df['rate'] = df['NEW_OPENINGS_COUNT'] / df['HEADCOUNT']
+    
+    def compute_adaptive(x):
+        # rolling volatility
+        vol = x.pct_change().rolling(window=3, min_periods=1).std().fillna(0)
+        adj_span = (base_span / (1 + vol*10)).clip(lower=2, upper=12)  # dynamic span
+        
+        smoothed = []
+        ema_val = x.iloc[0]
+        for i, val in enumerate(x):
+            alpha = 2 / (adj_span.iloc[i] + 1)
+            ema_val = alpha * val + (1 - alpha) * ema_val
+            smoothed.append(ema_val)
+        return pd.Series(smoothed, index=x.index)
+    
+    df['baseline_rate'] = df.groupby('BUSINESS_GROUPS_TA')['rate'].transform(compute_adaptive)
+    
+    # Month weights on rate
+    df['ratio'] = df['rate'] / df['baseline_rate']
+    month_weights = df.groupby('month_num')['ratio'].mean().to_dict()
+    
+    # Forecast period
+    start_forecast = int(start_forecast)
+    end_forecast = int(end_forecast)
+    forecast_months = pd.period_range(str(start_forecast), str(end_forecast), freq="M").strftime("%Y%m").astype(int)
+    
+    forecast_df = pd.DataFrame({'MONTH': forecast_months})
+    business_groups = df['BUSINESS_GROUPS_TA'].unique()
+    forecast_df = forecast_df.merge(pd.DataFrame({'BUSINESS_GROUPS_TA': business_groups}), how='cross')
+    
+    forecast_df['year'] = forecast_df['MONTH'] // 100
+    forecast_df['month_num'] = forecast_df['MONTH'] % 100
+    
+    last_baseline = df.groupby('BUSINESS_GROUPS_TA')['baseline_rate'].last().to_dict()
+    forecast_df['baseline_rate'] = forecast_df['BUSINESS_GROUPS_TA'].map(last_baseline)
+    forecast_df['month_weight'] = forecast_df['month_num'].map(month_weights)
+    
+    # Use last headcount per group (can be extended to forecast headcount too)
+    last_headcount = df.groupby('BUSINESS_GROUPS_TA')['HEADCOUNT'].last().to_dict()
+    forecast_df['HEADCOUNT'] = forecast_df['BUSINESS_GROUPS_TA'].map(last_headcount)
+    
+    forecast_df['FORECAST_NEW_OPENINGS'] = (
+        forecast_df['baseline_rate'] *
+        forecast_df['month_weight'] *
+        forecast_df['HEADCOUNT']
+    )
+    
+    return df, forecast_df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
