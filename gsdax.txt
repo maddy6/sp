@@ -7,6 +7,143 @@ import numpy as np
 def forecast_with_ema_weights(df, start_forecast, end_forecast, span=3, method="EMA"):
     """
     df: DataFrame with columns ['BUSINESS_GROUPS_TA','NEW_OPENINGS_COUNT','HEADCOUNT','MONTH','YEAR']
+        - MONTH should be in YYYYMM format (int or str like 202504)
+    start_forecast, end_forecast: 'YYYYMM' format (e.g. 202504, 202512)
+    span: EMA/DEMA smoothing period
+    method: 'EMA' or 'DEMA'
+    """
+    df = df.copy()
+    
+    # Ensure MONTH is integer YYYYMM
+    df['MONTH'] = df['MONTH'].astype(int)
+    
+    # Extract year, month
+    df['year'] = df['MONTH'] // 100
+    df['month_num'] = df['MONTH'] % 100
+    
+    # -------------------------------
+    # Step 1. Compute EMA or DEMA baseline per group
+    # -------------------------------
+    def compute_smooth(x):
+        ema = x.ewm(span=span, adjust=False).mean()
+        if method == "EMA":
+            return ema
+        elif method == "DEMA":
+            ema2 = ema.ewm(span=span, adjust=False).mean()
+            return 2*ema - ema2
+        else:
+            raise ValueError("method must be 'EMA' or 'DEMA'")
+    
+    df['baseline'] = df.groupby('BUSINESS_GROUPS_TA')['NEW_OPENINGS_COUNT'].transform(compute_smooth)
+    
+    # -------------------------------
+    # Step 2. Month-wise weights
+    # -------------------------------
+    df['ratio'] = df['NEW_OPENINGS_COUNT'] / df['baseline']
+    month_weights = df.groupby('month_num')['ratio'].mean().to_dict()
+    
+    # -------------------------------
+    # Step 3. Group-year adjustment (bias correction)
+    # -------------------------------
+    group_year_bias = (
+        df.groupby(['BUSINESS_GROUPS_TA','year'])['ratio']
+        .mean()
+        .to_dict()
+    )
+    
+    # -------------------------------
+    # Step 4. Build forecast DataFrame
+    # -------------------------------
+    start_forecast = int(start_forecast)
+    end_forecast = int(end_forecast)
+    
+    # Generate YYYYMM sequence
+    forecast_months = pd.period_range(
+        str(start_forecast), str(end_forecast), freq="M"
+    ).strftime("%Y%m").astype(int)
+    
+    forecast_df = pd.DataFrame({'MONTH': forecast_months})
+    
+    # Cross join with business groups
+    business_groups = df['BUSINESS_GROUPS_TA'].unique()
+    forecast_df = forecast_df.merge(pd.DataFrame({'BUSINESS_GROUPS_TA': business_groups}), how='cross')
+    
+    # Extract year/month
+    forecast_df['year'] = forecast_df['MONTH'] // 100
+    forecast_df['month_num'] = forecast_df['MONTH'] % 100
+    
+    # -------------------------------
+    # Step 5. Get last baseline per group
+    # -------------------------------
+    last_baseline = df.groupby('BUSINESS_GROUPS_TA')['baseline'].last().to_dict()
+    forecast_df['baseline'] = forecast_df['BUSINESS_GROUPS_TA'].map(last_baseline)
+    
+    # Apply weights
+    forecast_df['month_weight'] = forecast_df['month_num'].map(month_weights)
+    forecast_df['group_year_weight'] = forecast_df.apply(
+        lambda row: group_year_bias.get((row['BUSINESS_GROUPS_TA'], row['year']), 1.0), axis=1
+    )
+    
+    # Final forecast
+    forecast_df['FORECAST_NEW_OPENINGS'] = (
+        forecast_df['baseline'] *
+        forecast_df['month_weight'] *
+        forecast_df['group_year_weight']
+    )
+    
+    return df, forecast_df
+
+# -------------------------------
+# 🔹 Example Usage
+# -------------------------------
+# Suppose your dataframe is called df
+
+historical_df, forecast_df = forecast_with_ema_weights(
+    df, 
+    start_forecast="202504", 
+    end_forecast="202512", 
+    span=3, 
+    method="DEMA"   # or "EMA"
+)
+
+print("✅ Historical with baselines:")
+print(historical_df.head())
+
+print("\n✅ Forecasted values:")
+print(forecast_df.head())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
+# -------------------------------
+# 🔹 Forecast function
+# -------------------------------
+def forecast_with_ema_weights(df, start_forecast, end_forecast, span=3, method="EMA"):
+    """
+    df: DataFrame with columns ['BUSINESS_GROUPS_TA','NEW_OPENINGS_COUNT','HEADCOUNT','MONTH','YEAR']
     start_forecast, end_forecast: 'YYYY-MM' format for forecast horizon
     span: EMA/DEMA smoothing period
     method: 'EMA' or 'DEMA'
