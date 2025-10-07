@@ -1,3 +1,133 @@
+import pandas as pd
+import numpy as np
+
+def adaptive_forecast(df, start_forecast, end_forecast, base_span=3, method="EMA"):
+    df = df.copy()
+    df['MONTH'] = df['MONTH'].astype(int)
+    df['year'] = df['MONTH'] // 100
+    df['month_num'] = df['MONTH'] % 100
+    
+    # ---------------------------
+    # 1️⃣  Rate per headcount
+    # ---------------------------
+    df['rate'] = df['NEW_OPENINGS_COUNT'] / df['HEADCOUNT']
+    
+    # ---------------------------
+    # 2️⃣  Adaptive smoothing based on volatility
+    # ---------------------------
+    def compute_adaptive(x):
+        vol = x.pct_change().rolling(window=3, min_periods=1).std().fillna(0)
+        adj_span = (base_span / (1 + vol*10)).clip(lower=2, upper=12)
+        
+        smoothed = []
+        ema_val = x.iloc[0]
+        for i, val in enumerate(x):
+            alpha = 2 / (adj_span.iloc[i] + 1)
+            ema_val = alpha * val + (1 - alpha) * ema_val
+            smoothed.append(ema_val)
+        return pd.Series(smoothed, index=x.index)
+    
+    df['baseline_rate'] = df.groupby('BUSINESS_GROUPS_TA')['rate'].transform(compute_adaptive)
+    
+    # ---------------------------
+    # 3️⃣  Month-wise seasonality weights
+    # ---------------------------
+    df['ratio'] = df['rate'] / df['baseline_rate']
+    month_weights = df.groupby('month_num')['ratio'].mean().to_dict()
+    
+    # ---------------------------
+    # 4️⃣  Forecast month frame
+    # ---------------------------
+    start_forecast = int(start_forecast)
+    end_forecast = int(end_forecast)
+    forecast_months = pd.period_range(str(start_forecast), str(end_forecast), freq="M").strftime("%Y%m").astype(int)
+    
+    forecast_df = pd.DataFrame({'MONTH': forecast_months})
+    business_groups = df['BUSINESS_GROUPS_TA'].unique()
+    forecast_df = forecast_df.merge(pd.DataFrame({'BUSINESS_GROUPS_TA': business_groups}), how='cross')
+    
+    forecast_df['year'] = forecast_df['MONTH'] // 100
+    forecast_df['month_num'] = forecast_df['MONTH'] % 100
+    
+    # ---------------------------
+    # 5️⃣  Carry forward last baseline & headcount
+    # ---------------------------
+    last_baseline = df.groupby('BUSINESS_GROUPS_TA')['baseline_rate'].last().to_dict()
+    forecast_df['baseline_rate'] = forecast_df['BUSINESS_GROUPS_TA'].map(last_baseline)
+    forecast_df['month_weight'] = forecast_df['month_num'].map(month_weights)
+    
+    last_headcount = df.groupby('BUSINESS_GROUPS_TA')['HEADCOUNT'].last().to_dict()
+    forecast_df['HEADCOUNT'] = forecast_df['BUSINESS_GROUPS_TA'].map(last_headcount)
+    
+    # ---------------------------
+    # 6️⃣  Adaptive forecast (your original)
+    # ---------------------------
+    forecast_df['FORECAST_NEW_OPENINGS'] = (
+        forecast_df['baseline_rate'] *
+        forecast_df['month_weight'] *
+        forecast_df['HEADCOUNT']
+    )
+    
+    # ---------------------------
+    # 7️⃣  Simple EMA (span=3) baseline forecast
+    # ---------------------------
+    # Compute per business group EMA of historical rate
+    ema_baseline = (
+        df.groupby('BUSINESS_GROUPS_TA')['rate']
+          .apply(lambda x: x.ewm(span=3, adjust=False).mean().iloc[-1])
+          .to_dict()
+    )
+    
+    forecast_df['ema_baseline'] = forecast_df['BUSINESS_GROUPS_TA'].map(ema_baseline)
+    forecast_df['ema_forecast'] = (
+        forecast_df['ema_baseline'] *
+        forecast_df['month_weight'] *
+        forecast_df['HEADCOUNT']
+    )
+    
+    return df, forecast_df
+
+
+# -------------------------------
+# 🔹 Example Usage
+# -------------------------------
+# historical_df, forecast_df = adaptive_forecast(
+#     df, 
+#     start_forecast="202504", 
+#     end_forecast="202512", 
+#     base_span=3,  
+#     method="DEMA"
+# )
+# 
+# print("✅ Historical with baselines:")
+# print(historical_df.head())
+# 
+# print("\n✅ Forecasted values:")
+# print(forecast_df.head())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def adaptive_forecast(df, start_forecast, end_forecast, base_span=3, method="EMA"):
     df = df.copy()
