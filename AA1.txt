@@ -1,3 +1,101 @@
+SET SERVEROUTPUT ON
+DECLARE
+    v_sql   CLOB;
+BEGIN
+    -- 1️⃣ Drop existing summary table if it exists
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP TABLE POSITION_MISMATCH_SUMMARY';
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL; -- ignore if table doesn’t exist
+    END;
+
+    -- 2️⃣ Create new summary table
+    EXECUTE IMMEDIATE '
+        CREATE TABLE POSITION_MISMATCH_SUMMARY (
+            POSITION_ID VARCHAR2(200),
+            MISMATCHED_COLUMNS VARCHAR2(4000)
+        )
+    ';
+
+    -- 3️⃣ Start building dynamic SQL with PERIOD filter
+    v_sql := 'INSERT INTO POSITION_MISMATCH_SUMMARY
+              SELECT a.POSITION_ID, ';
+
+    -- Generate CASE expressions for mismatched columns
+    FOR rec IN (
+        SELECT COLUMN_NAME
+        FROM USER_TAB_COLUMNS
+        WHERE TABLE_NAME = 'WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION'
+          AND COLUMN_NAME NOT IN ('POSITION_ID', 'PERIOD')
+        ORDER BY COLUMN_ID
+    )
+    LOOP
+        v_sql := v_sql ||
+            'CASE WHEN NVL(a.' || rec.COLUMN_NAME || ', ''X'') != NVL(b.' || rec.COLUMN_NAME || ', ''X'') 
+                  THEN ''' || rec.COLUMN_NAME || ' '' ELSE '''' END || ';
+    END LOOP;
+
+    -- Trim trailing concatenation operator
+    v_sql := RTRIM(v_sql, ' || ');
+
+    -- Add FROM, JOIN, and WHERE with PERIOD filter
+    v_sql := v_sql || ' AS MISMATCHED_COLUMNS
+        FROM WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION a
+        JOIN WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION_PYTHON b
+          ON a.POSITION_ID = b.POSITION_ID
+         AND a.PERIOD = b.PERIOD
+        WHERE a.PERIOD = TO_DATE(''10/27/2025'', ''MM/DD/YYYY'')
+          AND (';
+
+    -- Generate WHERE clause dynamically for column mismatches
+    FOR rec IN (
+        SELECT COLUMN_NAME
+        FROM USER_TAB_COLUMNS
+        WHERE TABLE_NAME = 'WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION'
+          AND COLUMN_NAME NOT IN ('POSITION_ID', 'PERIOD')
+        ORDER BY COLUMN_ID
+    )
+    LOOP
+        v_sql := v_sql || 'NVL(a.' || rec.COLUMN_NAME || ', ''X'') != NVL(b.' || rec.COLUMN_NAME || ', ''X'') OR ';
+    END LOOP;
+
+    -- Trim trailing OR and close parentheses
+    v_sql := RTRIM(v_sql, ' OR ') || ')';
+
+    -- 4️⃣ Execute the dynamic comparison SQL
+    EXECUTE IMMEDIATE v_sql;
+
+    DBMS_OUTPUT.PUT_LINE('✅ Comparison completed successfully for PERIOD = 10/27/2025');
+    DBMS_OUTPUT.PUT_LINE('➡️  Use: SELECT * FROM POSITION_MISMATCH_SUMMARY;');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('❌ Error: ' || SQLERRM);
+END;
+/
+
+
+SELECT * FROM POSITION_MISMATCH_SUMMARY;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Top Interaction Features with Formulas & Explanations
 1. Velocity-Based Fraud Indicators
 (i) Transaction Count Acceleration
@@ -300,5 +398,6 @@ Copy
 Edit
 h2o_df["bayesian_mcc_risk"] = h2o_df["hct_term_mcc_bayesian_encoded_5"] / (h2o_df["tot_cnt_7days"] + 1)
 h2o_df["bayesian_avs_risk"] = h2o_df["ucm_avs_resp_bayesian_encoded_5"] / (h2o_df["tot_cnt_7days"] + 1)
+
 
 
