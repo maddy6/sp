@@ -1,3 +1,113 @@
+SELECT POSITION_ID, 'MISSING_IN_PYTHON' AS STATUS
+FROM WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION
+WHERE POSITION_ID NOT IN (
+    SELECT POSITION_ID FROM WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION_PYTHON
+)
+UNION ALL
+SELECT POSITION_ID, 'EXTRA_IN_PYTHON' AS STATUS
+FROM WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION_PYTHON
+WHERE POSITION_ID NOT IN (
+    SELECT POSITION_ID FROM WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION
+);
+
+
+
+
+
+
+
+
+
+
+
+SET SERVEROUTPUT ON
+DECLARE
+    v_sql   CLOB;
+BEGIN
+    -- 1️⃣ Drop existing summary table if exists
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP TABLE POSITION_MISMATCH_SUMMARY';
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL; -- ignore if table doesn’t exist
+    END;
+
+    -- 2️⃣ Create new summary table
+    EXECUTE IMMEDIATE '
+        CREATE TABLE POSITION_MISMATCH_SUMMARY (
+            POSITION_ID VARCHAR2(200),
+            MISMATCHED_COLUMNS VARCHAR2(4000)
+        )
+    ';
+
+    -- 3️⃣ Start building dynamic comparison SQL
+    v_sql := 'INSERT INTO POSITION_MISMATCH_SUMMARY
+              SELECT a.POSITION_ID, ';
+
+    -- Generate CASE-based concatenation for mismatched columns
+    FOR rec IN (
+        SELECT COLUMN_NAME
+        FROM USER_TAB_COLUMNS
+        WHERE TABLE_NAME = 'WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION'
+          AND COLUMN_NAME <> 'POSITION_ID'
+        ORDER BY COLUMN_ID
+    )
+    LOOP
+        v_sql := v_sql ||
+            'CASE WHEN NVL(a.' || rec.COLUMN_NAME || ', ''X'') != NVL(b.' || rec.COLUMN_NAME || ', ''X'') 
+                  THEN ''' || rec.COLUMN_NAME || ' '' ELSE '''' END || ';
+    END LOOP;
+
+    -- Remove trailing concatenation operator
+    v_sql := RTRIM(v_sql, ' || ');
+
+    -- Continue query body
+    v_sql := v_sql || ' AS MISMATCHED_COLUMNS
+        FROM WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION a
+        JOIN WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION_PYTHON b
+          ON a.POSITION_ID = b.POSITION_ID
+        WHERE ';
+
+    -- Generate WHERE clause dynamically
+    FOR rec IN (
+        SELECT COLUMN_NAME
+        FROM USER_TAB_COLUMNS
+        WHERE TABLE_NAME = 'WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION'
+          AND COLUMN_NAME <> 'POSITION_ID'
+        ORDER BY COLUMN_ID
+    )
+    LOOP
+        v_sql := v_sql || 'NVL(a.' || rec.COLUMN_NAME || ', ''X'') != NVL(b.' || rec.COLUMN_NAME || ', ''X'') OR ';
+    END LOOP;
+
+    -- Remove trailing OR
+    v_sql := RTRIM(v_sql, ' OR ');
+
+    -- 4️⃣ Execute the dynamic SQL
+    EXECUTE IMMEDIATE v_sql;
+
+    DBMS_OUTPUT.PUT_LINE('✅ Comparison completed successfully.');
+    DBMS_OUTPUT.PUT_LINE('➡️  Use: SELECT * FROM POSITION_MISMATCH_SUMMARY;');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('❌ Error: ' || SQLERRM);
+END;
+/
+
+
+
+SELECT * FROM POSITION_MISMATCH_SUMMARY;
+
+
+
+
+
+
+
+
+
+
+
 Here's a technical 2-liner description for each fraud detection feature based on the formulas:
 
 1. high_dollar_velocity_3hr:
@@ -426,3 +536,4 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
