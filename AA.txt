@@ -1,3 +1,51 @@
+import pandas as pd
+
+key = 'POSITION_ID'
+
+# --- Step 1: Filter only duplicates
+dupes = df[df.duplicated(subset=[key], keep=False)].copy()
+
+# --- Step 2: Group and find differences
+records = []
+
+for pid, group in dupes.groupby(key):
+    group = group.reset_index(drop=True)
+    diff_cols = [col for col in group.columns if col != key and group[col].nunique(dropna=False) > 1]
+
+    if diff_cols:
+        diff_data = {}
+        diff_data[key] = pid
+        diff_data['Columns_Not_Matching'] = ', '.join(diff_cols)
+
+        # Collect differing values for each mismatched column
+        for col in diff_cols:
+            diff_data[f'{col}_Values'] = group[col].astype(str).unique().tolist()
+
+        records.append(diff_data)
+
+# --- Step 3: Create result DataFrame
+mismatch_report = pd.DataFrame(records)
+
+print("\n⚠️ Duplicate IDs with non-matching column values:")
+print(mismatch_report)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import pandas as pd
 
@@ -807,6 +855,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
