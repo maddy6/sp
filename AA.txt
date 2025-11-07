@@ -1,3 +1,59 @@
+import pandas as pd
+import numpy as np
+
+# Example: df1 and df2 already loaded (from Excel or other sources)
+# Common key column
+key = 'POSITION_ID'
+
+# Align on POSITION_ID to ensure same row order for comparison
+df1 = df1.set_index(key).sort_index()
+df2 = df2.set_index(key).sort_index()
+
+# Ensure both have same columns
+common_cols = df1.columns.intersection(df2.columns)
+
+# Compare values treating NaN/None as equal
+comparison = (df1[common_cols].fillna('__NULL__') == df2[common_cols].fillna('__NULL__'))
+
+# Summary per column
+summary = comparison.sum().to_frame(name='Matching_Count')
+summary['Total_Rows'] = len(comparison)
+summary['Match_%'] = (summary['Matching_Count'] / summary['Total_Rows'] * 100).round(2)
+
+# Identify mismatched rows for detailed check
+mismatch_details = (
+    ~comparison
+).any(axis=1)
+
+mismatch_report = pd.DataFrame({
+    key: df1.index[mismatch_details],
+    'Columns_Not_Matching': comparison.columns[~comparison.loc[mismatch_details].all()].tolist()
+})
+
+# Final summary output
+print("\n🔍 Column-wise match summary:")
+print(summary)
+
+print("\n⚠️ Mismatch details (rows where at least one column differs):")
+print(mismatch_report)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import pandas as pd
 
@@ -701,6 +757,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
