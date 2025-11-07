@@ -1,3 +1,51 @@
+SELECT
+    a.POSITION_ID,
+    CASE
+        WHEN a.POSITION_NAME != b.POSITION_NAME THEN 'POSITION_NAME'
+        WHEN a.MANAGER_NAME  != b.MANAGER_NAME  THEN 'MANAGER_NAME'
+        WHEN a.COUNTRY       != b.COUNTRY       THEN 'COUNTRY'
+        WHEN a.DEPARTMENT    != b.DEPARTMENT    THEN 'DEPARTMENT'
+        WHEN a.LEVEL         != b.LEVEL         THEN 'LEVEL'
+    END AS MISMATCH_COLUMN
+FROM WFA_APP_USR_TALD.BASE_WD_REPORT_VIEW_POSITION a
+JOIN WFA_APP_USR_TALD.BASE_WD_REPORT_VIEW_POSITION_PYTHON b
+  ON a.POSITION_ID = b.POSITION_ID
+WHERE a.PERIOD = '10/27/2025'
+  AND b.PERIOD = '10/27/2025'
+  AND (
+        a.POSITION_NAME != b.POSITION_NAME OR
+        a.MANAGER_NAME  != b.MANAGER_NAME OR
+        a.COUNTRY       != b.COUNTRY OR
+        a.DEPARTMENT    != b.DEPARTMENT OR
+        a.LEVEL         != b.LEVEL
+      );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 SELECT POSITION_ID, 'MISSING_IN_PYTHON' AS STATUS
 FROM WFA_APP_USR_TALD_BASE_WD_REPORT_VIEW_POSITION
 WHERE POSITION_ID NOT IN (
@@ -536,4 +584,5 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
