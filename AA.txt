@@ -1,4 +1,54 @@
 import pandas as pd
+import numpy as np
+
+# Ensure same column order
+df1 = df1[df2.columns]
+
+# Compare element-wise
+comparison = df1 == df2
+
+# Rows where any column differs
+diff_rows = ~comparison.all(axis=1)
+
+# Show rows that differ
+diff_report = pd.concat(
+    [df1[diff_rows].add_prefix('df1_'), df2[diff_rows].add_prefix('df2_')],
+    axis=1
+)
+
+print("Total rows mismatched:", diff_rows.sum())
+display(diff_report)
+
+
+
+
+
+mismatch_details = {}
+
+for idx in df1.index:
+    mismatched_cols = df1.columns[df1.loc[idx] != df2.loc[idx]].tolist()
+    if mismatched_cols:
+        mismatch_details[idx] = mismatched_cols
+
+print("Mismatched rows and columns:")
+for i, cols in mismatch_details.items():
+    print(f"Row {i}: columns {cols}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 
 key = 'POSITION_ID'
 
@@ -855,6 +905,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
