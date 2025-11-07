@@ -1,3 +1,55 @@
+
+import pandas as pd
+
+# Example: assuming df1 and df2 have same columns including POSITION_ID
+
+# Merge both dataframes on POSITION_ID
+merged = df1.merge(df2, on='POSITION_ID', suffixes=('_df1', '_df2'))
+
+# List of columns to compare (excluding POSITION_ID)
+columns_to_compare = [col for col in df1.columns if col != 'POSITION_ID']
+
+# For each column, check if they match
+for col in columns_to_compare:
+    merged[f'{col}_MATCH'] = merged[f'{col}_df1'] == merged[f'{col}_df2']
+
+# Compute summary match status per POSITION_ID
+summary = merged[['POSITION_ID'] + [f'{col}_MATCH' for col in columns_to_compare]]
+
+# Add an overall flag if all columns matched
+summary['ALL_COLUMNS_MATCH'] = summary[[f'{col}_MATCH' for col in columns_to_compare]].all(axis=1)
+
+# Display result
+print(summary)
+
+
+
+
+
+mismatched = summary[~summary['ALL_COLUMNS_MATCH']]
+print(mismatched)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 SET SERVEROUTPUT ON;
 
 DECLARE
@@ -649,6 +701,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
