@@ -1,3 +1,53 @@
+
+import pandas as pd
+
+key = 'POSITION_ID'
+
+# --- Find duplicates
+dupes = df[df.duplicated(subset=[key], keep=False)].copy()
+
+# --- Group by POSITION_ID and check if all rows within that group are identical
+# We do this by comparing number of unique rows per group
+def check_group_identical(group):
+    return group.drop(columns=[key]).nunique(dropna=False).eq(1).all()
+
+duplicate_summary = (
+    dupes.groupby(key)
+         .apply(check_group_identical)
+         .reset_index(name='All_Columns_Same')
+)
+
+# --- Split into two categories
+true_duplicates = duplicate_summary[duplicate_summary['All_Columns_Same']]
+conflicting_duplicates = duplicate_summary[~duplicate_summary['All_Columns_Same']]
+
+print("\n✅ True duplicates (completely identical rows):")
+print(true_duplicates)
+
+print("\n⚠️ Conflicting duplicates (same ID, but different column values):")
+print(conflicting_duplicates)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
@@ -757,6 +807,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
