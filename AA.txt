@@ -1,3 +1,68 @@
+SET SERVEROUTPUT ON;
+
+DECLARE
+    v_sql CLOB := '';
+BEGIN
+    FOR rec IN (
+        SELECT column_name
+        FROM all_tab_columns
+        WHERE owner = 'WFA_APP_USR_TALD'
+          AND table_name = 'BASE_WD_REPORT_VIEW_POSITION'
+          AND column_name <> 'PERIOD'  -- ignore period filter column
+          AND column_name <> 'POSITION_ID'  -- key column
+        ORDER BY column_id
+    ) LOOP
+        v_sql := v_sql || 'WHEN a.' || rec.column_name || ' <> b.' || rec.column_name ||
+                 ' THEN ''' || rec.column_name || '''' || CHR(10);
+    END LOOP;
+
+    DBMS_OUTPUT.PUT_LINE('--- Generated Comparison Query ---');
+    DBMS_OUTPUT.PUT_LINE('SELECT a.POSITION_ID, CASE ' || CHR(10) || v_sql || 
+        ' END AS MISMATCH_COLUMN
+FROM WFA_APP_USR_TALD.BASE_WD_REPORT_VIEW_POSITION a
+JOIN WFA_APP_USR_TALD.BASE_WD_REPORT_VIEW_POSITION_PYTHON b
+  ON a.POSITION_ID = b.POSITION_ID
+WHERE a.PERIOD = ''10/27/2025''
+  AND b.PERIOD = ''10/27/2025''
+  AND ( ');
+
+    FOR rec IN (
+        SELECT column_name
+        FROM all_tab_columns
+        WHERE owner = 'WFA_APP_USR_TALD'
+          AND table_name = 'BASE_WD_REPORT_VIEW_POSITION'
+          AND column_name <> 'PERIOD'
+          AND column_name <> 'POSITION_ID'
+        ORDER BY column_id
+    ) LOOP
+        v_sql := v_sql || 'a.' || rec.column_name || ' <> b.' || rec.column_name || ' OR ';
+    END LOOP;
+
+    DBMS_OUTPUT.PUT_LINE(RTRIM(v_sql, ' OR ') || ' );');
+END;
+/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 SELECT
     a.POSITION_ID,
     CASE
@@ -584,5 +649,6 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
