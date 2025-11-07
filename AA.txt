@@ -1,6 +1,117 @@
 import pandas as pd
 import numpy as np
 
+# Ensure same shape, column order, and reset index
+df1 = df1.reset_index(drop=True)
+df2 = df2.reset_index(drop=True)
+df1 = df1[df2.columns]
+
+# Compare while treating NaN/None as equal
+comparison = (df1.eq(df2)) | (df1.isna() & df2.isna())
+
+# Find rows with any mismatched column
+diff_rows = ~comparison.all(axis=1)
+
+records = []
+
+# Loop through mismatched rows
+for idx in df1.index[diff_rows]:
+    mismatched_cols = df1.columns[~comparison.loc[idx]].tolist()
+    row_data = {
+        "Row_Index": idx,
+        "Mismatched_Columns": mismatched_cols
+    }
+    
+    # Add mismatched column values side-by-side
+    for col in mismatched_cols:
+        row_data[f"df1_{col}"] = df1.at[idx, col]
+        row_data[f"df2_{col}"] = df2.at[idx, col]
+    
+    records.append(row_data)
+
+# Create the mismatch summary dataframe
+mismatch_df = pd.DataFrame(records)
+
+print(f"✅ Total mismatched rows: {len(mismatch_df)}")
+display(mismatch_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+
+# Ensure same column order and length
+df1 = df1.reset_index(drop=True)
+df2 = df2.reset_index(drop=True)
+df1 = df1[df2.columns]
+
+# Identify mismatched rows
+comparison = df1 == df2
+diff_rows = ~comparison.all(axis=1)
+
+# Collect mismatched info
+records = []
+
+for idx in df1.index[diff_rows]:
+    mismatched_cols = df1.columns[df1.loc[idx] != df2.loc[idx]].tolist()
+    row_data = {
+        "Row_Index": idx,
+        "Mismatched_Columns": mismatched_cols
+    }
+    
+    # Add df1 and df2 values for mismatched columns only
+    for col in mismatched_cols:
+        row_data[f"df1_{col}"] = df1.at[idx, col]
+        row_data[f"df2_{col}"] = df2.at[idx, col]
+    
+    records.append(row_data)
+
+# Create the summary dataframe
+mismatch_df = pd.DataFrame(records)
+
+print(f"Total mismatched rows: {len(mismatch_df)}")
+display(mismatch_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
 # Ensure same column order
 df1 = df1[df2.columns]
 
@@ -905,6 +1016,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
