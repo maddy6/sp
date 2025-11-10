@@ -1,3 +1,44 @@
+# -----------------------
+# PARAMETERS
+# -----------------------
+HC_REFERENCE_MONTH = "2024-12"  # <-- You can change this month as per your reference
+# -----------------------
+
+# Convert to datetime for comparison
+hc_ref_dt = pd.to_datetime(HC_REFERENCE_MONTH + "-01")
+
+# last known headcount from specific reference month (fallbacks handled)
+pre_forecast_hc_series = grp[grp.index == hc_ref_dt]['HEADCOUNT']
+
+if not pre_forecast_hc_series.empty:
+    # Use HC from the reference month directly
+    last_known_hc = pre_forecast_hc_series.iloc[-1]
+else:
+    # Fallback to last available before forecast start
+    pre_forecast_hc_series = grp[grp.index < pd.to_datetime(FORECAST_START)]['HEADCOUNT']
+    if not pre_forecast_hc_series.empty:
+        last_known_hc = pre_forecast_hc_series.iloc[-1]
+    else:
+        # Final fallback to latest known in dataset
+        last_known_hc = grp['HEADCOUNT'].iloc[-1] if (not grp['HEADCOUNT'].empty) else BASE_MONTH_HC
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
@@ -1328,6 +1369,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
