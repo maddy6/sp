@@ -1,6 +1,110 @@
 import pandas as pd
 import numpy as np
 
+# Step 1: Replace None with NaN for consistency
+df1 = df1.replace({None: np.nan})
+df2 = df2.replace({None: np.nan})
+
+# Step 2: Sort by all columns (so identical rows align)
+df1_sorted = df1.sort_values(by=list(df1.columns)).reset_index(drop=True)
+df2_sorted = df2.sort_values(by=list(df2.columns)).reset_index(drop=True)
+
+# Step 3: Ensure same columns and shape
+assert list(df1_sorted.columns) == list(df2_sorted.columns), "❌ Column names differ!"
+assert df1_sorted.shape == df2_sorted.shape, "❌ Row counts differ!"
+
+# Step 4: Normalize values — handle numeric equivalence (-64.0 == -64)
+def normalize_value(v):
+    if pd.isna(v):
+        return np.nan
+    # Convert strings that look numeric
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except ValueError:
+            return v.strip()
+    # Convert ints to float for fair comparison
+    if isinstance(v, (int, np.integer)):
+        return float(v)
+    return v
+
+df1_sorted = df1_sorted.applymap(normalize_value)
+df2_sorted = df2_sorted.applymap(normalize_value)
+
+# Step 5: Compare DataFrames row by row
+mismatch_records = []
+
+for i in range(len(df1_sorted)):
+    row1 = df1_sorted.iloc[i]
+    row2 = df2_sorted.iloc[i]
+    
+    # Create a pseudo-row identifier (like hash of all values)
+    row_identifier = f"ROW_{i+1}"
+    
+    for col in df1_sorted.columns:
+        val1, val2 = row1[col], row2[col]
+        
+        # Skip if both NaN
+        if pd.isna(val1) and pd.isna(val2):
+            continue
+        
+        # Compare numeric types safely
+        if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
+            if not np.isclose(val1, val2, equal_nan=True):
+                mismatch_records.append({'Row': row_identifier, 'Column': col, 'df1_Value': val1, 'df2_Value': val2})
+        else:
+            if val1 != val2:
+                mismatch_records.append({'Row': row_identifier, 'Column': col, 'df1_Value': val1, 'df2_Value': val2})
+
+# Step 6: Create final mismatch DataFrame
+mismatch_df = pd.DataFrame(mismatch_records)
+
+if mismatch_df.empty:
+    print("✅ All rows and columns match perfectly!")
+else:
+    print(f"❌ Found {len(mismatch_df)} mismatches:")
+    display(mismatch_df)
+
+
+
+
+
+
+
+
+
+
+
+
+df1_sorted['ROW_HASH'] = df1_sorted.astype(str).agg('|'.join, axis=1)
+df2_sorted['ROW_HASH'] = df2_sorted.astype(str).agg('|'.join, axis=1)
+
+common = set(df1_sorted['ROW_HASH']).intersection(set(df2_sorted['ROW_HASH']))
+print(f"✅ {len(common)} rows are exactly matching by all column values.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
 # Step 1: Sort both DataFrames by SOEID
 df1_sorted = df1.sort_values(by='SOEID').reset_index(drop=True)
 df2_sorted = df2.sort_values(by='SOEID').reset_index(drop=True)
@@ -1224,6 +1328,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
