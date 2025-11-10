@@ -1,6 +1,73 @@
 import pandas as pd
 import numpy as np
 
+# Step 1: Sort both DataFrames by SOEID
+df1_sorted = df1.sort_values(by='SOEID').reset_index(drop=True)
+df2_sorted = df2.sort_values(by='SOEID').reset_index(drop=True)
+
+# Step 2: Ensure NaN consistency (treat None as NaN)
+df1_sorted = df1_sorted.replace({None: np.nan})
+df2_sorted = df2_sorted.replace({None: np.nan})
+
+# Step 3: Ensure both DataFrames have same columns and shape
+assert list(df1_sorted.columns) == list(df2_sorted.columns), "❌ Column names differ!"
+assert df1_sorted.shape == df2_sorted.shape, "❌ Shapes differ!"
+
+# Step 4: Identify mismatched cells
+mismatch_records = []
+
+for i in range(len(df1_sorted)):
+    soe_id = df1_sorted.iloc[i]['SOEID']
+    row1 = df1_sorted.iloc[i]
+    row2 = df2_sorted.iloc[i]
+    
+    for col in df1_sorted.columns:
+        val1, val2 = row1[col], row2[col]
+        
+        # Compare NaN safely
+        if (pd.isna(val1) and pd.isna(val2)):
+            continue
+        elif val1 != val2:
+            mismatch_records.append({
+                'SOEID': soe_id,
+                'Column': col,
+                'df1_Value': val1,
+                'df2_Value': val2
+            })
+
+# Step 5: Create DataFrame of mismatches
+mismatch_df = pd.DataFrame(mismatch_records)
+
+if mismatch_df.empty:
+    print("✅ All rows and columns match perfectly!")
+else:
+    print("❌ Found mismatches:")
+    display(mismatch_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
 # Step 1: Sort both dataframes by SOE_ID
 df1_sorted = df1.sort_values(by="SOE_ID").reset_index(drop=True)
 df2_sorted = df2.sort_values(by="SOE_ID").reset_index(drop=True)
@@ -1068,6 +1135,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
