@@ -1,3 +1,88 @@
+import pandas as pd
+
+# === Step 1. Read all sheets ===
+file_path = "TopDataDict_WFA_APP_USR_TALD_test.xlsx"
+xls = pd.ExcelFile(file_path)
+
+# The first sheet is the main sheet
+main_sheet_name = xls.sheet_names[0]
+main_df = pd.read_excel(xls, main_sheet_name)
+
+# === Step 2. Find tables assigned to 'Mayur' ===
+mayur_tables = main_df.loc[main_df['Assigned to'] == 'Mayur', 'L4_TABLE_LIST'].dropna().tolist()
+print("Tables assigned to Mayur:", mayur_tables)
+
+# === Step 3. Build a global COLUMN_NAME → DESCRIPTION mapping from all other sheets ===
+global_desc_map = {}
+
+for sheet in xls.sheet_names[1:]:  # skip main sheet
+    df = pd.read_excel(xls, sheet)
+    # ensure relevant columns exist
+    if {'COLUMN_NAME', 'DESCRIPTION'}.issubset(df.columns):
+        for _, row in df[['COLUMN_NAME', 'DESCRIPTION']].dropna().iterrows():
+            col_name = str(row['COLUMN_NAME']).strip()
+            desc = str(row['DESCRIPTION']).strip()
+            if col_name and desc:
+                # Prefer first non-empty description encountered
+                global_desc_map.setdefault(col_name, desc)
+
+print(f"Total unique columns found for mapping: {len(global_desc_map)}")
+
+# === Step 4. Update missing descriptions in Mayur’s tables ===
+updated_tables = {}
+
+for table_name in mayur_tables:
+    if table_name in xls.sheet_names:
+        df = pd.read_excel(xls, table_name)
+
+        if {'COLUMN_NAME', 'DESCRIPTION'}.issubset(df.columns):
+            df['DESCRIPTION'] = df.apply(
+                lambda row: global_desc_map.get(str(row['COLUMN_NAME']).strip(), row['DESCRIPTION'])
+                if pd.isna(row['DESCRIPTION']) or row['DESCRIPTION'] in [None, '', 'nan']
+                else row['DESCRIPTION'],
+                axis=1
+            )
+
+            updated_tables[table_name] = df
+            print(f"✅ Updated {table_name} with descriptions from global map.")
+        else:
+            print(f"⚠️ Skipping {table_name} — required columns not found.")
+    else:
+        print(f"⚠️ Sheet {table_name} not found in workbook.")
+
+# === Step 5. Create new Excel with only Mayur’s updated tables ===
+output_file = "Mayur_Tables_Updated.xlsx"
+with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+    for table_name, df in updated_tables.items():
+        df.to_excel(writer, sheet_name=table_name, index=False)
+
+print(f"\n✅ Done! Output file created: {output_file}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # -----------------------
 # PARAMETERS
 # -----------------------
@@ -1369,6 +1454,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
