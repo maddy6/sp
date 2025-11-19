@@ -1,3 +1,196 @@
+import pandas as pd
+import numpy as np
+
+# ==========================================
+#   CORE: EMA + DEMA
+# ==========================================
+
+def ema(values, alphas):
+    ema_vals = np.zeros_like(values, dtype=float)
+    ema_vals[0] = values[0]
+    for t in range(1, len(values)):
+        ema_vals[t] = alphas[t] * values[t] + (1 - alphas[t]) * ema_vals[t - 1]
+    return ema_vals
+
+
+def dema(values, alphas):
+    ema1 = ema(values, alphas)
+    ema2 = ema(ema1, alphas)
+    return 2 * ema1 - ema2
+
+
+# ==========================================
+#   A. FIXED ALPHA DEMA
+# ==========================================
+
+def fixed_alpha_dema(values, alpha=0.5):
+    alphas = np.full(len(values), alpha)
+    return dema(values, alphas)
+
+
+# ==========================================
+#   B. WEIGHTED DEMA (HEADCOUNT)
+# ==========================================
+
+def weighted_alpha(headcount, alpha_base=0.3, alpha_min=0.05, alpha_max=0.8, power=1.0):
+    hc = np.array(headcount, dtype=float)
+    hc_norm = (hc / hc.mean()) ** power
+    alphas = alpha_base * hc_norm
+    return np.clip(alphas, alpha_min, alpha_max)
+
+
+def weighted_dema(values, headcount, alpha_base=0.3, alpha_min=0.05, alpha_max=0.8, power=1.0):
+    alphas = weighted_alpha(headcount, alpha_base, alpha_min, alpha_max, power)
+    return dema(values, alphas)
+
+
+# ==========================================
+#   C. STRICT 3-PERIOD DEMA
+# ==========================================
+# α = 2 / (3 + 1) = 0.5
+
+def dema_3period(values):
+    alphas = np.full(len(values), 0.5)
+    return dema(values, alphas)
+
+
+# ==========================================
+#   D. TREND-BASED FORECASTING
+# ==========================================
+
+def dema_forecast_trend(dema_series, N):
+    L = dema_series[-1]          # Last level
+    T = dema_series[-1] - dema_series[-2]   # Trend from last two values
+    return np.array([L + k * T for k in range(1, N + 1)])
+
+
+# ==========================================
+#   E. SEASONALITY-ADJUSTED DEMA
+# ==========================================
+
+def compute_monthly_seasonality(df, actual_col, dema_col):
+    df = df.copy()
+    df["month"] = df["MONTH"].dt.month
+    df["ratio"] = df[actual_col] / df[dema_col]
+
+    season = df.groupby("month")["ratio"].mean().to_dict()
+
+    # normalize to avoid level drifting
+    avg = np.mean(list(season.values()))
+    season = {m: v / avg for m, v in season.items()}
+    return season
+
+
+def dema_forecast_seasonal(dema_series, seasonality, last_date, N):
+    forecasts = []
+    months = []
+    L = dema_series[-1]
+
+    for k in range(1, N+1):
+        next_month = last_date + pd.DateOffset(months=k)
+        m = next_month.month
+        S = seasonality.get(m, 1.0)
+        forecasts.append(L * S)
+        months.append(next_month)
+
+    return months, forecasts
+
+
+# ==========================================
+# ALL-IN-ONE FORECAST WRAPPER
+# ==========================================
+
+def forecast_dema(df, method="weighted", N=3):
+    """
+    method options:
+        'fixed'
+        'weighted'
+        '3period'
+        'fixed_trend'
+        'weighted_trend'
+        '3period_trend'
+        'seasonal_weighted'
+    """
+
+    df = df.copy()
+    df["MONTH"] = pd.to_datetime(df["MONTH"])
+    df = df.sort_values("MONTH")
+
+    y = df["VOLUNTARY_EXITS"].astype(float).values
+    hc = df["HEADCOUNT"].astype(float).values
+
+    # --------------- Choose DEMA Method ---------------
+    if method == "fixed":
+        d = fixed_alpha_dema(y, alpha=0.3)
+
+    elif method == "weighted":
+        d = weighted_dema(y, hc)
+
+    elif method == "3period":
+        d = dema_3period(y)
+
+    elif method.endswith("_trend"):
+        if method.startswith("fixed"):
+            d = fixed_alpha_dema(y, alpha=0.3)
+        elif method.startswith("weighted"):
+            d = weighted_dema(y, hc)
+        elif method.startswith("3period"):
+            d = dema_3period(y)
+        forecast = dema_forecast_trend(d, N)
+        return forecast, d
+
+    elif method == "seasonal_weighted":
+        d = weighted_dema(y, hc)
+        season = compute_monthly_seasonality(df, "VOLUNTARY_EXITS", "DEMA_TMP" if "DEMA_TMP" in df else "VOLUNTARY_EXITS")
+        months, f = dema_forecast_seasonal(d, season, df["MONTH"].iloc[-1], N)
+        return f, months, d
+
+    else:
+        raise ValueError("Invalid method selected.")
+
+    # --------------- Simple Flat Forecast ---------------
+    forecast = np.full(N, d[-1])
+    return forecast, d
+
+
+# ==========================================
+#           EXAMPLE USAGE
+# ==========================================
+
+if __name__ == "__main__":
+    df = pd.read_excel("Projections Analysis Oct 2025.xlsx")
+
+    # Try multiple methods
+    methods = [
+        "3period",
+        "fixed",
+        "weighted",
+        "fixed_trend",
+        "weighted_trend",
+        "3period_trend",
+    ]
+
+    for m in methods:
+        print(f"\n=== METHOD: {m} ===")
+        f, d = forecast_dema(df, method=m, N=6)
+        print("Forecast next 6 months:", f)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ===========================
 # Trend-based DEMA Forecast
 # ===========================
@@ -2039,6 +2232,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
