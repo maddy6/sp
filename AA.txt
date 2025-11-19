@@ -26,6 +26,118 @@ def weighted_ema(values, alphas):
 def weighted_dema(values, alphas):
     ema1 = weighted_ema(values, alphas)
     ema2 = weighted_ema(ema1, alphas)
+    return 2 * ema1 - ema2
+
+
+# ===========================
+# Dynamic Forecast Function
+# ===========================
+def forecast_wdema_next_n(df, N):
+    """
+    df must contain columns: MONTH, HEADCOUNT, VOLUNTARY_EXITS
+    Returns array of N-step ahead forecasts using WDEMA level + trend.
+    """
+    
+    # Sort dataset
+    df = df.copy()
+    df['MONTH'] = pd.to_datetime(df['MONTH'])
+    df = df.sort_values('MONTH').reset_index(drop=True)
+
+    y = df['VOLUNTARY_EXITS'].values.astype(float)
+    hc = df['HEADCOUNT']
+
+    # Compute alphas and WDEMA
+    alphas = compute_weighted_alpha(hc, alpha_base=0.3)
+    wd = weighted_dema(y, alphas)
+
+    # Last level
+    L = wd[-1]
+
+    # Trend estimated from last 2 values
+    T = wd[-1] - wd[-2]
+
+    # Dynamic next N predictions
+    forecasts = np.array([L + k * T for k in range(1, N + 1)], dtype=float)
+
+    return forecasts, wd
+
+
+# ===========================
+# Example Usage
+# ===========================
+if __name__ == "__main__":
+    df = pd.read_excel("Projections Analysis Oct 2025.xlsx")
+
+    N = 3   # you can change to any value: 1, 3, 6, 12
+
+    next_forecasts, wdema_series = forecast_wdema_next_n(df, N)
+
+    print(f"\nNext {N} Month Forecast:")
+    for i, val in enumerate(next_forecasts, 1):
+        print(f"Month +{i}: {val}")
+
+    # optional: append to dataframe
+    df['WDEMA'] = wdema_series
+    print("\nWeighted DEMA (last few months):")
+    print(df[['MONTH', 'VOLUNTARY_EXITS', 'HEADCOUNT', 'WDEMA']].tail())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
+# ===========================
+# Weighted DEMA Implementation
+# ===========================
+
+def compute_weighted_alpha(headcount_series, alpha_base=0.3, alpha_min=0.05, alpha_max=0.8):
+    hc = headcount_series.values.astype(float)
+    hc_norm = hc / hc.mean()
+
+    alphas = alpha_base * hc_norm
+    alphas = np.clip(alphas, alpha_min, alpha_max)
+
+    return alphas
+
+
+def weighted_ema(values, alphas):
+    ema = np.zeros_like(values, dtype=float)
+    ema[0] = values[0]
+    for t in range(1, len(values)):
+        ema[t] = alphas[t] * values[t] + (1 - alphas[t]) * ema[t - 1]
+    return ema
+
+
+def weighted_dema(values, alphas):
+    ema1 = weighted_ema(values, alphas)
+    ema2 = weighted_ema(ema1, alphas)
     dema = 2 * ema1 - ema2
     return dema
 
@@ -1786,6 +1898,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
