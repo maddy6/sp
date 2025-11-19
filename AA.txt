@@ -1,6 +1,121 @@
 import pandas as pd
 import numpy as np
 
+def compute_weighted_alpha(headcount_series, alpha_base=0.3, alpha_min=0.05, alpha_max=0.8):
+    hc = headcount_series.values.astype(float)
+    hc_norm = hc / hc.mean()
+    alphas = alpha_base * hc_norm
+    return np.clip(alphas, alpha_min, alpha_max)
+
+def weighted_ema(values, alphas):
+    ema = np.zeros_like(values, dtype=float)
+    ema[0] = values[0]
+    for t in range(1, len(values)):
+        ema[t] = alphas[t] * values[t] + (1 - alphas[t]) * ema[t - 1]
+    return ema
+
+def weighted_dema(values, alphas):
+    ema1 = weighted_ema(values, alphas)
+    ema2 = weighted_ema(ema1, alphas)
+    return 2 * ema1 - ema2
+
+
+# ============================
+# Seasonal Index Computation
+# ============================
+def compute_monthly_seasonality(df, value_col, wdema_col):
+    df['month_num'] = df['MONTH'].dt.month
+    df['ratio'] = df[value_col] / df[wdema_col]
+
+    # Seasonal index = avg(actual/WDEMA) per month
+    seasonality = df.groupby('month_num')['ratio'].mean().to_dict()
+
+    # Normalize to avoid drift
+    mean_val = np.mean(list(seasonality.values()))
+    seasonality = {m: v / mean_val for m, v in seasonality.items()}
+
+    return seasonality
+
+
+# ============================
+# Forecast Next N Periods
+# ============================
+def forecast_wdema_next_n(df, N):
+    df = df.copy()
+    df['MONTH'] = pd.to_datetime(df['MONTH'])
+    df = df.sort_values("MONTH")
+
+    y = df['VOLUNTARY_EXITS'].values.astype(float)
+    hc = df['HEADCOUNT']
+
+    # Step 1 → WDEMA
+    alphas = compute_weighted_alpha(hc)
+    wd = weighted_dema(y, alphas)
+    df['WDEMA'] = wd
+
+    # Step 2 → Seasonal factors
+    season = compute_monthly_seasonality(df, value_col='VOLUNTARY_EXITS', wdema_col='WDEMA')
+
+    # Step 3 → Trend
+    L = wd[-1]
+    T = wd[-1] - wd[-2]
+
+    last_month = df['MONTH'].iloc[-1]
+
+    forecasts = []
+    months = []
+
+    for k in range(1, N + 1):
+        next_month = last_month + pd.DateOffset(months=k)
+        m = next_month.month
+        S = season.get(m, 1)
+
+        # Final adjusted forecast
+        f = (L + k * T) * S
+
+        forecasts.append(f)
+        months.append(next_month)
+
+    result = pd.DataFrame({
+        "Forecast_Month": months,
+        "Forecast_Value": forecasts
+    })
+
+    return result, df
+
+
+# ============================
+# Example Usage
+# ============================
+df = pd.read_excel("Projections Analysis Oct 2025.xlsx")
+
+forecast_df, full_df = forecast_wdema_next_n(df, N=6)
+
+print(forecast_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
 # ===========================
 # Weighted DEMA Implementation
 # ===========================
@@ -1898,6 +2013,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
