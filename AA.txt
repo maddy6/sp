@@ -1,4 +1,109 @@
 import pandas as pd
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+# ============================
+# STEP 1 — Load Dataset
+# ============================
+# If reading from Excel:
+# df = pd.read_excel("Projections Analysis Oct 2025.xlsx")
+
+# For now using a dummy sample matching your screenshot:
+data = {
+    "MONTH": [
+        "2020-12", "2021-01", "2021-02", "2021-03", "2021-04", "2021-05", "2021-06",
+        "2021-07", "2021-08", "2021-09", "2021-10", "2021-11", "2021-12",
+        "2022-01", "2022-02", "2022-03", "2022-04", "2022-05", "2022-06"
+    ],
+    "HEADCOUNT": [
+        210007, 210404, 210198, 210660, 211687, 213377, 217431, 218203, 217892,
+        218454, 221995, 222818, 223387, 225766, 226836, 228888, 229702, 230604,
+        231349
+    ],
+    "MONTHLY_ATTRITION_RATE": [
+        0.760927017,0.5755594,0.746430972,0.8570696,0.989196331,
+        0.984202127,1.118049431,1.182780847,1.272007782,
+        1.198398526,0.98745097,0.967157052,1.0666857,
+        0.839807588,0.993225882,1.2254488,1.170898393,
+        1.237158825,1.269078319
+    ]
+}
+
+df = pd.DataFrame(data)
+df["MONTH"] = pd.to_datetime(df["MONTH"])
+df = df.set_index("MONTH")
+
+# ============================
+# STEP 2 — Choose series for Holt-Winters
+# ============================
+ts = df["MONTHLY_ATTRITION_RATE"]
+
+# ============================
+# STEP 3 — Build Holt-Winters Model
+# ============================
+# Monthly data → seasonal_periods = 12
+model = ExponentialSmoothing(
+    ts,
+    trend="add",
+    seasonal="add",
+    seasonal_periods=12
+)
+
+fit_model = model.fit(optimized=True)
+
+print("Model summary:")
+print(fit_model.summary())
+
+# ============================
+# STEP 4 — Forecast N months
+# ============================
+N = 6  # forecast next 6 months
+forecast_attrition = fit_model.forecast(N)
+
+# ============================
+# STEP 5 — Convert Attrition → Voluntary Exits
+# ============================
+# Define dynamic base headcount
+BASE_HEADCOUNT = 232000    # You can change dynamically
+
+forecast_vol_exits = forecast_attrition * BASE_HEADCOUNT
+
+# ============================
+# STEP 6 — Prepare final output table
+# ============================
+future_dates = pd.date_range(df.index[-1] + pd.offsets.MonthBegin(),
+                             periods=N, freq="MS")
+
+forecast_df = pd.DataFrame({
+    "FORECAST_MONTH": future_dates,
+    "FORECAST_ATTRITION_RATE": forecast_attrition.values,
+    "BASE_HEADCOUNT_USED": BASE_HEADCOUNT,
+    "FORECAST_VOLUNTARY_EXITS": forecast_vol_exits.round(0).astype(int)
+})
+
+print("\n=== FINAL FORECAST OUTPUT ===")
+print(forecast_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from difflib import get_close_matches
 
 # === Step 1. Read all sheets ===
@@ -1565,6 +1670,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
