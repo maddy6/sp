@@ -1,3 +1,244 @@
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_absolute_error
+
+# -----------------------------
+# Weighted alpha helper
+# -----------------------------
+def compute_weighted_alpha_from_base(headcount_array, alpha_base, alpha_min=0.02, alpha_max=0.9, power=1.0):
+    hc = np.array(headcount_array, dtype=float)
+    # protect zero mean
+    mean_hc = hc.mean() if hc.mean() != 0 else 1.0
+    hc_norm = (hc / mean_hc) ** power
+    alphas = alpha_base * hc_norm
+    return np.clip(alphas, alpha_min, alpha_max)
+
+# -----------------------------
+# EMA & DEMA (weighted alphas)
+# -----------------------------
+def weighted_ema(values, alphas):
+    ema = np.zeros_like(values, dtype=float)
+    ema[0] = values[0]
+    for t in range(1, len(values)):
+        a = alphas[t]
+        ema[t] = a * values[t] + (1 - a) * ema[t-1]
+    return ema
+
+def weighted_dema(values, alphas):
+    e1 = weighted_ema(values, alphas)
+    e2 = weighted_ema(e1, alphas)
+    return 2 * e1 - e2
+
+# -----------------------------
+# Quarter-wise alpha search
+# -----------------------------
+def find_best_alpha_per_quarter(df,
+                                value_col='VOLUNTARY_EXITS',
+                                hc_col='HEADCOUNT',
+                                date_col='MONTH',
+                                candidate_Ns=None,
+                                alpha_min=0.02,
+                                alpha_max=0.9,
+                                power=1.0,
+                                min_train_periods=24):
+    """
+    For each quarter (1..4), run expanding-window CV only on months that belong to that quarter
+    and select the best alpha_base (mapped from N -> alpha_base = 2/(N+1)).
+    Returns dict: quarter -> {best_N, best_alpha_base, error_by_N}
+    """
+    if candidate_Ns is None:
+        candidate_Ns = list(range(2, 13))   # map to alpha_base = 2/(N+1) for N=2..12
+
+    df = df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df = df.sort_values(date_col).reset_index(drop=True)
+    df['quarter'] = df[date_col].dt.quarter
+
+    y = df[value_col].values.astype(float)
+    hc = df[hc_col].values.astype(float)
+    months = df[date_col]
+
+    results = {}
+
+    n = len(df)
+    # We'll perform an expanding-window CV; for each test index t where t >= min_train_periods and we evaluate forecasting t
+    test_indices = list(range(min_train_periods, n))
+
+    for q in [1,2,3,4]:
+        errors_by_candidate = {}
+        # find all test indices that correspond to quarter q
+        test_idx_q = [t for t in test_indices if months.iloc[t].quarter == q]
+        if len(test_idx_q) == 0:
+            # Not enough history for this quarter
+            results[q] = {'best_N': None, 'best_alpha_base': None, 'errors': {}}
+            continue
+
+        for N in candidate_Ns:
+            alpha_base = 2.0 / (N + 1.0)  # classic mapping
+            errs = []
+            for t in test_idx_q:
+                # train on 0..t-1, predict t using flat DEMA forecast (last dema)
+                train_slice = slice(0, t)
+                y_train = y[train_slice]
+                hc_train = hc[train_slice]
+
+                # need at least 2 points for DEMA
+                if len(y_train) < 3:
+                    continue
+
+                alphas_train = compute_weighted_alpha_from_base(hc_train, alpha_base,
+                                                                alpha_min=alpha_min, alpha_max=alpha_max,
+                                                                power=power)
+                dema_train = weighted_dema(y_train, alphas_train)
+                # forecast for t (flat DEMA forecast) = last dema value
+                yhat = dema_train[-1]
+                errs.append(abs(y[t] - yhat))
+
+            if len(errs) == 0:
+                # no folds for this candidate (rare)
+                mean_err = np.nan
+            else:
+                mean_err = float(np.mean(errs))
+            errors_by_candidate[N] = mean_err
+
+        # pick best N (min error), ignore NaNs
+        valid = {N: e for N, e in errors_by_candidate.items() if not np.isnan(e)}
+        if len(valid) == 0:
+            results[q] = {'best_N': None, 'best_alpha_base': None, 'errors': errors_by_candidate}
+            continue
+
+        best_N = min(valid.keys(), key=lambda k: valid[k])
+        best_alpha = 2.0 / (best_N + 1.0)
+        results[q] = {'best_N': best_N, 'best_alpha_base': best_alpha, 'errors': errors_by_candidate}
+
+    return results
+
+# -----------------------------
+# Forecast using quarter-wise alpha_base
+# -----------------------------
+def forecast_with_quarter_alphas(df, quarter_alpha_map, N_forecast=3,
+                                 alpha_min=0.02, alpha_max=0.9, power=1.0,
+                                 trend_extension=False):
+    """
+    quarter_alpha_map: dict mapping quarter -> alpha_base (float)
+    N_forecast: number of months to forecast out
+    trend_extension: if True, use DEMA trend extension F_{t+k} = L + k*T (where T = last - prev)
+    """
+    df = df.copy()
+    df['MONTH'] = pd.to_datetime(df['MONTH'])
+    df = df.sort_values('MONTH').reset_index(drop=True)
+
+    y = df['VOLUNTARY_EXITS'].values.astype(float)
+    hc = df['HEADCOUNT'].values.astype(float)
+    last_date = df['MONTH'].iloc[-1]
+
+    # Build alphas for historical data using quarter-specific alpha_base
+    quarters = df['MONTH'].dt.quarter.values
+    alphas_hist = np.zeros_like(y, dtype=float)
+    for i, q in enumerate(quarters):
+        alpha_base = quarter_alpha_map.get(q, None)
+        if alpha_base is None:
+            # fall back to a reasonable default
+            alpha_base = 2.0 / (5 + 1.0)  # equivalent to N=5
+        # per-period alpha uses the historical HC array mean for stability
+        # We'll compute normalization using whole-historical headcount mean
+        # (this mirrors compute_weighted_alpha_from_base behavior)
+        # compute per-row alpha after loop once mean is known
+        alphas_hist[i] = alpha_base  # placeholder; we'll normalize below
+
+    # Now compute normalized alpha using the same headcount normalization as function
+    mean_hc = hc.mean() if hc.mean() != 0 else 1.0
+    # compute per-row alpha = alpha_base * (hc/mean_hc)**power clipped
+    for i in range(len(y)):
+        base = alphas_hist[i]
+        a = base * (hc[i] / mean_hc) ** power
+        a = max(alpha_min, min(alpha_max, a))
+        alphas_hist[i] = a
+
+    # Compute W-DEMA on historical data
+    dema_hist = weighted_dema(y, alphas_hist)
+
+    # Forecast months one-by-one using quarter-wise alpha_base (for the future months we need to decide alpha per future month)
+    forecasts = []
+    forecast_months = []
+    L = dema_hist[-1]
+    T = dema_hist[-1] - dema_hist[-2] if len(dema_hist) >= 2 else 0.0
+
+    # For future months we need a headcount input — we will use last known headcount as proxy,
+    # or you can pass a headcount_forecast list to this function (extension).
+    last_hc = hc[-1]
+    for k in range(1, N_forecast + 1):
+        f_month = last_date + pd.DateOffset(months=k)
+        q = f_month.quarter
+        alpha_base = quarter_alpha_map.get(q, 2.0 / (5 + 1.0))
+
+        # compute alpha for the forecast period using last_hc (proxy)
+        a_future = alpha_base * (last_hc / mean_hc) ** power
+        a_future = max(alpha_min, min(alpha_max, a_future))
+
+        if trend_extension:
+            yhat = L + k * T
+        else:
+            # flat DEMA forecast (classic) -- though alpha is computed for future month, DEMA flat forecast equals last dema
+            yhat = L
+
+        # Optionally, you could apply a small adjustment if you want the alpha to affect multi-step forecast;
+        # but classic DEMA-flat forecast is yhat = L. We'll keep that but return the alpha used for info.
+        forecasts.append({'month': f_month, 'forecast': yhat, 'alpha_used': a_future, 'quarter': q})
+        forecast_months.append(f_month)
+
+    return pd.DataFrame(forecasts)
+
+
+# -----------------------------
+# Example usage
+# -----------------------------
+if __name__ == "__main__":
+    # load your data
+    df = pd.read_excel("Projections Analysis Oct 2025.xlsx")   # must have MONTH, HEADCOUNT, VOLUNTARY_EXITS
+
+    # find best alpha per quarter
+    res = find_best_alpha_per_quarter(df, candidate_Ns=range(2,13), alpha_min=0.02, alpha_max=0.9, power=1.0,
+                                      min_train_periods=24)
+    print("Quarter-wise alpha search results:")
+    for q, info in res.items():
+        print(q, info)
+
+    # build a quarter -> alpha_base map from results (fallback to N=5 if missing)
+    quarter_alpha_map = {}
+    for q, info in res.items():
+        if info['best_N'] is None:
+            quarter_alpha_map[q] = 2.0 / (5 + 1.0)
+        else:
+            quarter_alpha_map[q] = info['best_alpha_base']
+
+    # Forecast using quarter-wise alphas
+    forecast_df = forecast_with_quarter_alphas(df, quarter_alpha_map, N_forecast=6, trend_extension=True)
+    print("\nForecasts:")
+    print(forecast_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
@@ -2232,6 +2473,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
