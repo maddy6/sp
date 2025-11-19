@@ -1,3 +1,29 @@
+# ===========================
+# Trend-based DEMA Forecast
+# ===========================
+
+N = 6   # number of future months you want
+
+wdema_last = df['WDEMA'].iloc[-1]
+wdema_prev = df['WDEMA'].iloc[-2]
+
+# Trend = difference of last two WDEMA values
+trend = wdema_last - wdema_prev
+
+# Forecast k steps ahead: WDEMA_t + k * trend
+future_forecasts = [wdema_last + k * trend for k in range(1, N + 1)]
+
+print(f"\nNext {N} Months Forecast (Weighted DEMA with Trend):")
+for i, f in enumerate(future_forecasts, start=1):
+    print(f"Month +{i}: {f}")
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
@@ -2013,6 +2039,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
