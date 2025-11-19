@@ -1,4 +1,85 @@
 import pandas as pd
+import numpy as np
+
+# ===========================
+# Weighted DEMA Implementation
+# ===========================
+
+def compute_weighted_alpha(headcount_series, alpha_base=0.3, alpha_min=0.05, alpha_max=0.8):
+    hc = headcount_series.values.astype(float)
+    hc_norm = hc / hc.mean()
+
+    alphas = alpha_base * hc_norm
+    alphas = np.clip(alphas, alpha_min, alpha_max)
+
+    return alphas
+
+
+def weighted_ema(values, alphas):
+    ema = np.zeros_like(values, dtype=float)
+    ema[0] = values[0]
+    for t in range(1, len(values)):
+        ema[t] = alphas[t] * values[t] + (1 - alphas[t]) * ema[t - 1]
+    return ema
+
+
+def weighted_dema(values, alphas):
+    ema1 = weighted_ema(values, alphas)
+    ema2 = weighted_ema(ema1, alphas)
+    dema = 2 * ema1 - ema2
+    return dema
+
+
+# ================================
+# Load and process your dataset
+# ================================
+# Your columns from screenshot:
+# MONTH (YYYY-MM), HEADCOUNT, VOLUNTARY_EXITS, MONTHLY_ATTRITION_RATE
+
+df = pd.read_excel("Projections Analysis Oct 2025.xlsx")
+
+# Sort by month (required)
+df['MONTH'] = pd.to_datetime(df['MONTH'])
+df = df.sort_values('MONTH').reset_index(drop=True)
+
+# Target series = VOLUNTARY_EXITS (counts)
+y = df['VOLUNTARY_EXITS'].values.astype(float)
+
+# Compute time-varying alphas via headcount weights
+alphas = compute_weighted_alpha(df['HEADCOUNT'], alpha_base=0.3)
+
+# Compute Weighted DEMA
+df['WDEMA'] = weighted_dema(y, alphas)
+
+print(df[['MONTH', 'VOLUNTARY_EXITS', 'HEADCOUNT', 'WDEMA']].tail(12))
+
+# Next N months forecast (simple method = last WDEMA as forward projection)
+next_month_forecast = df['WDEMA'].iloc[-1]
+print("\nNext Month Forecast (Weighted DEMA):", next_month_forecast)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 # ============================
@@ -1670,6 +1751,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
