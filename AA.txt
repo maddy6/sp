@@ -1,3 +1,150 @@
+import pandas as pd
+import numpy as np
+
+# --------------------------------------------
+# Weighted EMA and DEMA
+# --------------------------------------------
+def weighted_ema(values, alphas):
+    ema = np.zeros_like(values, dtype=float)
+    ema[0] = values[0]
+    for t in range(1, len(values)):
+        ema[t] = alphas[t] * values[t] + (1 - alphas[t]) * ema[t - 1]
+    return ema
+
+def weighted_dema(values, alphas):
+    ema1 = weighted_ema(values, alphas)
+    ema2 = weighted_ema(ema1, alphas)
+    return 2 * ema1 - ema2
+
+
+# ------------------------------------------------
+# Step 1: Learn best alpha_base FOR EACH QUARTER
+# ------------------------------------------------
+def learn_quarter_alpha(df, value_col="VOLUNTARY_EXITS", hc_col="HEADCOUNT", date_col="MONTH"):
+    df = df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df = df.sort_values(date_col).reset_index(drop=True)
+    df["Q"] = df[date_col].dt.quarter
+
+    y = df[value_col].values.astype(float)
+    hc = df[hc_col].values.astype(float)
+
+    mean_hc = hc.mean()
+
+    quarter_alpha = {}
+    N_candidates = range(2, 10)  # means alpha_base = 2/(N+1)
+
+    for q in [1,2,3,4]:
+        # Extract rows only for this quarter (last 5 years ideally)
+        idx = df[df["Q"] == q].index
+        if len(idx) < 6:
+            quarter_alpha[q] = 2/(5+1)  # default N=5
+            continue
+
+        best_err = 1e18
+        best_alpha = None
+
+        for N in N_candidates:
+            alpha_base = 2/(N+1)
+
+            # Compute alpha_t = alpha_base * (HC_t / mean(HC))
+            alphas = alpha_base * (hc / mean_hc)
+            alphas = np.clip(alphas, 0.02, 0.9)
+
+            dema_vals = weighted_dema(y, alphas)
+
+            # CV error only on months belonging to quarter q
+            err = np.mean(np.abs(y[idx] - dema_vals[idx]))
+
+            if err < best_err:
+                best_err = err
+                best_alpha = alpha_base
+
+        quarter_alpha[q] = best_alpha
+
+    return quarter_alpha
+
+
+# --------------------------------------------------------
+# Step 2: Forecast future months using quarter-specific α
+# --------------------------------------------------------
+def forecast_quarterwise(df, quarter_alpha_map, N_forecast=6):
+    df = df.copy()
+    df["MONTH"] = pd.to_datetime(df["MONTH"])
+    df = df.sort_values("MONTH").reset_index(drop=True)
+
+    y = df["VOLUNTARY_EXITS"].values.astype(float)
+    hc = df["HEADCOUNT"].values.astype(float)
+    mean_hc = hc.mean()
+
+    last_date = df["MONTH"].iloc[-1]
+    last_DEMA = None
+
+    forecasts = []
+
+    # Compute DEMA up to today for reference
+    alphas_hist = np.zeros_like(y)
+    for i in range(len(y)):
+        q = df["MONTH"].dt.quarter.iloc[i]
+        alpha_base = quarter_alpha_map[q]
+        alphas_hist[i] = np.clip(alpha_base * (hc[i] / mean_hc), 0.02, 0.9)
+
+    dema_hist = weighted_dema(y, alphas_hist)
+    last_DEMA = dema_hist[-1]
+
+    # Begin forecasting future months
+    for k in range(1, N_forecast+1):
+        future_month = last_date + pd.DateOffset(months=k)
+        q = future_month.quarter
+
+        # Use quarter-specific alpha_base (but DEMA forecast is flat)
+        alpha_base = quarter_alpha_map[q]
+        alpha_future = np.clip(alpha_base * (hc[-1] / mean_hc), 0.02, 0.9)
+
+        # PURE DEMA LOGIC = flat forecast
+        yhat = last_DEMA
+
+        forecasts.append({
+            "Forecast_Month": future_month,
+            "Quarter": q,
+            "Alpha_Base_Used": alpha_base,
+            "Alpha_Final": alpha_future,
+            "Forecast_Value": yhat
+        })
+
+    return pd.DataFrame(forecasts)
+
+
+
+
+df = pd.read_excel("Projections Analysis Oct 2025.xlsx")
+
+quarter_alpha = learn_quarter_alpha(df)
+print("Quarter-wise learned alpha:", quarter_alpha)
+
+forecast_df = forecast_quarterwise(df, quarter_alpha, N_forecast=12)
+print(forecast_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error
@@ -2473,6 +2620,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
