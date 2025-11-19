@@ -60,7 +60,42 @@ print("\nNext Month Forecast (Weighted DEMA):", next_month_forecast)
 
 
 
+# Compute simple trend on last 12 months of WDEMA
+last_12 = df['WDEMA'].tail(12).reset_index(drop=True)
 
+x = np.arange(len(last_12))
+coef = np.polyfit(x, last_12, 1)  # linear trend
+slope = coef[0]
+intercept = coef[1]
+
+# Forecast next 3 months with trend
+forecast_1 = intercept + slope * (len(last_12))
+forecast_2 = intercept + slope * (len(last_12) + 1)
+forecast_3 = intercept + slope * (len(last_12) + 2)
+
+print("Next 3-month Forecast with Trend:")
+print("Month +1:", forecast_1)
+print("Month +2:", forecast_2)
+print("Month +3:", forecast_3)
+
+
+
+# True DEMA-based trend extension
+# L_t is last WDEMA
+L_t = df['WDEMA'].iloc[-1]
+
+# Trend estimate = difference between last two WDEMA values
+T_t = df['WDEMA'].iloc[-1] - df['WDEMA'].iloc[-2]
+
+# Forecast k steps ahead
+forecast_1 = L_t + 1 * T_t
+forecast_2 = L_t + 2 * T_t
+forecast_3 = L_t + 3 * T_t
+
+print("Next 3-month Forecast (DEMA level + trend):")
+print("Month +1:", forecast_1)
+print("Month +2:", forecast_2)
+print("Month +3:", forecast_3)
 
 
 
@@ -1751,6 +1786,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
