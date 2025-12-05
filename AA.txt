@@ -1,3 +1,118 @@
+-- column count
+SELECT table_name, COUNT(*) col_count
+FROM all_tab_columns
+WHERE owner = 'WFA_APP_USR_TALD'
+  AND table_name IN ('WD_JOBAPPLICATION','WD_JOBAPPLICATION_TEMP')
+GROUP BY table_name;
+
+-- list columns with datatype and length for MAIN
+SELECT column_id, column_name, data_type, data_length, data_precision, nullable
+FROM all_tab_columns
+WHERE owner = 'WFA_APP_USR_TALD' AND table_name = 'WD_JOBAPPLICATION'
+ORDER BY column_id;
+
+-- list columns for TEMP
+SELECT column_id, column_name, data_type, data_length, data_precision, nullable
+FROM all_tab_columns
+WHERE owner = 'WFA_APP_USR_TALD' AND table_name = 'WD_JOBAPPLICATION_TEMP'
+ORDER BY column_id;
+
+
+
+
+-- columns present in MAIN but not in TEMP
+SELECT a.column_name
+FROM all_tab_columns a
+LEFT JOIN all_tab_columns b
+  ON a.owner = b.owner
+ AND a.column_name = b.column_name
+  AND b.table_name = 'WD_JOBAPPLICATION_TEMP'
+WHERE a.owner = 'WFA_APP_USR_TALD'
+  AND a.table_name = 'WD_JOBAPPLICATION'
+  AND b.column_name IS NULL;
+
+-- columns present in TEMP but not in MAIN
+SELECT b.column_name
+FROM all_tab_columns b
+LEFT JOIN all_tab_columns a
+  ON a.owner = b.owner
+ AND a.column_name = b.column_name
+  AND a.table_name = 'WD_JOBAPPLICATION'
+WHERE b.owner = 'WFA_APP_USR_TALD'
+  AND b.table_name = 'WD_JOBAPPLICATION_TEMP'
+  AND a.column_name IS NULL;
+
+-- columns present in both but with different datatypes/lengths
+SELECT a.column_name,
+       a.data_type  data_type_main,
+       a.data_length data_len_main,
+       b.data_type  data_type_temp,
+       b.data_length data_len_temp
+FROM all_tab_columns a
+JOIN all_tab_columns b
+  ON a.owner = b.owner AND a.column_name = b.column_name
+WHERE a.owner = 'WFA_APP_USR_TALD'
+  AND a.table_name = 'WD_JOBAPPLICATION'
+  AND b.table_name = 'WD_JOBAPPLICATION_TEMP'
+  AND (a.data_type <> b.data_type OR NVL(a.data_length,0) <> NVL(b.data_length,0));
+
+
+
+
+
+-- rows in MAIN but NOT in TEMP
+SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+MINUS
+SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP;
+
+-- rows in TEMP but NOT in MAIN
+SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+MINUS
+SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION;
+
+
+
+
+
+SELECT COUNT(*) cnt FROM (
+  SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+  MINUS
+  SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+);
+
+SELECT COUNT(*) cnt FROM (
+  SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+  MINUS
+  SELECT * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
@@ -2620,6 +2735,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
