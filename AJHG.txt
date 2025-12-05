@@ -1,0 +1,97 @@
+--------------------------------------------------------------------------------
+-- 1) SUMMARY: total number of rows that match between MAIN and TEMP (duplicates accounted)
+--------------------------------------------------------------------------------
+WITH
+main_sig AS (
+  SELECT 
+    -- normalized signature string (safe)
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(POSITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(EMPLOYEE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOEID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ADDED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE_CATEGORY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITING_AGENCY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(OFFER_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(HIRED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(REFERRED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CREATED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_ON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_TAGS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_POOL)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ETL_BATCHID)),'#') AS sig
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+temp_sig AS (
+  SELECT 
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(POSITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(EMPLOYEE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOEID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ADDED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE_CATEGORY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITING_AGENCY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(OFFER_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(HIRED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(REFERRED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CREATED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_ON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_TAGS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_POOL)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ETL_BATCHID)),'#') AS sig
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+m_counts AS (
+  SELECT sig, COUNT(*) AS m_cnt
+  FROM main_sig
+  GROUP BY sig
+),
+t_counts AS (
+  SELECT sig, COUNT(*) AS t_cnt
+  FROM temp_sig
+  GROUP BY sig
+)
+SELECT
+  NVL(SUM(LEAST(m_cnt, t_cnt)),0) AS total_matched_rows
+FROM m_counts m
+JOIN t_counts t ON m.sig = t.sig;
+
+
+
+
+
+
+
+
