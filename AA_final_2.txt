@@ -1,14 +1,16 @@
 --------------------------------------------------------------------------------
--- FINAL: Multi-report comparison MAIN vs TEMP (complete)
--- Filter: ETL_BATCHID = '20251124'
--- Composite key used to match rows:
---   JOB_APPLICATION, CANDIDATE_ID, POSITION, EMPLOYEE_ID, SOEID, JOB_REQUISITION, ADDED_DATE
+-- FINAL FULL: MAIN vs TEMP comparison (all 30 columns)
+-- Filter ETL_BATCHID = '20251124'
+-- Composite key used: JOB_APPLICATION, CANDIDATE_ID, POSITION, EMPLOYEE_ID, SOEID, JOB_REQUISITION, ADDED_DATE
 --------------------------------------------------------------------------------
 
 SET LONG 400000
 SET PAGESIZE 200
+-- adjust SETs as needed for your client
 
 WITH
+
+-- 0) normalize MAIN: convert to safe varchar-like values for comparison (dates as CHAR)
 main_norm AS (
   SELECT
     TRIM(TO_CHAR(JOB_APPLICATION))     AS JOB_APPLICATION,
@@ -18,33 +20,34 @@ main_norm AS (
     TRIM(TO_CHAR(SOEID))               AS SOEID,
     TRIM(TO_CHAR(JOB_REQUISITION))     AS JOB_REQUISITION,
     TRIM(TO_CHAR(ADDED_DATE))          AS ADDED_DATE,
-    NVL(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'<NULL>') AS ORIGINAL_JOB_REQUISITION,
-    NVL(TRIM(TO_CHAR(SOURCE_CATEGORY)),'<NULL>')          AS SOURCE_CATEGORY,
-    NVL(TRIM(TO_CHAR(SOURCE)),'<NULL>')                   AS SOURCE,
-    NVL(TRIM(TO_CHAR(RECRUITING_AGENCY)),'<NULL>')        AS RECRUITING_AGENCY,
-    NVL(TRIM(TO_CHAR(CANDIDATE_STATUS)),'<NULL>')         AS CANDIDATE_STATUS,
-    NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'<NULL>')    AS LAST_RECRUITING_STAGE,
-    NVL(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'<NULL>')     AS JOB_APPLICATION_STEP,
-    NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'<NULL>') AS LAST_RECRUITING_STAGE_NUMBER,
-    NVL(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'<NULL>') AS FINAL_DISPOSITION_REASON,
-    NVL(TRIM(TO_CHAR(OFFER_STATUS)),'<NULL>')             AS OFFER_STATUS,
-    NVL(TRIM(TO_CHAR(HIRED)),'<NULL>')                    AS HIRED,
-    NVL(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'<NULL>') AS TIME_TO_OFFER_ACCEPT_DAYS,
-    NVL(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'<NULL>') AS TIME_TO_OFFER_REJECT_DAYS,
-    NVL(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'<NULL>')     AS CANDIDATE_START_DATE,
-    NVL(TRIM(TO_CHAR(REFERRED_BY)),'<NULL>')              AS REFERRED_BY,
-    NVL(TRIM(TO_CHAR(CREATED_DATE)),'<NULL>')             AS CREATED_DATE,
-    NVL(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'<NULL>')      AS DATE_TIME_COMPLETED,
-    NVL(TRIM(TO_CHAR(UPDATED_BY)),'<NULL>')               AS UPDATED_BY,
-    NVL(TRIM(TO_CHAR(UPDATED_ON)),'<NULL>')               AS UPDATED_ON,
-    NVL(TRIM(TO_CHAR(RECRUITER)),'<NULL>')                AS RECRUITER,
-    NVL(TRIM(TO_CHAR(CANDIDATE_TAGS)),'<NULL>')           AS CANDIDATE_TAGS,
-    NVL(TRIM(TO_CHAR(CANDIDATE_POOL)),'<NULL>')           AS CANDIDATE_POOL,
-    NVL(TRIM(TO_CHAR(ETL_BATCHID)),'<NULL>')              AS ETL_BATCHID
+    TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)) AS ORIGINAL_JOB_REQUISITION,
+    TRIM(TO_CHAR(SOURCE_CATEGORY))     AS SOURCE_CATEGORY,
+    TRIM(TO_CHAR(SOURCE))              AS SOURCE,
+    TRIM(TO_CHAR(RECRUITING_AGENCY))   AS RECRUITING_AGENCY,
+    TRIM(TO_CHAR(CANDIDATE_STATUS))    AS CANDIDATE_STATUS,
+    TRIM(TO_CHAR(LAST_RECRUITING_STAGE)) AS LAST_RECRUITING_STAGE,
+    TRIM(TO_CHAR(JOB_APPLICATION_STEP))   AS JOB_APPLICATION_STEP,
+    TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)) AS LAST_RECRUITING_STAGE_NUMBER,
+    TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)) AS FINAL_DISPOSITION_REASON,
+    TRIM(TO_CHAR(OFFER_STATUS))        AS OFFER_STATUS,
+    TRIM(TO_CHAR(HIRED))               AS HIRED,
+    TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)) AS TIME_TO_OFFER_ACCEPT_DAYS,
+    TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)) AS TIME_TO_OFFER_REJECT_DAYS,
+    TRIM(TO_CHAR(CANDIDATE_START_DATE)) AS CANDIDATE_START_DATE,
+    TRIM(TO_CHAR(REFERRED_BY))         AS REFERRED_BY,
+    TRIM(TO_CHAR(CREATED_DATE))        AS CREATED_DATE,
+    TRIM(TO_CHAR(DATE_TIME_COMPLETED)) AS DATE_TIME_COMPLETED,
+    TRIM(TO_CHAR(UPDATED_BY))          AS UPDATED_BY,
+    TRIM(TO_CHAR(UPDATED_ON))          AS UPDATED_ON,
+    TRIM(TO_CHAR(RECRUITER))           AS RECRUITER,
+    TRIM(TO_CHAR(CANDIDATE_TAGS))      AS CANDIDATE_TAGS,
+    TRIM(TO_CHAR(CANDIDATE_POOL))      AS CANDIDATE_POOL,
+    TRIM(TO_CHAR(ETL_BATCHID))         AS ETL_BATCHID
   FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
   WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
 ),
 
+-- 0b) normalize TEMP
 temp_norm AS (
   SELECT
     TRIM(TO_CHAR(JOB_APPLICATION))     AS JOB_APPLICATION,
@@ -54,46 +57,47 @@ temp_norm AS (
     TRIM(TO_CHAR(SOEID))               AS SOEID,
     TRIM(TO_CHAR(JOB_REQUISITION))     AS JOB_REQUISITION,
     TRIM(TO_CHAR(ADDED_DATE))          AS ADDED_DATE,
-    NVL(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'<NULL>') AS ORIGINAL_JOB_REQUISITION,
-    NVL(TRIM(TO_CHAR(SOURCE_CATEGORY)),'<NULL>')          AS SOURCE_CATEGORY,
-    NVL(TRIM(TO_CHAR(SOURCE)),'<NULL>')                   AS SOURCE,
-    NVL(TRIM(TO_CHAR(RECRUITING_AGENCY)),'<NULL>')        AS RECRUITING_AGENCY,
-    NVL(TRIM(TO_CHAR(CANDIDATE_STATUS)),'<NULL>')         AS CANDIDATE_STATUS,
-    NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'<NULL>')    AS LAST_RECRUITING_STAGE,
-    NVL(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'<NULL>')     AS JOB_APPLICATION_STEP,
-    NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'<NULL>') AS LAST_RECRUITING_STAGE_NUMBER,
-    NVL(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'<NULL>') AS FINAL_DISPOSITION_REASON,
-    NVL(TRIM(TO_CHAR(OFFER_STATUS)),'<NULL>')             AS OFFER_STATUS,
-    NVL(TRIM(TO_CHAR(HIRED)),'<NULL>')                    AS HIRED,
-    NVL(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'<NULL>') AS TIME_TO_OFFER_ACCEPT_DAYS,
-    NVL(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'<NULL>') AS TIME_TO_OFFER_REJECT_DAYS,
-    NVL(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'<NULL>')     AS CANDIDATE_START_DATE,
-    NVL(TRIM(TO_CHAR(REFERRED_BY)),'<NULL>')              AS REFERRED_BY,
-    NVL(TRIM(TO_CHAR(CREATED_DATE)),'<NULL>')             AS CREATED_DATE,
-    NVL(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'<NULL>')      AS DATE_TIME_COMPLETED,
-    NVL(TRIM(TO_CHAR(UPDATED_BY)),'<NULL>')               AS UPDATED_BY,
-    NVL(TRIM(TO_CHAR(UPDATED_ON)),'<NULL>')               AS UPDATED_ON,
-    NVL(TRIM(TO_CHAR(RECRUITER)),'<NULL>')                AS RECRUITER,
-    NVL(TRIM(TO_CHAR(CANDIDATE_TAGS)),'<NULL>')           AS CANDIDATE_TAGS,
-    NVL(TRIM(TO_CHAR(CANDIDATE_POOL)),'<NULL>')           AS CANDIDATE_POOL,
-    NVL(TRIM(TO_CHAR(ETL_BATCHID)),'<NULL>')              AS ETL_BATCHID
+    TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)) AS ORIGINAL_JOB_REQUISITION,
+    TRIM(TO_CHAR(SOURCE_CATEGORY))     AS SOURCE_CATEGORY,
+    TRIM(TO_CHAR(SOURCE))              AS SOURCE,
+    TRIM(TO_CHAR(RECRUITING_AGENCY))   AS RECRUITING_AGENCY,
+    TRIM(TO_CHAR(CANDIDATE_STATUS))    AS CANDIDATE_STATUS,
+    TRIM(TO_CHAR(LAST_RECRUITING_STAGE)) AS LAST_RECRUITING_STAGE,
+    TRIM(TO_CHAR(JOB_APPLICATION_STEP))   AS JOB_APPLICATION_STEP,
+    TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)) AS LAST_RECRUITING_STAGE_NUMBER,
+    TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)) AS FINAL_DISPOSITION_REASON,
+    TRIM(TO_CHAR(OFFER_STATUS))        AS OFFER_STATUS,
+    TRIM(TO_CHAR(HIRED))               AS HIRED,
+    TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)) AS TIME_TO_OFFER_ACCEPT_DAYS,
+    TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)) AS TIME_TO_OFFER_REJECT_DAYS,
+    TRIM(TO_CHAR(CANDIDATE_START_DATE)) AS CANDIDATE_START_DATE,
+    TRIM(TO_CHAR(REFERRED_BY))         AS REFERRED_BY,
+    TRIM(TO_CHAR(CREATED_DATE))        AS CREATED_DATE,
+    TRIM(TO_CHAR(DATE_TIME_COMPLETED)) AS DATE_TIME_COMPLETED,
+    TRIM(TO_CHAR(UPDATED_BY))          AS UPDATED_BY,
+    TRIM(TO_CHAR(UPDATED_ON))          AS UPDATED_ON,
+    TRIM(TO_CHAR(RECRUITER))           AS RECRUITER,
+    TRIM(TO_CHAR(CANDIDATE_TAGS))      AS CANDIDATE_TAGS,
+    TRIM(TO_CHAR(CANDIDATE_POOL))      AS CANDIDATE_POOL,
+    TRIM(TO_CHAR(ETL_BATCHID))         AS ETL_BATCHID
   FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
   WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
 ),
 
 --------------------------------------------------------------------------------
--- gm / gt (multiset summary) - unchanged
+-- 1) Multiset summary (counts of full-row duplicates)
 --------------------------------------------------------------------------------
 gm AS (
   SELECT
+    -- normalized full_row built from ALL 30 columns (same order as above)
     'JOB_APPLICATION=' || NVL(JOB_APPLICATION,'<NULL>') || '|' ||
     'CANDIDATE_ID=' || NVL(CANDIDATE_ID,'<NULL>') || '|' ||
     'POSITION=' || NVL(POSITION,'<NULL>') || '|' ||
     'EMPLOYEE_ID=' || NVL(EMPLOYEE_ID,'<NULL>') || '|' ||
     'SOEID=' || NVL(SOEID,'<NULL>') || '|' ||
     'JOB_REQUISITION=' || NVL(JOB_REQUISITION,'<NULL>') || '|' ||
-    'ORIGINAL_JOB_REQUISITION=' || NVL(ORIGINAL_JOB_REQUISITION,'<NULL>') || '|' ||
     'ADDED_DATE=' || NVL(ADDED_DATE,'<NULL>') || '|' ||
+    'ORIGINAL_JOB_REQUISITION=' || NVL(ORIGINAL_JOB_REQUISITION,'<NULL>') || '|' ||
     'SOURCE_CATEGORY=' || NVL(SOURCE_CATEGORY,'<NULL>') || '|' ||
     'SOURCE=' || NVL(SOURCE,'<NULL>') || '|' ||
     'RECRUITING_AGENCY=' || NVL(RECRUITING_AGENCY,'<NULL>') || '|' ||
@@ -120,7 +124,7 @@ gm AS (
   FROM main_norm
   GROUP BY
     JOB_APPLICATION, CANDIDATE_ID, POSITION, EMPLOYEE_ID, SOEID, JOB_REQUISITION,
-    ORIGINAL_JOB_REQUISITION, ADDED_DATE, SOURCE_CATEGORY, SOURCE, RECRUITING_AGENCY,
+    ADDED_DATE, ORIGINAL_JOB_REQUISITION, SOURCE_CATEGORY, SOURCE, RECRUITING_AGENCY,
     CANDIDATE_STATUS, LAST_RECRUITING_STAGE, JOB_APPLICATION_STEP, LAST_RECRUITING_STAGE_NUMBER,
     FINAL_DISPOSITION_REASON, OFFER_STATUS, HIRED, TIME_TO_OFFER_ACCEPT_DAYS,
     TIME_TO_OFFER_REJECT_DAYS, CANDIDATE_START_DATE, REFERRED_BY, CREATED_DATE,
@@ -135,8 +139,8 @@ gt AS (
     'EMPLOYEE_ID=' || NVL(EMPLOYEE_ID,'<NULL>') || '|' ||
     'SOEID=' || NVL(SOEID,'<NULL>') || '|' ||
     'JOB_REQUISITION=' || NVL(JOB_REQUISITION,'<NULL>') || '|' ||
-    'ORIGINAL_JOB_REQUISITION=' || NVL(ORIGINAL_JOB_REQUISITION,'<NULL>') || '|' ||
     'ADDED_DATE=' || NVL(ADDED_DATE,'<NULL>') || '|' ||
+    'ORIGINAL_JOB_REQUISITION=' || NVL(ORIGINAL_JOB_REQUISITION,'<NULL>') || '|' ||
     'SOURCE_CATEGORY=' || NVL(SOURCE_CATEGORY,'<NULL>') || '|' ||
     'SOURCE=' || NVL(SOURCE,'<NULL>') || '|' ||
     'RECRUITING_AGENCY=' || NVL(RECRUITING_AGENCY,'<NULL>') || '|' ||
@@ -163,13 +167,14 @@ gt AS (
   FROM temp_norm
   GROUP BY
     JOB_APPLICATION, CANDIDATE_ID, POSITION, EMPLOYEE_ID, SOEID, JOB_REQUISITION,
-    ORIGINAL_JOB_REQUISITION, ADDED_DATE, SOURCE_CATEGORY, SOURCE, RECRUITING_AGENCY,
+    ADDED_DATE, ORIGINAL_JOB_REQUISITION, SOURCE_CATEGORY, SOURCE, RECRUITING_AGENCY,
     CANDIDATE_STATUS, LAST_RECRUITING_STAGE, JOB_APPLICATION_STEP, LAST_RECRUITING_STAGE_NUMBER,
     FINAL_DISPOSITION_REASON, OFFER_STATUS, HIRED, TIME_TO_OFFER_ACCEPT_DAYS,
     TIME_TO_OFFER_REJECT_DAYS, CANDIDATE_START_DATE, REFERRED_BY, CREATED_DATE,
     DATE_TIME_COMPLETED, UPDATED_BY, UPDATED_ON, RECRUITER, CANDIDATE_TAGS, CANDIDATE_POOL, ETL_BATCHID
 ),
 
+-- 1A) multiset summary single row
 multiset_summary AS (
   SELECT
     (SELECT COUNT(*) FROM main_norm) AS total_main_rows,
@@ -181,13 +186,14 @@ multiset_summary AS (
   FROM DUAL
 ),
 
+-- 2) Which full_row strings are unmatched (gm.cnt_m > gt.cnt_t)
 unmatched_fullrows AS (
   SELECT gm.full_row, gm.cnt_m AS main_count, NVL(gt.cnt_t,0) AS temp_count
-  FROM gm
-  LEFT JOIN gt ON gm.full_row = gt.full_row
+  FROM gm LEFT JOIN gt ON gm.full_row = gt.full_row
   WHERE gm.cnt_m > NVL(gt.cnt_t,0)
 ),
 
+-- 3) Representative MAIN row values for each unmatched full_row (pick one representative if duplicates exist)
 unmatched_main_rows AS (
   SELECT
     u.full_row,
@@ -235,32 +241,41 @@ unmatched_main_rows AS (
   GROUP BY u.full_row, u.main_count, u.temp_count
 ),
 
+--------------------------------------------------------------------------------
+-- 4) For unmatched keys collect distinct TEMP values per column (comma-separated CLOB)
+--     Use XMLAGG + XMLSERIALIZE to produce CLOB results (works across many Oracle versions)
+--------------------------------------------------------------------------------
 temp_values_agg AS (
   SELECT
     t.JOB_APPLICATION, t.CANDIDATE_ID, t.POSITION, t.EMPLOYEE_ID, t.SOEID, t.JOB_REQUISITION, t.ADDED_DATE,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_ORIG).EXTRACT('//text()') || ', ' ORDER BY TEMP_ORIG).GetClobVal(),', ') AS temp_ORIGINAL_JOB_REQUISITION_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_SC).EXTRACT('//text()') || ', ' ORDER BY TEMP_SC).GetClobVal(),', ') AS temp_SOURCE_CATEGORY_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_SOURCE).EXTRACT('//text()') || ', ' ORDER BY TEMP_SOURCE).GetClobVal(),', ') AS temp_SOURCE_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_RA).EXTRACT('//text()') || ', ' ORDER BY TEMP_RA).GetClobVal(),', ') AS temp_RECRUITING_AGENCY_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_CS).EXTRACT('//text()') || ', ' ORDER BY TEMP_CS).GetClobVal(),', ') AS temp_CANDIDATE_STATUS_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_LRS).EXTRACT('//text()') || ', ' ORDER BY TEMP_LRS).GetClobVal(),', ') AS temp_LAST_RECRUITING_STAGE_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_JAS).EXTRACT('//text()') || ', ' ORDER BY TEMP_JAS).GetClobVal(),', ') AS temp_JOB_APPLICATION_STEP_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_LRSN).EXTRACT('//text()') || ', ' ORDER BY TEMP_LRSN).GetClobVal(),', ') AS temp_LAST_RECRUITING_STAGE_NUMBER_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_FDR).EXTRACT('//text()') || ', ' ORDER BY TEMP_FDR).GetClobVal(),', ') AS temp_FINAL_DISPOSITION_REASON_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_OS).EXTRACT('//text()') || ', ' ORDER BY TEMP_OS).GetClobVal(),', ') AS temp_OFFER_STATUS_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_HIRED).EXTRACT('//text()') || ', ' ORDER BY TEMP_HIRED).GetClobVal(),', ') AS temp_HIRED_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_TA).EXTRACT('//text()') || ', ' ORDER BY TEMP_TA).GetClobVal(),', ') AS temp_TIME_TO_OFFER_ACCEPT_DAYS_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_TR).EXTRACT('//text()') || ', ' ORDER BY TEMP_TR).GetClobVal(),', ') AS temp_TIME_TO_OFFER_REJECT_DAYS_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_CSD).EXTRACT('//text()') || ', ' ORDER BY TEMP_CSD).GetClobVal(),', ') AS temp_CANDIDATE_START_DATE_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_REF).EXTRACT('//text()') || ', ' ORDER BY TEMP_REF).GetClobVal(),', ') AS temp_REFERRED_BY_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_CD).EXTRACT('//text()') || ', ' ORDER BY TEMP_CD).GetClobVal(),', ') AS temp_CREATED_DATE_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_DTC).EXTRACT('//text()') || ', ' ORDER BY TEMP_DTC).GetClobVal(),', ') AS temp_DATE_TIME_COMPLETED_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_UB).EXTRACT('//text()') || ', ' ORDER BY TEMP_UB).GetClobVal(),', ') AS temp_UPDATED_BY_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_UO).EXTRACT('//text()') || ', ' ORDER BY TEMP_UO).GetClobVal(),', ') AS temp_UPDATED_ON_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_REC).EXTRACT('//text()') || ', ' ORDER BY TEMP_REC).GetClobVal(),', ') AS temp_RECRUITER_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_CTAGS).EXTRACT('//text()') || ', ' ORDER BY TEMP_CTAGS).GetClobVal(),', ') AS temp_CANDIDATE_TAGS_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_CPOOL).EXTRACT('//text()') || ', ' ORDER BY TEMP_CPOOL).GetClobVal(),', ') AS temp_CANDIDATE_POOL_vals,
-    RTRIM(XMLAGG(XMLELEMENT(e, TEMP_ETL).EXTRACT('//text()') || ', ' ORDER BY TEMP_ETL).GetClobVal(),', ') AS temp_ETL_BATCHID_vals
+
+    RTRIM(
+      XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_ORIG || ', ') ORDER BY TEMP_ORIG) AS CLOB),
+    ', ') AS temp_ORIGINAL_JOB_REQUISITION_vals,
+
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_SC || ', ') ORDER BY TEMP_SC) AS CLOB), ', ') AS temp_SOURCE_CATEGORY_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_SOURCE || ', ') ORDER BY TEMP_SOURCE) AS CLOB), ', ') AS temp_SOURCE_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_RA || ', ') ORDER BY TEMP_RA) AS CLOB), ', ') AS temp_RECRUITING_AGENCY_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_CS || ', ') ORDER BY TEMP_CS) AS CLOB), ', ') AS temp_CANDIDATE_STATUS_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_LRS || ', ') ORDER BY TEMP_LRS) AS CLOB), ', ') AS temp_LAST_RECRUITING_STAGE_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_JAS || ', ') ORDER BY TEMP_JAS) AS CLOB), ', ') AS temp_JOB_APPLICATION_STEP_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_LRSN || ', ') ORDER BY TEMP_LRSN) AS CLOB), ', ') AS temp_LAST_RECRUITING_STAGE_NUMBER_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_FDR || ', ') ORDER BY TEMP_FDR) AS CLOB), ', ') AS temp_FINAL_DISPOSITION_REASON_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_OS || ', ') ORDER BY TEMP_OS) AS CLOB), ', ') AS temp_OFFER_STATUS_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_HIRED || ', ') ORDER BY TEMP_HIRED) AS CLOB), ', ') AS temp_HIRED_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_TA || ', ') ORDER BY TEMP_TA) AS CLOB), ', ') AS temp_TIME_TO_OFFER_ACCEPT_DAYS_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_TR || ', ') ORDER BY TEMP_TR) AS CLOB), ', ') AS temp_TIME_TO_OFFER_REJECT_DAYS_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_CSD || ', ') ORDER BY TEMP_CSD) AS CLOB), ', ') AS temp_CANDIDATE_START_DATE_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_REF || ', ') ORDER BY TEMP_REF) AS CLOB), ', ') AS temp_REFERRED_BY_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_CD || ', ') ORDER BY TEMP_CD) AS CLOB), ', ') AS temp_CREATED_DATE_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_DTC || ', ') ORDER BY TEMP_DTC) AS CLOB), ', ') AS temp_DATE_TIME_COMPLETED_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_UB || ', ') ORDER BY TEMP_UB) AS CLOB), ', ') AS temp_UPDATED_BY_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_UO || ', ') ORDER BY TEMP_UO) AS CLOB), ', ') AS temp_UPDATED_ON_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_REC || ', ') ORDER BY TEMP_REC) AS CLOB), ', ') AS temp_RECRUITER_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_CTAGS || ', ') ORDER BY TEMP_CTAGS) AS CLOB), ', ') AS temp_CANDIDATE_TAGS_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_CPOOL || ', ') ORDER BY TEMP_CPOOL) AS CLOB), ', ') AS temp_CANDIDATE_POOL_vals,
+    RTRIM(XMLSERIALIZE(CONTENT XMLAGG(XMLELEMENT(e, TEMP_ETL || ', ') ORDER BY TEMP_ETL) AS CLOB), ', ') AS temp_ETL_BATCHID_vals
+
   FROM (
     SELECT DISTINCT
       JOB_APPLICATION, CANDIDATE_ID, POSITION, EMPLOYEE_ID, SOEID, JOB_REQUISITION, ADDED_DATE,
@@ -293,10 +308,11 @@ temp_values_agg AS (
 )
 
 --------------------------------------------------------------------------------
--- 5) Build the detailed unmatched report (as before)
+-- Final detailed unmatched report:
+-- Show per-unmatched-main-key the columns that differ, main value and aggregated temp distinct values
 --------------------------------------------------------------------------------
 SELECT
-  u.full_row                               AS main_full_row_string,
+  u.full_row                                        AS main_full_row_string,
   u.main_count,
   u.temp_count,
   um.JOB_APPLICATION,
@@ -307,6 +323,8 @@ SELECT
   um.JOB_REQUISITION,
   um.ADDED_DATE,
 
+  -- For each column: show a marker (column name) if main value not present in aggregated temp values,
+  -- then show main value and temp aggregated distinct values.
   CASE WHEN instr(tva.temp_ORIGINAL_JOB_REQUISITION_vals, um.ORIGINAL_JOB_REQUISITION) = 0 THEN 'ORIGINAL_JOB_REQUISITION' END AS diff_col_original_job_requisition,
   um.ORIGINAL_JOB_REQUISITION AS main_original_job_requisition,
   tva.temp_ORIGINAL_JOB_REQUISITION_vals AS temp_original_job_requisition_vals,
@@ -328,63 +346,79 @@ SELECT
   tva.temp_CANDIDATE_STATUS_vals AS temp_candidate_status_vals,
 
   CASE WHEN instr(tva.temp_LAST_RECRUITING_STAGE_vals, um.LAST_RECRUITING_STAGE) = 0 THEN 'LAST_RECRUITING_STAGE' END AS diff_col_last_recruiting_stage,
-  um.LAST_RECRUITING_STAGE,
-  tva.temp_LAST_RECRUITING_STAGE_vals,
+  um.LAST_RECRUITING_STAGE AS main_last_recruiting_stage,
+  tva.temp_LAST_RECRUITING_STAGE_vals AS temp_last_recruiting_stage_vals,
 
   CASE WHEN instr(tva.temp_JOB_APPLICATION_STEP_vals, um.JOB_APPLICATION_STEP) = 0 THEN 'JOB_APPLICATION_STEP' END AS diff_col_job_application_step,
-  um.JOB_APPLICATION_STEP, tva.temp_JOB_APPLICATION_STEP_vals,
+  um.JOB_APPLICATION_STEP AS main_job_application_step,
+  tva.temp_JOB_APPLICATION_STEP_vals AS temp_job_application_step_vals,
 
   CASE WHEN instr(tva.temp_LAST_RECRUITING_STAGE_NUMBER_vals, um.LAST_RECRUITING_STAGE_NUMBER) = 0 THEN 'LAST_RECRUITING_STAGE_NUMBER' END AS diff_col_last_recruiting_stage_number,
-  um.LAST_RECRUITING_STAGE_NUMBER, tva.temp_LAST_RECRUITING_STAGE_NUMBER_vals,
+  um.LAST_RECRUITING_STAGE_NUMBER AS main_last_recruiting_stage_number,
+  tva.temp_LAST_RECRUITING_STAGE_NUMBER_vals AS temp_last_recruiting_stage_number_vals,
 
   CASE WHEN instr(tva.temp_FINAL_DISPOSITION_REASON_vals, um.FINAL_DISPOSITION_REASON) = 0 THEN 'FINAL_DISPOSITION_REASON' END AS diff_col_final_disposition_reason,
-  um.FINAL_DISPOSITION_REASON, tva.temp_FINAL_DISPOSITION_REASON_vals,
+  um.FINAL_DISPOSITION_REASON AS main_final_disposition_reason,
+  tva.temp_FINAL_DISPOSITION_REASON_vals AS temp_final_disposition_reason_vals,
 
   CASE WHEN instr(tva.temp_OFFER_STATUS_vals, um.OFFER_STATUS) = 0 THEN 'OFFER_STATUS' END AS diff_col_offer_status,
-  um.OFFER_STATUS, tva.temp_OFFER_STATUS_vals,
+  um.OFFER_STATUS AS main_offer_status,
+  tva.temp_OFFER_STATUS_vals AS temp_offer_status_vals,
 
   CASE WHEN instr(tva.temp_HIRED_vals, um.HIRED) = 0 THEN 'HIRED' END AS diff_col_hired,
-  um.HIRED, tva.temp_HIRED_vals,
+  um.HIRED AS main_hired,
+  tva.temp_HIRED_vals AS temp_hired_vals,
 
   CASE WHEN instr(tva.temp_TIME_TO_OFFER_ACCEPT_DAYS_vals, um.TIME_TO_OFFER_ACCEPT_DAYS) = 0 THEN 'TIME_TO_OFFER_ACCEPT_DAYS' END AS diff_col_time_to_offer_accept_days,
-  um.TIME_TO_OFFER_ACCEPT_DAYS, tva.temp_TIME_TO_OFFER_ACCEPT_DAYS_vals,
+  um.TIME_TO_OFFER_ACCEPT_DAYS AS main_time_to_offer_accept_days,
+  tva.temp_TIME_TO_OFFER_ACCEPT_DAYS_vals AS temp_time_to_offer_accept_days_vals,
 
   CASE WHEN instr(tva.temp_TIME_TO_OFFER_REJECT_DAYS_vals, um.TIME_TO_OFFER_REJECT_DAYS) = 0 THEN 'TIME_TO_OFFER_REJECT_DAYS' END AS diff_col_time_to_offer_reject_days,
-  um.TIME_TO_OFFER_REJECT_DAYS, tva.temp_TIME_TO_OFFER_REJECT_DAYS_vals,
+  um.TIME_TO_OFFER_REJECT_DAYS AS main_time_to_offer_reject_days,
+  tva.temp_TIME_TO_OFFER_REJECT_DAYS_vals AS temp_time_to_offer_reject_days_vals,
 
   CASE WHEN instr(tva.temp_CANDIDATE_START_DATE_vals, um.CANDIDATE_START_DATE) = 0 THEN 'CANDIDATE_START_DATE' END AS diff_col_candidate_start_date,
-  um.CANDIDATE_START_DATE, tva.temp_CANDIDATE_START_DATE_vals,
+  um.CANDIDATE_START_DATE AS main_candidate_start_date,
+  tva.temp_CANDIDATE_START_DATE_vals AS temp_candidate_start_date_vals,
 
   CASE WHEN instr(tva.temp_REFERRED_BY_vals, um.REFERRED_BY) = 0 THEN 'REFERRED_BY' END AS diff_col_referred_by,
-  um.REFERRED_BY, tva.temp_REFERRED_BY_vals,
+  um.REFERRED_BY AS main_referred_by,
+  tva.temp_REFERRED_BY_vals AS temp_referred_by_vals,
 
   CASE WHEN instr(tva.temp_CREATED_DATE_vals, um.CREATED_DATE) = 0 THEN 'CREATED_DATE' END AS diff_col_created_date,
-  um.CREATED_DATE, tva.temp_CREATED_DATE_vals,
+  um.CREATED_DATE AS main_created_date,
+  tva.temp_CREATED_DATE_vals AS temp_created_date_vals,
 
   CASE WHEN instr(tva.temp_DATE_TIME_COMPLETED_vals, um.DATE_TIME_COMPLETED) = 0 THEN 'DATE_TIME_COMPLETED' END AS diff_col_date_time_completed,
-  um.DATE_TIME_COMPLETED, tva.temp_DATE_TIME_COMPLETED_vals,
+  um.DATE_TIME_COMPLETED AS main_date_time_completed,
+  tva.temp_DATE_TIME_COMPLETED_vals AS temp_date_time_completed_vals,
 
   CASE WHEN instr(tva.temp_UPDATED_BY_vals, um.UPDATED_BY) = 0 THEN 'UPDATED_BY' END AS diff_col_updated_by,
-  um.UPDATED_BY, tva.temp_UPDATED_BY_vals,
+  um.UPDATED_BY AS main_updated_by,
+  tva.temp_UPDATED_BY_vals AS temp_updated_by_vals,
 
   CASE WHEN instr(tva.temp_UPDATED_ON_vals, um.UPDATED_ON) = 0 THEN 'UPDATED_ON' END AS diff_col_updated_on,
-  um.UPDATED_ON, tva.temp_UPDATED_ON_vals,
+  um.UPDATED_ON AS main_updated_on,
+  tva.temp_UPDATED_ON_vals AS temp_updated_on_vals,
 
   CASE WHEN instr(tva.temp_RECRUITER_vals, um.RECRUITER) = 0 THEN 'RECRUITER' END AS diff_col_recruiter,
-  um.RECRUITER, tva.temp_RECRUITER_vals,
+  um.RECRUITER AS main_recruiter,
+  tva.temp_RECRUITER_vals AS temp_recruiter_vals,
 
   CASE WHEN instr(tva.temp_CANDIDATE_TAGS_vals, um.CANDIDATE_TAGS) = 0 THEN 'CANDIDATE_TAGS' END AS diff_col_candidate_tags,
-  um.CANDIDATE_TAGS, tva.temp_CANDIDATE_TAGS_vals,
+  um.CANDIDATE_TAGS AS main_candidate_tags,
+  tva.temp_CANDIDATE_TAGS_vals AS temp_candidate_tags_vals,
 
   CASE WHEN instr(tva.temp_CANDIDATE_POOL_vals, um.CANDIDATE_POOL) = 0 THEN 'CANDIDATE_POOL' END AS diff_col_candidate_pool,
-  um.CANDIDATE_POOL, tva.temp_CANDIDATE_POOL_vals,
+  um.CANDIDATE_POOL AS main_candidate_pool,
+  tva.temp_CANDIDATE_POOL_vals AS temp_candidate_pool_vals,
 
   CASE WHEN instr(tva.temp_ETL_BATCHID_vals, um.ETL_BATCHID) = 0 THEN 'ETL_BATCHID' END AS diff_col_etl_batchid,
-  um.ETL_BATCHID, tva.temp_ETL_BATCHID_vals
+  um.ETL_BATCHID AS main_etl_batchid,
+  tva.temp_ETL_BATCHID_vals AS temp_etl_batchid_vals
 
 FROM unmatched_fullrows u
-LEFT JOIN unmatched_main_rows um
-  ON u.full_row = um.full_row
+LEFT JOIN unmatched_main_rows um ON u.full_row = um.full_row
 LEFT JOIN temp_values_agg tva
   ON tva.JOB_APPLICATION = um.JOB_APPLICATION
  AND tva.CANDIDATE_ID    = um.CANDIDATE_ID
@@ -397,14 +431,17 @@ ORDER BY u.main_count DESC
 ;
 
 --------------------------------------------------------------------------------
--- 6) Quick unmatched count (run separately if you want just the number)
--- SELECT (SELECT COUNT(*) FROM main_norm) - (SELECT SUM(LEAST(gm.cnt_m, NVL(gt.cnt_t,0))) FROM gm LEFT JOIN gt ON gm.full_row = gt.full_row) AS unmatched_main_rows FROM DUAL;
+-- OPTIONAL: Quick single-number count of unmatched MAIN rows (run separately if you want)
 --------------------------------------------------------------------------------
+-- SELECT (SELECT COUNT(*) FROM main_norm) - (SELECT SUM(LEAST(gm.cnt_m, NVL(gt.cnt_t,0))) FROM gm LEFT JOIN gt ON gm.full_row = gt.full_row) AS unmatched_main_rows FROM DUAL;
 
 --------------------------------------------------------------------------------
--- 7) MATCHING-KEYS REPORT (complete per-column union ALL, all 30 columns)
---    One row per composite key showing which columns matched and values from both sides
+-- MATCHING-KEYS report: keys present in both MAIN & TEMP and showing columns that matched
+-- (One row per composite key that appears in both; lists matching columns and the values)
+-- NOTE: This is heavy - run separately if needed.
 --------------------------------------------------------------------------------
+-- The following block builds per-column matches (one row per matched column per matching key),
+-- then aggregates to one line per key with LISTAGG of matched columns and their values.
 SELECT
   p.JOB_APPLICATION, p.CANDIDATE_ID, p.POSITION, p.EMPLOYEE_ID, p.SOEID, p.JOB_REQUISITION, p.ADDED_DATE,
   COUNT(*) AS match_count,
@@ -412,110 +449,7 @@ SELECT
   LISTAGG(col_name || '=' || main_val, ' ; ') WITHIN GROUP (ORDER BY col_name) AS main_matched_vals,
   LISTAGG(col_name || '=' || temp_val, ' ; ') WITHIN GROUP (ORDER BY col_name) AS temp_matched_vals
 FROM (
-
-  -- 1 JOB_APPLICATION
-  SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
-         'JOB_APPLICATION' AS col_name,
-         NVL(m.JOB_APPLICATION,'<NULL>') AS main_val,
-         NVL(t.JOB_APPLICATION,'<NULL>') AS temp_val
-  FROM main_norm m JOIN temp_norm t
-    ON m.JOB_APPLICATION = t.JOB_APPLICATION
-   AND m.CANDIDATE_ID    = t.CANDIDATE_ID
-   AND m.POSITION        = t.POSITION
-   AND m.EMPLOYEE_ID     = t.EMPLOYEE_ID
-   AND m.SOEID           = t.SOEID
-   AND m.JOB_REQUISITION = t.JOB_REQUISITION
-   AND m.ADDED_DATE      = t.ADDED_DATE
-  WHERE NVL(m.JOB_APPLICATION,'<NULL>') = NVL(t.JOB_APPLICATION,'<NULL>')
-
-  UNION ALL
-
-  -- 2 CANDIDATE_ID
-  SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
-         'CANDIDATE_ID' AS col_name,
-         NVL(m.CANDIDATE_ID,'<NULL>') AS main_val,
-         NVL(t.CANDIDATE_ID,'<NULL>') AS temp_val
-  FROM main_norm m JOIN temp_norm t
-    ON m.JOB_APPLICATION = t.JOB_APPLICATION
-   AND m.CANDIDATE_ID    = t.CANDIDATE_ID
-   AND m.POSITION        = t.POSITION
-   AND m.EMPLOYEE_ID     = t.EMPLOYEE_ID
-   AND m.SOEID           = t.SOEID
-   AND m.JOB_REQUISITION = t.JOB_REQUISITION
-   AND m.ADDED_DATE      = t.ADDED_DATE
-  WHERE NVL(m.CANDIDATE_ID,'<NULL>') = NVL(t.CANDIDATE_ID,'<NULL>')
-
-  UNION ALL
-
-  -- 3 POSITION
-  SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
-         'POSITION' AS col_name,
-         NVL(m.POSITION,'<NULL>') AS main_val,
-         NVL(t.POSITION,'<NULL>') AS temp_val
-  FROM main_norm m JOIN temp_norm t
-    ON m.JOB_APPLICATION = t.JOB_APPLICATION
-   AND m.CANDIDATE_ID    = t.CANDIDATE_ID
-   AND m.POSITION        = t.POSITION
-   AND m.EMPLOYEE_ID     = t.EMPLOYEE_ID
-   AND m.SOEID           = t.SOEID
-   AND m.JOB_REQUISITION = t.JOB_REQUISITION
-   AND m.ADDED_DATE      = t.ADDED_DATE
-  WHERE NVL(m.POSITION,'<NULL>') = NVL(t.POSITION,'<NULL>')
-
-  UNION ALL
-
-  -- 4 EMPLOYEE_ID
-  SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
-         'EMPLOYEE_ID' AS col_name,
-         NVL(m.EMPLOYEE_ID,'<NULL>') AS main_val,
-         NVL(t.EMPLOYEE_ID,'<NULL>') AS temp_val
-  FROM main_norm m JOIN temp_norm t
-    ON m.JOB_APPLICATION = t.JOB_APPLICATION
-   AND m.CANDIDATE_ID    = t.CANDIDATE_ID
-   AND m.POSITION        = t.POSITION
-   AND m.EMPLOYEE_ID     = t.EMPLOYEE_ID
-   AND m.SOEID           = t.SOEID
-   AND m.JOB_REQUISITION = t.JOB_REQUISITION
-   AND m.ADDED_DATE      = t.ADDED_DATE
-  WHERE NVL(m.EMPLOYEE_ID,'<NULL>') = NVL(t.EMPLOYEE_ID,'<NULL>')
-
-  UNION ALL
-
-  -- 5 SOEID
-  SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
-         'SOEID' AS col_name,
-         NVL(m.SOEID,'<NULL>') AS main_val,
-         NVL(t.SOEID,'<NULL>') AS temp_val
-  FROM main_norm m JOIN temp_norm t
-    ON m.JOB_APPLICATION = t.JOB_APPLICATION
-   AND m.CANDIDATE_ID    = t.CANDIDATE_ID
-   AND m.POSITION        = t.POSITION
-   AND m.EMPLOYEE_ID     = t.EMPLOYEE_ID
-   AND m.SOEID           = t.SOEID
-   AND m.JOB_REQUISITION = t.JOB_REQUISITION
-   AND m.ADDED_DATE      = t.ADDED_DATE
-  WHERE NVL(m.SOEID,'<NULL>') = NVL(t.SOEID,'<NULL>')
-
-  UNION ALL
-
-  -- 6 JOB_REQUISITION
-  SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
-         'JOB_REQUISITION' AS col_name,
-         NVL(m.JOB_REQUISITION,'<NULL>') AS main_val,
-         NVL(t.JOB_REQUISITION,'<NULL>') AS temp_val
-  FROM main_norm m JOIN temp_norm t
-    ON m.JOB_APPLICATION = t.JOB_APPLICATION
-   AND m.CANDIDATE_ID    = t.CANDIDATE_ID
-   AND m.POSITION        = t.POSITION
-   AND m.EMPLOYEE_ID     = t.EMPLOYEE_ID
-   AND m.SOEID           = t.SOEID
-   AND m.JOB_REQUISITION = t.JOB_REQUISITION
-   AND m.ADDED_DATE      = t.ADDED_DATE
-  WHERE NVL(m.JOB_REQUISITION,'<NULL>') = NVL(t.JOB_REQUISITION,'<NULL>')
-
-  UNION ALL
-
-  -- 7 ORIGINAL_JOB_REQUISITION
+  -- ORIGINAL_JOB_REQUISITION
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'ORIGINAL_JOB_REQUISITION' AS col_name,
          NVL(m.ORIGINAL_JOB_REQUISITION,'<NULL>') AS main_val,
@@ -532,24 +466,7 @@ FROM (
 
   UNION ALL
 
-  -- 8 ADDED_DATE
-  SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
-         'ADDED_DATE' AS col_name,
-         NVL(m.ADDED_DATE,'<NULL>') AS main_val,
-         NVL(t.ADDED_DATE,'<NULL>') AS temp_val
-  FROM main_norm m JOIN temp_norm t
-    ON m.JOB_APPLICATION = t.JOB_APPLICATION
-   AND m.CANDIDATE_ID    = t.CANDIDATE_ID
-   AND m.POSITION        = t.POSITION
-   AND m.EMPLOYEE_ID     = t.EMPLOYEE_ID
-   AND m.SOEID           = t.SOEID
-   AND m.JOB_REQUISITION = t.JOB_REQUISITION
-   AND m.ADDED_DATE      = t.ADDED_DATE
-  WHERE NVL(m.ADDED_DATE,'<NULL>') = NVL(t.ADDED_DATE,'<NULL>')
-
-  UNION ALL
-
-  -- 9 SOURCE_CATEGORY
+  -- SOURCE_CATEGORY
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'SOURCE_CATEGORY' AS col_name,
          NVL(m.SOURCE_CATEGORY,'<NULL>') AS main_val,
@@ -566,7 +483,7 @@ FROM (
 
   UNION ALL
 
-  -- 10 SOURCE
+  -- SOURCE
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'SOURCE' AS col_name,
          NVL(m.SOURCE,'<NULL>') AS main_val,
@@ -583,7 +500,7 @@ FROM (
 
   UNION ALL
 
-  -- 11 RECRUITING_AGENCY
+  -- RECRUITING_AGENCY
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'RECRUITING_AGENCY' AS col_name,
          NVL(m.RECRUITING_AGENCY,'<NULL>') AS main_val,
@@ -600,7 +517,7 @@ FROM (
 
   UNION ALL
 
-  -- 12 CANDIDATE_STATUS
+  -- CANDIDATE_STATUS
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'CANDIDATE_STATUS' AS col_name,
          NVL(m.CANDIDATE_STATUS,'<NULL>') AS main_val,
@@ -617,7 +534,7 @@ FROM (
 
   UNION ALL
 
-  -- 13 LAST_RECRUITING_STAGE
+  -- LAST_RECRUITING_STAGE
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'LAST_RECRUITING_STAGE' AS col_name,
          NVL(m.LAST_RECRUITING_STAGE,'<NULL>') AS main_val,
@@ -634,7 +551,7 @@ FROM (
 
   UNION ALL
 
-  -- 14 JOB_APPLICATION_STEP
+  -- JOB_APPLICATION_STEP
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'JOB_APPLICATION_STEP' AS col_name,
          NVL(m.JOB_APPLICATION_STEP,'<NULL>') AS main_val,
@@ -651,7 +568,7 @@ FROM (
 
   UNION ALL
 
-  -- 15 LAST_RECRUITING_STAGE_NUMBER
+  -- LAST_RECRUITING_STAGE_NUMBER
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'LAST_RECRUITING_STAGE_NUMBER' AS col_name,
          NVL(m.LAST_RECRUITING_STAGE_NUMBER,'<NULL>') AS main_val,
@@ -668,7 +585,7 @@ FROM (
 
   UNION ALL
 
-  -- 16 FINAL_DISPOSITION_REASON
+  -- FINAL_DISPOSITION_REASON
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'FINAL_DISPOSITION_REASON' AS col_name,
          NVL(m.FINAL_DISPOSITION_REASON,'<NULL>') AS main_val,
@@ -685,7 +602,7 @@ FROM (
 
   UNION ALL
 
-  -- 17 OFFER_STATUS
+  -- OFFER_STATUS
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'OFFER_STATUS' AS col_name,
          NVL(m.OFFER_STATUS,'<NULL>') AS main_val,
@@ -702,7 +619,7 @@ FROM (
 
   UNION ALL
 
-  -- 18 HIRED
+  -- HIRED
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'HIRED' AS col_name,
          NVL(m.HIRED,'<NULL>') AS main_val,
@@ -719,7 +636,7 @@ FROM (
 
   UNION ALL
 
-  -- 19 TIME_TO_OFFER_ACCEPT_DAYS
+  -- TIME_TO_OFFER_ACCEPT_DAYS
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'TIME_TO_OFFER_ACCEPT_DAYS' AS col_name,
          NVL(m.TIME_TO_OFFER_ACCEPT_DAYS,'<NULL>') AS main_val,
@@ -736,7 +653,7 @@ FROM (
 
   UNION ALL
 
-  -- 20 TIME_TO_OFFER_REJECT_DAYS
+  -- TIME_TO_OFFER_REJECT_DAYS
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'TIME_TO_OFFER_REJECT_DAYS' AS col_name,
          NVL(m.TIME_TO_OFFER_REJECT_DAYS,'<NULL>') AS main_val,
@@ -753,7 +670,7 @@ FROM (
 
   UNION ALL
 
-  -- 21 CANDIDATE_START_DATE
+  -- CANDIDATE_START_DATE
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'CANDIDATE_START_DATE' AS col_name,
          NVL(m.CANDIDATE_START_DATE,'<NULL>') AS main_val,
@@ -770,7 +687,7 @@ FROM (
 
   UNION ALL
 
-  -- 22 REFERRED_BY
+  -- REFERRED_BY
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'REFERRED_BY' AS col_name,
          NVL(m.REFERRED_BY,'<NULL>') AS main_val,
@@ -787,7 +704,7 @@ FROM (
 
   UNION ALL
 
-  -- 23 CREATED_DATE
+  -- CREATED_DATE
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'CREATED_DATE' AS col_name,
          NVL(m.CREATED_DATE,'<NULL>') AS main_val,
@@ -804,7 +721,7 @@ FROM (
 
   UNION ALL
 
-  -- 24 DATE_TIME_COMPLETED
+  -- DATE_TIME_COMPLETED
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'DATE_TIME_COMPLETED' AS col_name,
          NVL(m.DATE_TIME_COMPLETED,'<NULL>') AS main_val,
@@ -821,7 +738,7 @@ FROM (
 
   UNION ALL
 
-  -- 25 UPDATED_BY
+  -- UPDATED_BY
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'UPDATED_BY' AS col_name,
          NVL(m.UPDATED_BY,'<NULL>') AS main_val,
@@ -838,7 +755,7 @@ FROM (
 
   UNION ALL
 
-  -- 26 UPDATED_ON
+  -- UPDATED_ON
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'UPDATED_ON' AS col_name,
          NVL(m.UPDATED_ON,'<NULL>') AS main_val,
@@ -855,7 +772,7 @@ FROM (
 
   UNION ALL
 
-  -- 27 RECRUITER
+  -- RECRUITER
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'RECRUITER' AS col_name,
          NVL(m.RECRUITER,'<NULL>') AS main_val,
@@ -872,7 +789,7 @@ FROM (
 
   UNION ALL
 
-  -- 28 CANDIDATE_TAGS
+  -- CANDIDATE_TAGS
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'CANDIDATE_TAGS' AS col_name,
          NVL(m.CANDIDATE_TAGS,'<NULL>') AS main_val,
@@ -889,7 +806,7 @@ FROM (
 
   UNION ALL
 
-  -- 29 CANDIDATE_POOL
+  -- CANDIDATE_POOL
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'CANDIDATE_POOL' AS col_name,
          NVL(m.CANDIDATE_POOL,'<NULL>') AS main_val,
@@ -906,7 +823,7 @@ FROM (
 
   UNION ALL
 
-  -- 30 ETL_BATCHID
+  -- ETL_BATCHID
   SELECT m.JOB_APPLICATION, m.CANDIDATE_ID, m.POSITION, m.EMPLOYEE_ID, m.SOEID, m.JOB_REQUISITION, m.ADDED_DATE,
          'ETL_BATCHID' AS col_name,
          NVL(m.ETL_BATCHID,'<NULL>') AS main_val,
@@ -923,5 +840,9 @@ FROM (
 
 ) p
 GROUP BY p.JOB_APPLICATION, p.CANDIDATE_ID, p.POSITION, p.EMPLOYEE_ID, p.SOEID, p.JOB_REQUISITION, p.ADDED_DATE
-ORDER BY match_count DESC, p.JOB_APPLICATION, p.CANDIDATE_ID, p.POSITION
+ORDER BY match_count DESC
 ;
+
+--------------------------------------------------------------------------------
+-- END OF SCRIPT
+--------------------------------------------------------------------------------
