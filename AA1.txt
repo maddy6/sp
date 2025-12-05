@@ -330,6 +330,90 @@ diffs AS (
 
   SELECT rn, 'HIRED' AS column_name, TRIM(TO_CHAR(m.HIRED)) AS main_val, TRIM(TO_CH
 
+  UNION ALL
+
+  SELECT rn, 'HIRED' AS column_name, TRIM(TO_CHAR(m.HIRED)) AS main_val, TRIM(TO_CHAR(t.HIRED)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.HIRED)) <> TRIM(TO_CHAR(t.HIRED))
+
+  UNION ALL
+
+  SELECT rn, 'TIME_TO_OFFER_ACCEPT_DAYS' AS column_name, TRIM(TO_CHAR(m.TIME_TO_OFFER_ACCEPT_DAYS)) AS main_val, TRIM(TO_CHAR(t.TIME_TO_OFFER_ACCEPT_DAYS)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.TIME_TO_OFFER_ACCEPT_DAYS)) <> TRIM(TO_CHAR(t.TIME_TO_OFFER_ACCEPT_DAYS))
+
+  UNION ALL
+
+  SELECT rn, 'TIME_TO_OFFER_REJECT_DAYS' AS column_name, TRIM(TO_CHAR(m.TIME_TO_OFFER_REJECT_DAYS)) AS main_val, TRIM(TO_CHAR(t.TIME_TO_OFFER_REJECT_DAYS)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.TIME_TO_OFFER_REJECT_DAYS)) <> TRIM(TO_CHAR(t.TIME_TO_OFFER_REJECT_DAYS))
+
+  UNION ALL
+
+  SELECT rn, 'CANDIDATE_START_DATE' AS column_name, TRIM(TO_CHAR(m.CANDIDATE_START_DATE)) AS main_val, TRIM(TO_CHAR(t.CANDIDATE_START_DATE)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.CANDIDATE_START_DATE)) <> TRIM(TO_CHAR(t.CANDIDATE_START_DATE))
+
+  UNION ALL
+
+  SELECT rn, 'REFERRED_BY' AS column_name, TRIM(TO_CHAR(m.REFERRED_BY)) AS main_val, TRIM(TO_CHAR(t.REFERRED_BY)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.REFERRED_BY)) <> TRIM(TO_CHAR(t.REFERRED_BY))
+
+  UNION ALL
+
+  SELECT rn, 'CREATED_DATE' AS column_name, TRIM(TO_CHAR(m.CREATED_DATE)) AS main_val, TRIM(TO_CHAR(t.CREATED_DATE)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.CREATED_DATE)) <> TRIM(TO_CHAR(t.CREATED_DATE))
+
+  UNION ALL
+
+  SELECT rn, 'DATE_TIME_COMPLETED' AS column_name, TRIM(TO_CHAR(m.DATE_TIME_COMPLETED)) AS main_val, TRIM(TO_CHAR(t.DATE_TIME_COMPLETED)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.DATE_TIME_COMPLETED)) <> TRIM(TO_CHAR(t.DATE_TIME_COMPLETED))
+
+  UNION ALL
+
+  SELECT rn, 'UPDATED_BY' AS column_name, TRIM(TO_CHAR(m.UPDATED_BY)) AS main_val, TRIM(TO_CHAR(t.UPDATED_BY)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.UPDATED_BY)) <> TRIM(TO_CHAR(t.UPDATED_BY))
+
+  UNION ALL
+
+  SELECT rn, 'UPDATED_ON' AS column_name, TRIM(TO_CHAR(m.UPDATED_ON)) AS main_val, TRIM(TO_CHAR(t.UPDATED_ON)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.UPDATED_ON)) <> TRIM(TO_CHAR(t.UPDATED_ON))
+
+  UNION ALL
+
+  SELECT rn, 'RECRUITER' AS column_name, TRIM(TO_CHAR(m.RECRUITER)) AS main_val, TRIM(TO_CHAR(t.RECRUITER)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.RECRUITER)) <> TRIM(TO_CHAR(t.RECRUITER))
+
+  UNION ALL
+
+  SELECT rn, 'CANDIDATE_TAGS' AS column_name, TRIM(TO_CHAR(m.CANDIDATE_TAGS)) AS main_val, TRIM(TO_CHAR(t.CANDIDATE_TAGS)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.CANDIDATE_TAGS)) <> TRIM(TO_CHAR(t.CANDIDATE_TAGS))
+
+  UNION ALL
+
+  SELECT rn, 'CANDIDATE_POOL' AS column_name, TRIM(TO_CHAR(m.CANDIDATE_POOL)) AS main_val, TRIM(TO_CHAR(t.CANDIDATE_POOL)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.CANDIDATE_POOL)) <> TRIM(TO_CHAR(t.CANDIDATE_POOL))
+
+  UNION ALL
+
+  SELECT rn, 'ETL_BATCHID' AS column_name, TRIM(TO_CHAR(m.ETL_BATCHID)) AS main_val, TRIM(TO_CHAR(t.ETL_BATCHID)) AS temp_val
+  FROM m FULL JOIN t USING(rn) WHERE TRIM(TO_CHAR(m.ETL_BATCHID)) <> TRIM(TO_CHAR(t.ETL_BATCHID))
+)
+
+SELECT
+  d.rn,
+  LISTAGG(d.column_name, ', ') WITHIN GROUP (ORDER BY d.column_name) AS differing_columns,
+  COUNT(*) AS diff_count,
+  LISTAGG(d.column_name || '=' || d.main_val || ' -> ' || d.temp_val, '; ') WITHIN GROUP (ORDER BY d.column_name)
+    AS all_mismatch_column_values,
+  mm.main_full_row,
+  tt.temp_full_row
+FROM diffs d
+LEFT JOIN (
+  SELECT rn, MIN(main_full_row) AS main_full_row FROM m GROUP BY rn
+) mm ON mm.rn = d.rn
+LEFT JOIN (
+  SELECT rn, MIN(temp_full_row) AS temp_full_row FROM t GROUP BY rn
+) tt ON tt.rn = d.rn
+GROUP BY d.rn, mm.main_full_row, tt.temp_full_row
+ORDER BY diff_count DESC, d.rn
+FETCH FIRST 200 ROWS ONLY;
 
 
 
@@ -761,6 +845,7 @@ Copy
 Edit
 h2o_df["bayesian_mcc_risk"] = h2o_df["hct_term_mcc_bayesian_encoded_5"] / (h2o_df["tot_cnt_7days"] + 1)
 h2o_df["bayesian_avs_risk"] = h2o_df["ucm_avs_resp_bayesian_encoded_5"] / (h2o_df["tot_cnt_7days"] + 1)
+
 
 
 
