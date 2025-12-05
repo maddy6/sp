@@ -1,3 +1,111 @@
+-- Count of full-row matches (rows common in both MAIN & TEMP)
+WITH main_sig AS (
+  SELECT 
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(POSITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(EMPLOYEE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOEID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ADDED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE_CATEGORY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITING_AGENCY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(OFFER_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(HIRED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(REFERRED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CREATED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_ON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_TAGS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_POOL)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ETL_BATCHID)),'#') AS full_sig
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+temp_sig AS (
+  SELECT 
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(POSITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(EMPLOYEE_ID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOEID)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ADDED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE_CATEGORY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(SOURCE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITING_AGENCY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(OFFER_STATUS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(HIRED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(REFERRED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CREATED_DATE)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_BY)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(UPDATED_ON)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(RECRUITER)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_TAGS)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(CANDIDATE_POOL)),'#') || '|' ||
+    COALESCE(TRIM(TO_CHAR(ETL_BATCHID)),'#') AS full_sig
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+)
+SELECT COUNT(*) AS common_full_rows
+FROM (
+  SELECT full_sig FROM main_sig
+  INTERSECT
+  SELECT full_sig FROM temp_sig
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 --------------------------------------------------------------------------------
 -- SAFE, simplified row-diff summary (no TO_CHAR(format) to avoid ORA-01722)
 -- Filtered by ETL_BATCHID = 20251124
@@ -5737,6 +5845,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
