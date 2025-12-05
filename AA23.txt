@@ -1,0 +1,88 @@
+--------------------------------------------------------------------------------
+-- A: MULTISET SUMMARY (recommended first)
+-- How many MAIN rows (total) and how many of them are present in TEMP (respecting duplicates)
+-- Filter ETL_BATCHID = '20251124'
+--------------------------------------------------------------------------------
+WITH
+m AS (
+  SELECT
+    -- normalized full-row string (same 30 cols in same order)
+    'JOB_APPLICATION=' || NVL(TRIM(TO_CHAR(JOB_APPLICATION)),'<NULL>') || '|' ||
+    'CANDIDATE_ID=' || NVL(TRIM(TO_CHAR(CANDIDATE_ID)),'<NULL>') || '|' ||
+    'POSITION=' || NVL(TRIM(TO_CHAR(POSITION)),'<NULL>') || '|' ||
+    'EMPLOYEE_ID=' || NVL(TRIM(TO_CHAR(EMPLOYEE_ID)),'<NULL>') || '|' ||
+    'SOEID=' || NVL(TRIM(TO_CHAR(SOEID)),'<NULL>') || '|' ||
+    'JOB_REQUISITION=' || NVL(TRIM(TO_CHAR(JOB_REQUISITION)),'<NULL>') || '|' ||
+    'ORIGINAL_JOB_REQUISITION=' || NVL(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'<NULL>') || '|' ||
+    'ADDED_DATE=' || NVL(TRIM(TO_CHAR(ADDED_DATE)),'<NULL>') || '|' ||
+    'SOURCE_CATEGORY=' || NVL(TRIM(TO_CHAR(SOURCE_CATEGORY)),'<NULL>') || '|' ||
+    'SOURCE=' || NVL(TRIM(TO_CHAR(SOURCE)),'<NULL>') || '|' ||
+    'RECRUITING_AGENCY=' || NVL(TRIM(TO_CHAR(RECRUITING_AGENCY)),'<NULL>') || '|' ||
+    'CANDIDATE_STATUS=' || NVL(TRIM(TO_CHAR(CANDIDATE_STATUS)),'<NULL>') || '|' ||
+    'LAST_RECRUITING_STAGE=' || NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'<NULL>') || '|' ||
+    'JOB_APPLICATION_STEP=' || NVL(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'<NULL>') || '|' ||
+    'LAST_RECRUITING_STAGE_NUMBER=' || NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'<NULL>') || '|' ||
+    'FINAL_DISPOSITION_REASON=' || NVL(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'<NULL>') || '|' ||
+    'OFFER_STATUS=' || NVL(TRIM(TO_CHAR(OFFER_STATUS)),'<NULL>') || '|' ||
+    'HIRED=' || NVL(TRIM(TO_CHAR(HIRED)),'<NULL>') || '|' ||
+    'TIME_TO_OFFER_ACCEPT_DAYS=' || NVL(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'<NULL>') || '|' ||
+    'TIME_TO_OFFER_REJECT_DAYS=' || NVL(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'<NULL>') || '|' ||
+    'CANDIDATE_START_DATE=' || NVL(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'<NULL>') || '|' ||
+    'REFERRED_BY=' || NVL(TRIM(TO_CHAR(REFERRED_BY)),'<NULL>') || '|' ||
+    'CREATED_DATE=' || NVL(TRIM(TO_CHAR(CREATED_DATE)),'<NULL>') || '|' ||
+    'DATE_TIME_COMPLETED=' || NVL(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'<NULL>') || '|' ||
+    'UPDATED_BY=' || NVL(TRIM(TO_CHAR(UPDATED_BY)),'<NULL>') || '|' ||
+    'UPDATED_ON=' || NVL(TRIM(TO_CHAR(UPDATED_ON)),'<NULL>') || '|' ||
+    'RECRUITER=' || NVL(TRIM(TO_CHAR(RECRUITER)),'<NULL>') || '|' ||
+    'CANDIDATE_TAGS=' || NVL(TRIM(TO_CHAR(CANDIDATE_TAGS)),'<NULL>') || '|' ||
+    'CANDIDATE_POOL=' || NVL(TRIM(TO_CHAR(CANDIDATE_POOL)),'<NULL>') || '|' ||
+    'ETL_BATCHID=' || NVL(TRIM(TO_CHAR(ETL_BATCHID)),'<NULL>') AS full_row
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+t AS (
+  SELECT
+    'JOB_APPLICATION=' || NVL(TRIM(TO_CHAR(JOB_APPLICATION)),'<NULL>') || '|' ||
+    'CANDIDATE_ID=' || NVL(TRIM(TO_CHAR(CANDIDATE_ID)),'<NULL>') || '|' ||
+    'POSITION=' || NVL(TRIM(TO_CHAR(POSITION)),'<NULL>') || '|' ||
+    'EMPLOYEE_ID=' || NVL(TRIM(TO_CHAR(EMPLOYEE_ID)),'<NULL>') || '|' ||
+    'SOEID=' || NVL(TRIM(TO_CHAR(SOEID)),'<NULL>') || '|' ||
+    'JOB_REQUISITION=' || NVL(TRIM(TO_CHAR(JOB_REQUISITION)),'<NULL>') || '|' ||
+    'ORIGINAL_JOB_REQUISITION=' || NVL(TRIM(TO_CHAR(ORIGINAL_JOB_REQUISITION)),'<NULL>') || '|' ||
+    'ADDED_DATE=' || NVL(TRIM(TO_CHAR(ADDED_DATE)),'<NULL>') || '|' ||
+    'SOURCE_CATEGORY=' || NVL(TRIM(TO_CHAR(SOURCE_CATEGORY)),'<NULL>') || '|' ||
+    'SOURCE=' || NVL(TRIM(TO_CHAR(SOURCE)),'<NULL>') || '|' ||
+    'RECRUITING_AGENCY=' || NVL(TRIM(TO_CHAR(RECRUITING_AGENCY)),'<NULL>') || '|' ||
+    'CANDIDATE_STATUS=' || NVL(TRIM(TO_CHAR(CANDIDATE_STATUS)),'<NULL>') || '|' ||
+    'LAST_RECRUITING_STAGE=' || NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE)),'<NULL>') || '|' ||
+    'JOB_APPLICATION_STEP=' || NVL(TRIM(TO_CHAR(JOB_APPLICATION_STEP)),'<NULL>') || '|' ||
+    'LAST_RECRUITING_STAGE_NUMBER=' || NVL(TRIM(TO_CHAR(LAST_RECRUITING_STAGE_NUMBER)),'<NULL>') || '|' ||
+    'FINAL_DISPOSITION_REASON=' || NVL(TRIM(TO_CHAR(FINAL_DISPOSITION_REASON)),'<NULL>') || '|' ||
+    'OFFER_STATUS=' || NVL(TRIM(TO_CHAR(OFFER_STATUS)),'<NULL>') || '|' ||
+    'HIRED=' || NVL(TRIM(TO_CHAR(HIRED)),'<NULL>') || '|' ||
+    'TIME_TO_OFFER_ACCEPT_DAYS=' || NVL(TRIM(TO_CHAR(TIME_TO_OFFER_ACCEPT_DAYS)),'<NULL>') || '|' ||
+    'TIME_TO_OFFER_REJECT_DAYS=' || NVL(TRIM(TO_CHAR(TIME_TO_OFFER_REJECT_DAYS)),'<NULL>') || '|' ||
+    'CANDIDATE_START_DATE=' || NVL(TRIM(TO_CHAR(CANDIDATE_START_DATE)),'<NULL>') || '|' ||
+    'REFERRED_BY=' || NVL(TRIM(TO_CHAR(REFERRED_BY)),'<NULL>') || '|' ||
+    'CREATED_DATE=' || NVL(TRIM(TO_CHAR(CREATED_DATE)),'<NULL>') || '|' ||
+    'DATE_TIME_COMPLETED=' || NVL(TRIM(TO_CHAR(DATE_TIME_COMPLETED)),'<NULL>') || '|' ||
+    'UPDATED_BY=' || NVL(TRIM(TO_CHAR(UPDATED_BY)),'<NULL>') || '|' ||
+    'UPDATED_ON=' || NVL(TRIM(TO_CHAR(UPDATED_ON)),'<NULL>') || '|' ||
+    'RECRUITER=' || NVL(TRIM(TO_CHAR(RECRUITER)),'<NULL>') || '|' ||
+    'CANDIDATE_TAGS=' || NVL(TRIM(TO_CHAR(CANDIDATE_TAGS)),'<NULL>') || '|' ||
+    'CANDIDATE_POOL=' || NVL(TRIM(TO_CHAR(CANDIDATE_POOL)),'<NULL>') || '|' ||
+    'ETL_BATCHID=' || NVL(TRIM(TO_CHAR(ETL_BATCHID)),'<NULL>') AS full_row
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+gm AS ( SELECT full_row, COUNT(*) AS cnt_m FROM m GROUP BY full_row ),
+gt AS ( SELECT full_row, COUNT(*) AS cnt_t FROM t GROUP BY full_row )
+
+SELECT
+  (SELECT COUNT(*) FROM m)                             AS total_main_rows,
+  (SELECT SUM(LEAST(gm.cnt_m, NVL(gt.cnt_t,0)))
+     FROM gm LEFT JOIN gt ON gm.full_row = gt.full_row) AS matched_rows_from_main_in_temp,
+  (SELECT COUNT(*) FROM m) -
+  (SELECT SUM(LEAST(gm.cnt_m, NVL(gt.cnt_t,0)))
+     FROM gm LEFT JOIN gt ON gm.full_row = gt.full_row) AS unmatched_main_rows
+FROM DUAL;
