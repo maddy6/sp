@@ -1,3 +1,66 @@
+-- shows the ordered list of columns that are in both tables
+SELECT LISTAGG(column_name, ', ') WITHIN GROUP (ORDER BY column_id) AS common_col_list
+FROM all_tab_columns
+WHERE owner = 'WFA_APP_USR_TALD'
+  AND table_name IN ('WD_JOBAPPLICATION','WD_JOBAPPLICATION_TEMP')
+GROUP BY column_name
+HAVING COUNT(DISTINCT table_name) = 2
+ORDER BY NULL;
+
+
+
+SELECT column_name, MIN(table_name) as in_tables
+FROM all_tab_columns
+WHERE owner='WFA_APP_USR_TALD'
+  AND table_name IN ('WD_JOBAPPLICATION','WD_JOBAPPLICATION_TEMP')
+GROUP BY column_name
+HAVING COUNT(DISTINCT table_name) = 2
+ORDER BY MIN(column_id);
+
+
+
+
+-- rows present in MAIN but not in TEMP
+SELECT col_a, col_b, col_c, ... 
+FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+MINUS
+SELECT col_a, col_b, col_c, ...
+FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP;
+
+
+
+
+
+
+
+
+-- count rows in the exact-minus sets
+SELECT 'MAIN_NOT_TEMP' name, COUNT(*) cnt FROM (
+  SELECT /*+ NO_MERGE */ * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+  MINUS
+  SELECT /*+ NO_MERGE */ * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+)
+UNION ALL
+SELECT 'TEMP_NOT_MAIN', COUNT(*) FROM (
+  SELECT /*+ NO_MERGE */ * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+  MINUS
+  SELECT /*+ NO_MERGE */ * FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- column count
 SELECT table_name, COUNT(*) col_count
 FROM all_tab_columns
@@ -2783,6 +2846,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
