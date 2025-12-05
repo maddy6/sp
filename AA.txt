@@ -4,6 +4,187 @@ DECLARE
   main_table CONSTANT VARCHAR2(30) := 'WD_JOBAPPLICATION';
   temp_table CONSTANT VARCHAR2(30) := 'WD_JOBAPPLICATION_TEMP';
 
+  l_col_list_quoted VARCHAR2(32767);
+  l_col_list_order  VARCHAR2(32767);
+  l_sql CLOB;
+  v_count NUMBER;
+  CURSOR c_cols IS
+    SELECT column_name, data_type
+    FROM all_tab_columns
+    WHERE owner = owner_name
+      AND table_name = main_table
+      AND column_name IN (
+        SELECT column_name FROM all_tab_columns
+        WHERE owner = owner_name
+          AND table_name = temp_table
+      )
+    ORDER BY column_id;
+BEGIN
+  -- Build list of common columns in MAIN table order (quoted, comma separated)
+  SELECT LISTAGG('"' || column_name || '"', ', ') WITHIN GROUP (ORDER BY column_id)
+    INTO l_col_list_quoted
+  FROM all_tab_columns
+  WHERE owner = owner_name
+    AND table_name = main_table
+    AND column_name IN (
+      SELECT column_name FROM all_tab_columns
+      WHERE owner = owner_name
+        AND table_name = temp_table
+    );
+
+  IF l_col_list_quoted IS NULL THEN
+    RAISE_APPLICATION_ERROR(-20001, 'No common columns found between '||main_table||' and '||temp_table);
+  END IF;
+
+  -- Use the same quoted list for ORDER BY building (it is safe as a list)
+  l_col_list_order := l_col_list_quoted;
+
+  DBMS_OUTPUT.PUT_LINE('Common columns to compare built.');
+
+  -- 1) Create MATCHING_ROWS using INTERSECT (exact identical rows)
+  BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE MATCHING_ROWS';
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+
+  l_sql := 'CREATE TABLE MATCHING_ROWS AS ' ||
+           'SELECT ' || l_col_list_quoted || ' FROM '||owner_name||'.' || main_table ||
+           ' INTERSECT ' ||
+           'SELECT ' || l_col_list_quoted || ' FROM '||owner_name||'.' || temp_table;
+  DBMS_OUTPUT.PUT_LINE('Creating MATCHING_ROWS ...');
+  EXECUTE IMMEDIATE l_sql;
+  DBMS_OUTPUT.PUT_LINE('MATCHING_ROWS created.');
+
+  -- 2) Create DIFF_MAIN_NOT_TEMP and DIFF_TEMP_NOT_MAIN using MINUS
+  BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE DIFF_MAIN_NOT_TEMP';
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  l_sql := 'CREATE TABLE DIFF_MAIN_NOT_TEMP AS ' ||
+           'SELECT ' || l_col_list_quoted || ' FROM '||owner_name||'.' || main_table ||
+           ' MINUS ' ||
+           'SELECT ' || l_col_list_quoted || ' FROM '||owner_name||'.' || temp_table;
+  EXECUTE IMMEDIATE l_sql;
+  DBMS_OUTPUT.PUT_LINE('DIFF_MAIN_NOT_TEMP created.');
+
+  BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE DIFF_TEMP_NOT_MAIN';
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  l_sql := 'CREATE TABLE DIFF_TEMP_NOT_MAIN AS ' ||
+           'SELECT ' || l_col_list_quoted || ' FROM '||owner_name||'.' || temp_table ||
+           ' MINUS ' ||
+           'SELECT ' || l_col_list_quoted || ' FROM '||owner_name||'.' || main_table;
+  EXECUTE IMMEDIATE l_sql;
+  DBMS_OUTPUT.PUT_LINE('DIFF_TEMP_NOT_MAIN created.');
+
+  -- 3) Create staging tables with row numbers to align rows (RN)
+  BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE STG_MAIN';
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  l_sql := 'CREATE TABLE STG_MAIN AS ' ||
+           'SELECT ROW_NUMBER() OVER (ORDER BY '|| l_col_list_order ||') rn, ' || l_col_list_quoted ||
+           ' FROM '||owner_name||'.' || main_table;
+  EXECUTE IMMEDIATE l_sql;
+  DBMS_OUTPUT.PUT_LINE('STG_MAIN created (with rn).');
+
+  BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE STG_TEMP';
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  l_sql := 'CREATE TABLE STG_TEMP AS ' ||
+           'SELECT ROW_NUMBER() OVER (ORDER BY '|| l_col_list_order ||') rn, ' || l_col_list_quoted ||
+           ' FROM '||owner_name||'.' || temp_table;
+  EXECUTE IMMEDIATE l_sql;
+  DBMS_OUTPUT.PUT_LINE('STG_TEMP created (with rn).');
+
+  -- 4) Generate per-column UNION ALL dynamic SQL to find differing columns for each aligned RN
+  l_sql := NULL;
+  FOR r IN c_cols LOOP
+    -- skip LOB types which are hard to TO_CHAR
+    IF r.data_type IN ('BLOB','CLOB','NCLOB','LONG') THEN
+      DBMS_OUTPUT.PUT_LINE('Skipping LOB column '||r.column_name||' for per-column diff.');
+      CONTINUE;
+    END IF;
+
+    IF l_sql IS NULL THEN
+      l_sql := 'SELECT m.rn, ' ||
+               '''' || r.column_name || ''' AS column_name, ' ||
+               'CASE WHEN m."'|| r.column_name ||'" IS NULL THEN NULL ELSE TO_CHAR(m."'|| r.column_name ||'") END AS main_val, ' ||
+               'CASE WHEN t."'|| r.column_name ||'" IS NULL THEN NULL ELSE TO_CHAR(t."'|| r.column_name ||'") END AS temp_val ' ||
+               'FROM STG_MAIN m JOIN STG_TEMP t ON m.rn = t.rn ' ||
+               'WHERE NOT ( (m."'|| r.column_name ||'" = t."'|| r.column_name ||'") OR (m."'|| r.column_name ||'" IS NULL AND t."'|| r.column_name ||'" IS NULL) )';
+    ELSE
+      l_sql := l_sql || CHR(10) || 'UNION ALL' || CHR(10) ||
+               'SELECT m.rn, ' ||
+               '''' || r.column_name || ''' AS column_name, ' ||
+               'CASE WHEN m."'|| r.column_name ||'" IS NULL THEN NULL ELSE TO_CHAR(m."'|| r.column_name ||'") END AS main_val, ' ||
+               'CASE WHEN t."'|| r.column_name ||'" IS NULL THEN NULL ELSE TO_CHAR(t."'|| r.column_name ||'") END AS temp_val ' ||
+               'FROM STG_MAIN m JOIN STG_TEMP t ON m.rn = t.rn ' ||
+               'WHERE NOT ( (m."'|| r.column_name ||'" = t."'|| r.column_name ||'") OR (m."'|| r.column_name ||'" IS NULL AND t."'|| r.column_name ||'" IS NULL) )';
+    END IF;
+  END LOOP;
+
+  IF l_sql IS NULL THEN
+    DBMS_OUTPUT.PUT_LINE('No non-LOB common columns to compare for per-column diff.');
+  ELSE
+    BEGIN
+      EXECUTE IMMEDIATE 'DROP TABLE COL_DIFFS';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
+    -- NOTE: do NOT append ORDER BY to CREATE TABLE AS SELECT
+    l_sql := 'CREATE TABLE COL_DIFFS AS ' || CHR(10) || l_sql;
+
+    DBMS_OUTPUT.PUT_LINE('Creating COL_DIFFS (per-column diffs) ...');
+    EXECUTE IMMEDIATE l_sql;
+    DBMS_OUTPUT.PUT_LINE('COL_DIFFS created. Columns: rn | column_name | main_val | temp_val');
+  END IF;
+
+  -- print counts using SELECT INTO (more robust)
+  BEGIN
+    SELECT COUNT(*) INTO v_count FROM MATCHING_ROWS;
+    DBMS_OUTPUT.PUT_LINE('MATCHING_ROWS count: ' || v_count);
+  EXCEPTION WHEN OTHERS THEN DBMS_OUTPUT.PUT_LINE('MATCHING_ROWS count: unable to get count - '||SQLERRM);
+  END;
+  BEGIN
+    SELECT COUNT(*) INTO v_count FROM DIFF_MAIN_NOT_TEMP;
+    DBMS_OUTPUT.PUT_LINE('DIFF_MAIN_NOT_TEMP count: ' || v_count);
+  EXCEPTION WHEN OTHERS THEN DBMS_OUTPUT.PUT_LINE('DIFF_MAIN_NOT_TEMP count: unable to get count - '||SQLERRM);
+  END;
+  BEGIN
+    SELECT COUNT(*) INTO v_count FROM DIFF_TEMP_NOT_MAIN;
+    DBMS_OUTPUT.PUT_LINE('DIFF_TEMP_NOT_MAIN count: ' || v_count);
+  EXCEPTION WHEN OTHERS THEN DBMS_OUTPUT.PUT_LINE('DIFF_TEMP_NOT_MAIN count: unable to get count - '||SQLERRM);
+  END;
+  BEGIN
+    SELECT COUNT(*) INTO v_count FROM COL_DIFFS;
+    DBMS_OUTPUT.PUT_LINE('COL_DIFFS row count: ' || v_count);
+  EXCEPTION WHEN OTHERS THEN DBMS_OUTPUT.PUT_LINE('COL_DIFFS count: unable to get count - '||SQLERRM);
+  END;
+
+EXCEPTION
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('Error: '||SQLERRM);
+    RAISE;
+END;
+/
+
+
+
+
+
+
+
+
+
+SET SERVEROUTPUT ON SIZE 2000000
+DECLARE
+  owner_name CONSTANT VARCHAR2(30) := 'WFA_APP_USR_TALD';
+  main_table CONSTANT VARCHAR2(30) := 'WD_JOBAPPLICATION';
+  temp_table CONSTANT VARCHAR2(30) := 'WD_JOBAPPLICATION_TEMP';
+
   l_common_cols   VARCHAR2(32767);
   l_col_list_quoted VARCHAR2(32767);
   l_col_list_order  VARCHAR2(32767);
@@ -3094,6 +3275,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
