@@ -106,8 +106,56 @@ SELECT COUNT(*) cnt FROM (
 
 
 
+SELECT m.application_id,
+       -- you can show columns from both sides to see differences
+       m.col1 as m_col1, t.col1 as t_col1,
+       m.col2 as m_col2, t.col2 as t_col2,
+       -- add as many columns as needed
+       CASE WHEN ( (m.col1 = t.col1 OR (m.col1 IS NULL AND t.col1 IS NULL))
+                 AND (m.col2 = t.col2 OR (m.col2 IS NULL AND t.col2 IS NULL))
+                 -- ... include all columns ...
+                 )
+            THEN 'ALL_MATCH'
+            ELSE 'DIFF'
+       END as row_cmp_flag
+FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION m
+JOIN WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP t
+  ON m.application_id = t.application_id
+WHERE NOT (
+       (m.col1 = t.col1 OR (m.col1 IS NULL AND t.col1 IS NULL))
+   AND (m.col2 = t.col2 OR (m.col2 IS NULL AND t.col2 IS NULL))
+   -- AND ... repeat for every column you want to compare ...
+);
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- produce rows of (pk, column_name, main_value, temp_value) where different
+SELECT m.application_id as pk, 'COL1' as column_name, m.col1 as main_val, t.col1 as temp_val
+FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION m
+JOIN WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP t ON m.application_id = t.application_id
+WHERE NOT (m.col1 = t.col1 OR (m.col1 IS NULL AND t.col1 IS NULL))
+
+UNION ALL
+
+SELECT m.application_id, 'COL2', m.col2, t.col2
+FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION m
+JOIN WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP t ON m.application_id = t.application_id
+WHERE NOT (m.col2 = t.col2 OR (m.col2 IS NULL AND t.col2 IS NULL))
+
+-- add one UNION ALL block per column
+ORDER BY pk, column_name;
 
 
 
@@ -2735,6 +2783,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
