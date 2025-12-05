@@ -86,3 +86,29 @@ SELECT
   (SELECT SUM(LEAST(gm.cnt_m, NVL(gt.cnt_t,0)))
      FROM gm LEFT JOIN gt ON gm.full_row = gt.full_row) AS unmatched_main_rows
 FROM DUAL;
+
+
+
+
+
+---------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- B: LIST MAIN unique full_row values that have fewer matches in TEMP
+--------------------------------------------------------------------------------
+WITH
+m AS ( ... same as above ... ),  -- copy CTE m from Script A
+t AS ( ... same as above ... ),  -- copy CTE t from Script A
+gm AS ( SELECT full_row, COUNT(*) AS cnt_m FROM m GROUP BY full_row ),
+gt AS ( SELECT full_row, COUNT(*) AS cnt_t FROM t GROUP BY full_row )
+SELECT
+  gm.full_row,
+  gm.cnt_m,
+  NVL(gt.cnt_t,0) AS cnt_t,
+  (gm.cnt_m - NVL(gt.cnt_t,0)) AS deficit_in_temp
+FROM gm
+LEFT JOIN gt ON gm.full_row = gt.full_row
+WHERE gm.cnt_m > NVL(gt.cnt_t,0)
+ORDER BY deficit_in_temp DESC;
+
