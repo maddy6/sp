@@ -1,3 +1,76 @@
+✅ 1) TEMP → MAIN
+Distinct JOB_APPLICATION present in TEMP but missing in MAIN
+
+(Count + % of TEMP distinct values)
+
+WITH
+temp_jobs AS (
+  SELECT DISTINCT TRIM(TO_CHAR(JOB_APPLICATION)) AS job_app
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+main_jobs AS (
+  SELECT DISTINCT TRIM(TO_CHAR(JOB_APPLICATION)) AS job_app
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+missing AS (
+  SELECT job_app FROM temp_jobs
+  MINUS
+  SELECT job_app FROM main_jobs
+)
+SELECT
+  (SELECT COUNT(*) FROM missing) AS missing_count,
+  ROUND(
+    (SELECT COUNT(*) FROM missing) * 100 /
+    (SELECT COUNT(*) FROM temp_jobs), 2
+  ) AS missing_percent
+FROM dual;
+
+✅ 2) MAIN → TEMP
+Distinct JOB_APPLICATION present in MAIN but missing in TEMP
+
+(Count + % of MAIN distinct values)
+
+WITH
+main_jobs AS (
+  SELECT DISTINCT TRIM(TO_CHAR(JOB_APPLICATION)) AS job_app
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+temp_jobs AS (
+  SELECT DISTINCT TRIM(TO_CHAR(JOB_APPLICATION)) AS job_app
+  FROM WFA_APP_USR_TALD.WD_JOBAPPLICATION_TEMP
+  WHERE TRIM(TO_CHAR(ETL_BATCHID)) = '20251124'
+),
+missing AS (
+  SELECT job_app FROM main_jobs
+  MINUS
+  SELECT job_app FROM temp_jobs
+)
+SELECT
+  (SELECT COUNT(*) FROM missing) AS missing_count,
+  ROUND(
+    (SELECT COUNT(*) FROM missing) * 100 /
+    (SELECT COUNT(*) FROM main_jobs), 2
+  ) AS missing_percent
+FROM dual;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ✅ 1) Distinct count of JOB_APPLICATION in each table
 -- MAIN
 SELECT COUNT(DISTINCT TRIM(TO_CHAR(JOB_APPLICATION))) AS distinct_job_main
