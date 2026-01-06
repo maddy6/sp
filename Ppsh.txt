@@ -1,0 +1,96 @@
+SELECT 'MAIN_TABLE' AS table_name, COUNT(*) AS row_count
+FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN
+UNION ALL
+SELECT 'TEMP_TABLE', COUNT(*)
+FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP;
+
+
+SELECT 
+    a.column_name,
+    a.data_type   AS main_data_type,
+    b.data_type   AS temp_data_type,
+    CASE
+        WHEN b.column_name IS NULL THEN 'MISSING_IN_TEMP'
+        WHEN a.data_type <> b.data_type THEN 'DATA_TYPE_MISMATCH'
+        ELSE 'MATCH'
+    END AS status
+FROM all_tab_columns a
+LEFT JOIN all_tab_columns b
+  ON a.column_name = b.column_name
+ AND b.owner = 'WFA_APP_USR_TALD'
+ AND b.table_name = 'WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP'
+WHERE a.owner = 'WFA_APP_USR_TALD'
+  AND a.table_name = 'WD_TALENT_MASTER_SUCCESSION_PLAN'
+ORDER BY status, a.column_name;
+
+
+
+SELECT 
+    b.column_name,
+    'MISSING_IN_MAIN' AS status
+FROM all_tab_columns b
+LEFT JOIN all_tab_columns a
+  ON a.column_name = b.column_name
+ AND a.owner = 'WFA_APP_USR_TALD'
+ AND a.table_name = 'WD_TALENT_MASTER_SUCCESSION_PLAN'
+WHERE b.owner = 'WFA_APP_USR_TALD'
+  AND b.table_name = 'WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP'
+  AND a.column_name IS NULL;
+
+
+
+SELECT table_name, COUNT(*) AS column_count
+FROM all_tab_columns
+WHERE owner = 'WFA_APP_USR_TALD'
+  AND table_name IN (
+      'WD_TALENT_MASTER_SUCCESSION_PLAN',
+      'WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP'
+  )
+GROUP BY table_name;
+
+
+
+4️⃣ Full Data Comparison (ALL COLUMNS, NO PRIMARY KEY)
+4.1 Rows in MAIN but NOT in TEMP
+
+SELECT *
+FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN
+MINUS
+SELECT *
+FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP;
+
+
+4.2 Rows in TEMP but NOT in MAIN
+
+SELECT *
+FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP
+MINUS
+SELECT *
+FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN;
+
+
+
+5️⃣ Matching vs Non-Matching Row Counts (Summary)
+
+SELECT 'ONLY_IN_MAIN' AS category, COUNT(*) cnt
+FROM (
+    SELECT *
+    FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN
+    MINUS
+    SELECT *
+    FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP
+)
+UNION ALL
+SELECT 'ONLY_IN_TEMP', COUNT(*)
+FROM (
+    SELECT *
+    FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN_TEMP
+    MINUS
+    SELECT *
+    FROM WFA_APP_USR_TALD.WD_TALENT_MASTER_SUCCESSION_PLAN
+);
+
+
+
+
+
