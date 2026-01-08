@@ -1,4 +1,99 @@
 SELECT
+    a.CANDIDATE_ID,
+    a.JOB_APPLICATION,
+    a.JOB_REQ_ID,
+    a.JOB_REQ_OPEN_DATE,
+    a.INGESTED_DATE,
+
+    /* 1️⃣ Mismatch column count */
+    (
+        CASE WHEN NVL(a.PANEL_TYPE,'#')        <> NVL(b.PANEL_TYPE,'#')        THEN 1 ELSE 0 END +
+        CASE WHEN NVL(a.INTERVIEWER_NAME,'#')  <> NVL(b.INTERVIEWER_NAME,'#')  THEN 1 ELSE 0 END +
+        CASE WHEN NVL(a.INTERVIEWER_ROLE,'#')  <> NVL(b.INTERVIEWER_ROLE,'#')  THEN 1 ELSE 0 END +
+        CASE WHEN NVL(a.DIVERSITY_FLAG,'#')    <> NVL(b.DIVERSITY_FLAG,'#')    THEN 1 ELSE 0 END +
+        CASE WHEN NVL(a.COMMENTS,'#')          <> NVL(b.COMMENTS,'#')          THEN 1 ELSE 0 END
+    ) AS MISMATCH_COLUMN_COUNT,
+
+    /* 2️⃣ Mismatch column names */
+    RTRIM(
+        CASE WHEN NVL(a.PANEL_TYPE,'#')        <> NVL(b.PANEL_TYPE,'#')        THEN 'PANEL_TYPE,'        END ||
+        CASE WHEN NVL(a.INTERVIEWER_NAME,'#')  <> NVL(b.INTERVIEWER_NAME,'#')  THEN 'INTERVIEWER_NAME,'  END ||
+        CASE WHEN NVL(a.INTERVIEWER_ROLE,'#')  <> NVL(b.INTERVIEWER_ROLE,'#')  THEN 'INTERVIEWER_ROLE,'  END ||
+        CASE WHEN NVL(a.DIVERSITY_FLAG,'#')    <> NVL(b.DIVERSITY_FLAG,'#')    THEN 'DIVERSITY_FLAG,'    END ||
+        CASE WHEN NVL(a.COMMENTS,'#')          <> NVL(b.COMMENTS,'#')          THEN 'COMMENTS,'          END
+    , ',') AS MISMATCH_COLUMN_NAMES,
+
+    /* 3️⃣ Source table values (only mismatches) */
+    RTRIM(
+        CASE WHEN NVL(a.PANEL_TYPE,'#')        <> NVL(b.PANEL_TYPE,'#')
+             THEN 'PANEL_TYPE='||a.PANEL_TYPE||'; ' END ||
+        CASE WHEN NVL(a.INTERVIEWER_NAME,'#')  <> NVL(b.INTERVIEWER_NAME,'#')
+             THEN 'INTERVIEWER_NAME='||a.INTERVIEWER_NAME||'; ' END ||
+        CASE WHEN NVL(a.INTERVIEWER_ROLE,'#')  <> NVL(b.INTERVIEWER_ROLE,'#')
+             THEN 'INTERVIEWER_ROLE='||a.INTERVIEWER_ROLE||'; ' END ||
+        CASE WHEN NVL(a.DIVERSITY_FLAG,'#')    <> NVL(b.DIVERSITY_FLAG,'#')
+             THEN 'DIVERSITY_FLAG='||a.DIVERSITY_FLAG||'; ' END ||
+        CASE WHEN NVL(a.COMMENTS,'#')          <> NVL(b.COMMENTS,'#')
+             THEN 'COMMENTS='||a.COMMENTS||'; ' END
+    ) AS SOURCE_TABLE_VALUES,
+
+    /* 4️⃣ Temp table values (only mismatches) */
+    RTRIM(
+        CASE WHEN NVL(a.PANEL_TYPE,'#')        <> NVL(b.PANEL_TYPE,'#')
+             THEN 'PANEL_TYPE='||b.PANEL_TYPE||'; ' END ||
+        CASE WHEN NVL(a.INTERVIEWER_NAME,'#')  <> NVL(b.INTERVIEWER_NAME,'#')
+             THEN 'INTERVIEWER_NAME='||b.INTERVIEWER_NAME||'; ' END ||
+        CASE WHEN NVL(a.INTERVIEWER_ROLE,'#')  <> NVL(b.INTERVIEWER_ROLE,'#')
+             THEN 'INTERVIEWER_ROLE='||b.INTERVIEWER_ROLE||'; ' END ||
+        CASE WHEN NVL(a.DIVERSITY_FLAG,'#')    <> NVL(b.DIVERSITY_FLAG,'#')
+             THEN 'DIVERSITY_FLAG='||b.DIVERSITY_FLAG||'; ' END ||
+        CASE WHEN NVL(a.COMMENTS,'#')          <> NVL(b.COMMENTS,'#')
+             THEN 'COMMENTS='||b.COMMENTS||'; ' END
+    ) AS TEMP_TABLE_VALUES
+
+FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+ON  a.CANDIDATE_ID      = b.CANDIDATE_ID
+AND a.JOB_APPLICATION   = b.JOB_APPLICATION
+AND a.JOB_REQ_ID        = b.JOB_REQ_ID
+AND a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
+AND a.INGESTED_DATE     = b.INGESTED_DATE
+
+/* 5️⃣ Return only rows having at least one mismatch */
+WHERE
+    NVL(a.PANEL_TYPE,'#')        <> NVL(b.PANEL_TYPE,'#')
+ OR NVL(a.INTERVIEWER_NAME,'#')  <> NVL(b.INTERVIEWER_NAME,'#')
+ OR NVL(a.INTERVIEWER_ROLE,'#')  <> NVL(b.INTERVIEWER_ROLE,'#')
+ OR NVL(a.DIVERSITY_FLAG,'#')    <> NVL(b.DIVERSITY_FLAG,'#')
+ OR NVL(a.COMMENTS,'#')          <> NVL(b.COMMENTS,'#');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SELECT
     a.CANDIDATE_ID        AS X1,
     a.JOB_APPLICATION     AS X2,
     a.JOB_REQ_ID          AS X3,
