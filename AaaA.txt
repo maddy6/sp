@@ -1,3 +1,130 @@
+SET SERVEROUTPUT ON SIZE UNLIMITED;
+
+DECLARE
+    v_sql   CLOB;
+BEGIN
+    /*
+      Build dynamic SQL that compares columns using CASE expressions.
+      This avoids UNPIVOT and ambiguity completely.
+    */
+
+    SELECT
+        'SELECT
+            a.CANDIDATE_ID      AS X1,
+            a.JOB_APPLICATION   AS X2,
+            a.JOB_REQ_ID        AS X3,
+            a.JOB_REQ_OPEN_DATE AS X4,
+            a.INGESTED_DATE     AS X5,
+
+            /* mismatch count */
+            ' ||
+            XMLAGG(
+                XMLELEMENT(e,
+                    ' + CASE WHEN NVL(TO_CHAR(a.' || column_name || '), ''#NULL#'')
+                                 <> NVL(TO_CHAR(b.' || column_name || '), ''#NULL#'')
+                           THEN 1 ELSE 0 END'
+                )
+                ORDER BY column_id
+            ).EXTRACT('//text()').GETCLOBVAL()
+            || ' AS MISMATCH_COLUMN_COUNT,
+
+            /* mismatch column names */
+            RTRIM(
+                XMLAGG(
+                    XMLELEMENT(e,
+                        CASE
+                            WHEN NVL(TO_CHAR(a.' || column_name || '), ''#NULL#'')
+                                 <> NVL(TO_CHAR(b.' || column_name || '), ''#NULL#'')
+                            THEN ''' || column_name || ','''
+                        END
+                    )
+                    ORDER BY column_id
+                ).EXTRACT(''//text()'').GETCLOBVAL(),
+            '','') AS MISMATCH_COLUMNS,
+
+            /* values in MAIN */
+            RTRIM(
+                XMLAGG(
+                    XMLELEMENT(e,
+                        CASE
+                            WHEN NVL(TO_CHAR(a.' || column_name || '), ''#NULL#'')
+                                 <> NVL(TO_CHAR(b.' || column_name || '), ''#NULL#'')
+                            THEN ''' || column_name || ':'' || TO_CHAR(a.' || column_name || ') || '',''
+                        END
+                    )
+                    ORDER BY column_id
+                ).EXTRACT(''//text()'').GETCLOBVAL(),
+            '','') AS VALUES_IN_MAIN,
+
+            /* values in TEMP */
+            RTRIM(
+                XMLAGG(
+                    XMLELEMENT(e,
+                        CASE
+                            WHEN NVL(TO_CHAR(a.' || column_name || '), ''#NULL#'')
+                                 <> NVL(TO_CHAR(b.' || column_name || '), ''#NULL#'')
+                            THEN ''' || column_name || ':'' || TO_CHAR(b.' || column_name || ') || '',''
+                        END
+                    )
+                    ORDER BY column_id
+                ).EXTRACT(''//text()'').GETCLOBVAL(),
+            '','') AS VALUES_IN_TEMP
+
+        FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+        JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+          ON a.CANDIDATE_ID      = b.CANDIDATE_ID
+         AND a.JOB_APPLICATION   = b.JOB_APPLICATION
+         AND a.JOB_REQ_ID        = b.JOB_REQ_ID
+         AND a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
+         AND a.INGESTED_DATE     = b.INGESTED_DATE
+
+        GROUP BY
+            a.CANDIDATE_ID,
+            a.JOB_APPLICATION,
+            a.JOB_REQ_ID,
+            a.JOB_REQ_OPEN_DATE,
+            a.INGESTED_DATE
+
+        HAVING
+            ' ||
+            XMLAGG(
+                XMLELEMENT(e,
+                    'SUM(CASE WHEN NVL(TO_CHAR(a.' || column_name || '), ''#NULL#'')
+                                   <> NVL(TO_CHAR(b.' || column_name || '), ''#NULL#'')
+                              THEN 1 ELSE 0 END) + '
+                )
+                ORDER BY column_id
+            ).EXTRACT('//text()').GETCLOBVAL()
+            || ' 0 > 0
+
+        ORDER BY
+            a.CANDIDATE_ID,
+            a.JOB_APPLICATION'
+    INTO v_sql
+    FROM all_tab_columns
+    WHERE owner = 'WFA_APP_USR_TALD'
+      AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
+      AND column_name NOT IN (
+            'CANDIDATE_ID',
+            'JOB_APPLICATION',
+            'JOB_REQ_ID',
+            'JOB_REQ_OPEN_DATE',
+            'INGESTED_DATE'
+      );
+
+    -- VERY IMPORTANT: uncomment once to see generated SQL if needed
+    -- DBMS_OUTPUT.PUT_LINE(v_sql);
+
+    EXECUTE IMMEDIATE v_sql;
+END;
+/
+
+
+
+
+
+
+
 SET SERVEROUTPUT ON
 DECLARE
     v_cols  CLOB;
