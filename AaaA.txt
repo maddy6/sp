@@ -3,6 +3,118 @@ DECLARE
     v_cols  CLOB;
     v_sql   CLOB;
 BEGIN
+    /* 1. Get non-PK columns dynamically */
+    SELECT LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_id)
+    INTO v_cols
+    FROM all_tab_columns
+    WHERE owner = 'WFA_APP_USR_TALD'
+      AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
+      AND column_name NOT IN (
+            'CANDIDATE_ID',
+            'JOB_APPLICATION',
+            'JOB_REQ_ID',
+            'JOB_REQ_OPEN_DATE',
+            'INGESTED_DATE'
+      );
+
+    /* 2. Build final SQL */
+    v_sql :=
+    '
+    SELECT
+        a.CANDIDATE_ID        AS X1,
+        a.JOB_APPLICATION     AS X2,
+        a.JOB_REQ_ID          AS X3,
+        a.JOB_REQ_OPEN_DATE   AS X4,
+        a.INGESTED_DATE       AS X5,
+
+        COUNT(*) AS MISMATCH_COLUMN_COUNT,
+
+        RTRIM(
+            XMLAGG(XMLELEMENT(e, col || '','') ORDER BY col)
+            .EXTRACT(''//text()'').GETCLOBVAL(),
+        '','') AS MISMATCH_COLUMNS,
+
+        RTRIM(
+            XMLAGG(XMLELEMENT(e, col || '':'' || aval || '','') ORDER BY col)
+            .EXTRACT(''//text()'').GETCLOBVAL(),
+        '','') AS VALUES_IN_MAIN,
+
+        RTRIM(
+            XMLAGG(XMLELEMENT(e, col || '':'' || bval || '','') ORDER BY col)
+            .EXTRACT(''//text()'').GETCLOBVAL(),
+        '','') AS VALUES_IN_TEMP
+
+    FROM (
+        SELECT
+            a.CANDIDATE_ID,
+            a.JOB_APPLICATION,
+            a.JOB_REQ_ID,
+            a.JOB_REQ_OPEN_DATE,
+            a.INGESTED_DATE,
+            u.col,
+            TO_CHAR(u.val) AS aval,
+            TO_CHAR(
+                CASE u.col
+                    WHEN ''JOB_REQ_FILLED_DATE'' THEN b.JOB_REQ_FILLED_DATE
+                    WHEN ''SOURCE_CATEGORY''      THEN b.SOURCE_CATEGORY
+                END
+            ) AS bval
+        FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+        JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+          ON a.CANDIDATE_ID      = b.CANDIDATE_ID
+         AND a.JOB_APPLICATION   = b.JOB_APPLICATION
+         AND a.JOB_REQ_ID        = b.JOB_REQ_ID
+         AND a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
+         AND a.INGESTED_DATE     = b.INGESTED_DATE
+
+        UNPIVOT INCLUDE NULLS (
+            val FOR col IN (' || v_cols || ')
+        ) u
+    )
+    WHERE NVL(aval, ''#NULL#'') <> NVL(bval, ''#NULL#'')
+
+    GROUP BY
+        CANDIDATE_ID,
+        JOB_APPLICATION,
+        JOB_REQ_ID,
+        JOB_REQ_OPEN_DATE,
+        INGESTED_DATE
+
+    ORDER BY
+        CANDIDATE_ID,
+        JOB_APPLICATION
+    ';
+
+    -- Uncomment ONLY if debugging
+    -- DBMS_OUTPUT.PUT_LINE(v_sql);
+
+    EXECUTE IMMEDIATE v_sql;
+END;
+/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SET SERVEROUTPUT ON
+DECLARE
+    v_cols  CLOB;
+    v_sql   CLOB;
+BEGIN
     /* Build non-PK column list dynamically */
     SELECT LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_id)
     INTO v_cols
