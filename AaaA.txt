@@ -1,3 +1,126 @@
+WITH cols AS (
+    SELECT column_name
+    FROM all_tab_columns
+    WHERE owner = 'WFA_APP_USR_TALD'
+      AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
+      AND column_name NOT IN (
+          'CANDIDATE_ID',
+          'JOB_APPLICATION',
+          'JOB_REQ_ID',
+          'JOB_REQ_OPEN_DATE',
+          'INGESTED_DATE'
+      )
+),
+a_unpivot AS (
+    SELECT
+        a.CANDIDATE_ID,
+        a.JOB_APPLICATION,
+        a.JOB_REQ_ID,
+        a.JOB_REQ_OPEN_DATE,
+        a.INGESTED_DATE,
+        c.column_name,
+        XMLCAST(
+          XMLQUERY(
+            '/ROW/'||c.column_name||'/text()'
+            PASSING XMLTYPE(
+              DBMS_XMLGEN.getxml(
+                'SELECT '||c.column_name||
+                ' FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+                  WHERE a.CANDIDATE_ID      = '''||a.CANDIDATE_ID||'''
+                    AND a.JOB_APPLICATION   = '''||a.JOB_APPLICATION||'''
+                    AND a.JOB_REQ_ID        = '''||a.JOB_REQ_ID||'''
+                    AND a.JOB_REQ_OPEN_DATE = '''||a.JOB_REQ_OPEN_DATE||'''
+                    AND a.INGESTED_DATE     = '''||a.INGESTED_DATE||''''
+              )
+            )
+            RETURNING CONTENT
+          ) AS VARCHAR2(4000)
+        ) AS val
+    FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+    CROSS JOIN cols c
+),
+b_unpivot AS (
+    SELECT
+        b.CANDIDATE_ID,
+        b.JOB_APPLICATION,
+        b.JOB_REQ_ID,
+        b.JOB_REQ_OPEN_DATE,
+        b.INGESTED_DATE,
+        c.column_name,
+        XMLCAST(
+          XMLQUERY(
+            '/ROW/'||c.column_name||'/text()'
+            PASSING XMLTYPE(
+              DBMS_XMLGEN.getxml(
+                'SELECT '||c.column_name||
+                ' FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+                  WHERE b.CANDIDATE_ID      = '''||b.CANDIDATE_ID||'''
+                    AND b.JOB_APPLICATION   = '''||b.JOB_APPLICATION||'''
+                    AND b.JOB_REQ_ID        = '''||b.JOB_REQ_ID||'''
+                    AND b.JOB_REQ_OPEN_DATE = '''||b.JOB_REQ_OPEN_DATE||'''
+                    AND b.INGESTED_DATE     = '''||b.INGESTED_DATE||''''
+              )
+            )
+            RETURNING CONTENT
+          ) AS VARCHAR2(4000)
+        ) AS val
+    FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+    CROSS JOIN cols c
+)
+SELECT
+    a.CANDIDATE_ID,
+    a.JOB_APPLICATION,
+    a.JOB_REQ_ID,
+    a.JOB_REQ_OPEN_DATE,
+    a.INGESTED_DATE,
+
+    COUNT(*) AS MISMATCH_COLUMN_COUNT,
+
+    LISTAGG(a.column_name, ',')
+        WITHIN GROUP (ORDER BY a.column_name) AS MISMATCH_COLUMN_NAMES,
+
+    LISTAGG(a.column_name || '=' || a.val, '; ')
+        WITHIN GROUP (ORDER BY a.column_name) AS SOURCE_TABLE_VALUES,
+
+    LISTAGG(b.column_name || '=' || b.val, '; ')
+        WITHIN GROUP (ORDER BY b.column_name) AS TEMP_TABLE_VALUES
+
+FROM a_unpivot a
+JOIN b_unpivot b
+  ON a.CANDIDATE_ID      = b.CANDIDATE_ID
+ AND a.JOB_APPLICATION   = b.JOB_APPLICATION
+ AND a.JOB_REQ_ID        = b.JOB_REQ_ID
+ And a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
+ And a.INGESTED_DATE     = b.INGESTED_DATE
+ And a.column_name       = b.column_name
+
+WHERE NVL(a.val,'#') <> NVL(b.val,'#')
+
+GROUP BY
+    a.CANDIDATE_ID,
+    a.JOB_APPLICATION,
+    a.JOB_REQ_ID,
+    a.JOB_REQ_OPEN_DATE,
+    a.INGESTED_DATE;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 SELECT
     a.CANDIDATE_ID,
     a.JOB_APPLICATION,
