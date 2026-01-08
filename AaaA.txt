@@ -1,3 +1,106 @@
+CREATE TABLE WFA_APP_USR_TALD.TABLE_DIFF_RESULT (
+    CANDIDATE_ID        VARCHAR2(100),
+    JOB_APPLICATION     VARCHAR2(100),
+    JOB_REQ_ID          VARCHAR2(100),
+    JOB_REQ_OPEN_DATE   VARCHAR2(100),
+    INGESTED_DATE       VARCHAR2(100),
+    MISMATCH_COLUMN_COUNT NUMBER,
+    MISMATCH_COLUMN_NAMES CLOB,
+    SOURCE_TABLE_VALUES   CLOB,
+    TEMP_TABLE_VALUES     CLOB
+);
+
+
+
+
+SET SERVEROUTPUT ON
+DECLARE
+    v_sql           CLOB;
+    v_cnt_expr      CLOB := '';
+    v_name_expr     CLOB := '';
+    v_src_expr      CLOB := '';
+    v_tmp_expr      CLOB := '';
+    v_where_expr    CLOB := '';
+BEGIN
+    /* Build dynamic expressions for non-PK columns */
+    FOR c IN (
+        SELECT column_name
+        FROM all_tab_columns
+        WHERE owner = 'WFA_APP_USR_TALD'
+          AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
+          AND column_name NOT IN (
+              'CANDIDATE_ID',
+              'JOB_APPLICATION',
+              'JOB_REQ_ID',
+              'JOB_REQ_OPEN_DATE',
+              'INGESTED_DATE'
+          )
+        ORDER BY column_id
+    )
+    LOOP
+        v_cnt_expr :=
+            v_cnt_expr ||
+            'CASE WHEN NVL(TO_CHAR(a.'||c.column_name||'),''#'') <> NVL(TO_CHAR(b.'||c.column_name||'),''#'') THEN 1 ELSE 0 END +';
+
+        v_name_expr :=
+            v_name_expr ||
+            'CASE WHEN NVL(TO_CHAR(a.'||c.column_name||'),''#'') <> NVL(TO_CHAR(b.'||c.column_name||'),''#'') THEN '''||c.column_name||','''' END ||';
+
+        v_src_expr :=
+            v_src_expr ||
+            'CASE WHEN NVL(TO_CHAR(a.'||c.column_name||'),''#'') <> NVL(TO_CHAR(b.'||c.column_name||'),''#'') THEN '''||c.column_name||'=''||TO_CHAR(a.'||c.column_name||')||''; '' END ||';
+
+        v_tmp_expr :=
+            v_tmp_expr ||
+            'CASE WHEN NVL(TO_CHAR(a.'||c.column_name||'),''#'') <> NVL(TO_CHAR(b.'||c.column_name||'),''#'') THEN '''||c.column_name||'=''||TO_CHAR(b.'||c.column_name||')||''; '' END ||';
+
+        v_where_expr :=
+            v_where_expr ||
+            'NVL(TO_CHAR(a.'||c.column_name||'),''#'') <> NVL(TO_CHAR(b.'||c.column_name||'),''#'') OR ';
+    END LOOP;
+
+    /* Trim trailing operators */
+    v_cnt_expr   := RTRIM(v_cnt_expr, '+');
+    v_name_expr  := RTRIM(v_name_expr, '||');
+    v_src_expr   := RTRIM(v_src_expr, '||');
+    v_tmp_expr   := RTRIM(v_tmp_expr, '||');
+    v_where_expr := RTRIM(v_where_expr, ' OR ');
+
+    /* Final SQL */
+    v_sql :=
+    'INSERT INTO WFA_APP_USR_TALD.TABLE_DIFF_RESULT
+     SELECT
+         a.CANDIDATE_ID,
+         a.JOB_APPLICATION,
+         a.JOB_REQ_ID,
+         a.JOB_REQ_OPEN_DATE,
+         a.INGESTED_DATE,
+         ('||v_cnt_expr||') AS MISMATCH_COLUMN_COUNT,
+         RTRIM('||v_name_expr||', '','') AS MISMATCH_COLUMN_NAMES,
+         RTRIM('||v_src_expr||') AS SOURCE_TABLE_VALUES,
+         RTRIM('||v_tmp_expr||') AS TEMP_TABLE_VALUES
+     FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+     JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+       ON a.CANDIDATE_ID      = b.CANDIDATE_ID
+      AND a.JOB_APPLICATION   = b.JOB_APPLICATION
+      AND a.JOB_REQ_ID        = b.JOB_REQ_ID
+      AND a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
+      AND a.INGESTED_DATE     = b.INGESTED_DATE
+     WHERE '||v_where_expr;
+
+    /* Execute */
+    EXECUTE IMMEDIATE v_sql;
+
+    DBMS_OUTPUT.PUT_LINE('Table comparison completed successfully.');
+END;
+/
+
+
+
+
+
+
+
 WITH cols AS (
     SELECT column_name
     FROM all_tab_columns
