@@ -12,43 +12,60 @@ BEGIN
 
             COUNT(*) AS MISMATCH_COLUMN_COUNT,
 
-            LISTAGG(col_name, '','')
-                WITHIN GROUP (ORDER BY col_name) AS MISMATCH_COLUMNS,
+            RTRIM(
+                XMLAGG(
+                    XMLELEMENT(e, col_name || '','')
+                    ORDER BY col_name
+                ).EXTRACT(''//text()'').GETCLOBVAL(),
+            '','') AS MISMATCH_COLUMNS,
 
-            LISTAGG(col_name || '':'' || a_val, '','')
-                WITHIN GROUP (ORDER BY col_name) AS VALUES_IN_MAIN,
+            RTRIM(
+                XMLAGG(
+                    XMLELEMENT(e, col_name || '':'' || a_val || '','')
+                    ORDER BY col_name
+                ).EXTRACT(''//text()'').GETCLOBVAL(),
+            '','') AS VALUES_IN_MAIN,
 
-            LISTAGG(col_name || '':'' || b_val, '','')
-                WITHIN GROUP (ORDER BY col_name) AS VALUES_IN_TEMP
+            RTRIM(
+                XMLAGG(
+                    XMLELEMENT(e, col_name || '':'' || b_val || '','')
+                    ORDER BY col_name
+                ).EXTRACT(''//text()'').GETCLOBVAL(),
+            '','') AS VALUES_IN_TEMP
 
         FROM (
             ' ||
 
-        LISTAGG(
-            '
-            SELECT
-                a.CANDIDATE_ID,
-                a.JOB_APPLICATION,
-                a.JOB_REQ_ID,
-                a.JOB_REQ_OPEN_DATE,
-                a.INGESTED_DATE,
-                ''' || column_name || ''' AS col_name,
-                TO_CHAR(a.' || column_name || ') AS a_val,
-                TO_CHAR(b.' || column_name || ') AS b_val
-            FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
-            JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
-              ON a.CANDIDATE_ID      = b.CANDIDATE_ID
-             AND a.JOB_APPLICATION   = b.JOB_APPLICATION
-             AND a.JOB_REQ_ID        = b.JOB_REQ_ID
-             AND a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
-             AND a.INGESTED_DATE     = b.INGESTED_DATE
-            WHERE NVL(TO_CHAR(a.' || column_name || '), ''#NULL#'')
-               <> NVL(TO_CHAR(b.' || column_name || '), ''#NULL#'')
-            ',
-            ' UNION ALL '
-        ) WITHIN GROUP (ORDER BY column_id)
+        XMLAGG(
+            XMLELEMENT(
+                e,
+                '
+                SELECT
+                    a.CANDIDATE_ID,
+                    a.JOB_APPLICATION,
+                    a.JOB_REQ_ID,
+                    a.JOB_REQ_OPEN_DATE,
+                    a.INGESTED_DATE,
+                    ''' || column_name || ''' AS col_name,
+                    TO_CHAR(a.' || column_name || ') AS a_val,
+                    TO_CHAR(b.' || column_name || ') AS b_val
+                FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+                JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+                  ON a.CANDIDATE_ID      = b.CANDIDATE_ID
+                 AND a.JOB_APPLICATION   = b.JOB_APPLICATION
+                 AND a.JOB_REQ_ID        = b.JOB_REQ_ID
+                 AND a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
+                 AND a.INGESTED_DATE     = b.INGESTED_DATE
+                WHERE NVL(TO_CHAR(a.' || column_name || '), ''#NULL#'')
+                   <> NVL(TO_CHAR(b.' || column_name || '), ''#NULL#'')
+                UNION ALL
+                '
+            )
+            ORDER BY column_id
+        ).EXTRACT('//text()').GETCLOBVAL()
 
         || '
+            SELECT 1 FROM dual WHERE 1=0
         )
         GROUP BY
             CANDIDATE_ID,
@@ -71,7 +88,7 @@ BEGIN
             'INGESTED_DATE'
       );
 
-    -- Uncomment below if you want to see the generated SQL
+    -- Uncomment to debug generated SQL
     -- DBMS_OUTPUT.PUT_LINE(v_sql);
 
     EXECUTE IMMEDIATE v_sql;
