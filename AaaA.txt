@@ -3,3 +3,74 @@ FROM all_tab_columns
 WHERE owner = 'WFA_APP_USR_TALD'
   AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
 ORDER BY column_id;
+
+
+
+
+
+DECLARE
+    v_sql CLOB;
+BEGIN
+    -- Build the dynamic SQL
+    SELECT 'WITH cols AS (
+              SELECT column_name
+              FROM all_tab_columns
+              WHERE owner = ''WFA_APP_USR_TALD''
+                AND table_name = ''WD_RECRUITING_DIVERSE_INTERVIEW_PANELS''
+                AND column_name NOT IN (''X1'',''X2'',''X3'',''X4'',''X5'')
+            ),
+            diff AS (
+                SELECT 
+                    A.X1, A.X2, A.X3, A.X4, A.X5,' ||
+                    LISTAGG('
+                    CASE WHEN NVL(A.' || column_name || ', ''#NULL#'') 
+                               <> NVL(B.' || column_name || ', ''#NULL#'') 
+                         THEN ''' || column_name || ''' END AS ' || column_name, ',') 
+                    WITHIN GROUP (ORDER BY column_name)
+            || ' 
+                FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS A
+                JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP B
+                ON (A.X1 = B.X1 AND A.X2 = B.X2 AND A.X3 = B.X3 AND A.X4 = B.X4 AND A.X5 = B.X5)
+            )
+            SELECT 
+                X1, X2, X3, X4, X5,
+                (
+                    SELECT COUNT(*) FROM cols c 
+                    WHERE diff.' || ' || 'c.column_name IS NOT NULL
+                ) AS mismatch_count,
+                (
+                    SELECT LISTAGG(column_name, '','') WITHIN GROUP (ORDER BY column_name)
+                    FROM cols c
+                    WHERE diff.' || ' || 'c.column_name IS NOT NULL
+                ) AS mismatch_columns,
+                (
+                    SELECT LISTAGG(c.column_name || '':'' || A.' || ' || 'c.column_name, '','') 
+                           WITHIN GROUP (ORDER BY c.column_name)
+                    FROM cols c
+                    JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS A
+                        ON A.X1 = diff.X1 AND A.X2 = diff.X2 AND A.X3 = diff.X3 
+                       AND A.X4 = diff.X4 AND A.X5 = diff.X5
+                    WHERE diff.' || ' || 'c.column_name IS NOT NULL
+                ) AS mismatch_values_A,
+                (
+                    SELECT LISTAGG(c.column_name || '':'' || B.' || ' || 'c.column_name, '','') 
+                           WITHIN GROUP (ORDER BY c.column_name)
+                    FROM cols c
+                    JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP B
+                        ON B.X1 = diff.X1 AND B.X2 = diff.X2 AND B.X3 = diff.X3 
+                       AND B.X4 = diff.X4 AND B.X5 = diff.X5
+                    WHERE diff.' || ' || 'c.column_name IS NOT NULL
+                ) AS mismatch_values_B
+            FROM diff
+            WHERE EXISTS (
+                SELECT 1 FROM cols c WHERE diff.' || ' || 'c.column_name IS NOT NULL
+            )' INTO v_sql
+    FROM all_tab_columns
+    WHERE owner = 'WFA_APP_USR_TALD'
+      AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
+      AND column_name NOT IN ('X1','X2','X3','X4','X5');
+
+    -- Execute the dynamic SQL
+    EXECUTE IMMEDIATE v_sql;
+END;
+/
