@@ -1,3 +1,31 @@
+from sqlalchemy import create_engine
+import pandas as pd
+
+engine = create_engine(
+    "oracle+oracledb://mv25817:YOUR_PASSWORD@oraasmwp184-scan.nam.nsroot.net:8889/?service_name=HAWFA2UAT"
+)
+
+query = """
+SELECT *
+FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP
+FETCH FIRST 100 ROWS ONLY
+"""
+
+df = pd.read_sql(query, engine)
+df.head()
+
+
+
+
+
+
+
+
+
+
+
+
+
 import oracledb
 import pandas as pd
 
