@@ -1,5 +1,126 @@
 SET SERVEROUTPUT ON
 DECLARE
+    v_cols  CLOB;
+    v_sql   CLOB;
+BEGIN
+    /* Build non-PK column list dynamically */
+    SELECT LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_id)
+    INTO v_cols
+    FROM all_tab_columns
+    WHERE owner = 'WFA_APP_USR_TALD'
+      AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
+      AND column_name NOT IN (
+            'CANDIDATE_ID',
+            'JOB_APPLICATION',
+            'JOB_REQ_ID',
+            'JOB_REQ_OPEN_DATE',
+            'INGESTED_DATE'
+      );
+
+    /* Final SQL */
+    v_sql :=
+    '
+    SELECT
+        m.CANDIDATE_ID        AS X1,
+        m.JOB_APPLICATION     AS X2,
+        m.JOB_REQ_ID          AS X3,
+        m.JOB_REQ_OPEN_DATE   AS X4,
+        m.INGESTED_DATE       AS X5,
+
+        COUNT(*) AS MISMATCH_COLUMN_COUNT,
+
+        RTRIM(
+            XMLAGG(XMLELEMENT(e, m.col || '','') ORDER BY m.col)
+            .EXTRACT(''//text()'').GETCLOBVAL(),
+        '','') AS MISMATCH_COLUMNS,
+
+        RTRIM(
+            XMLAGG(XMLELEMENT(e, m.col || '':'' || m.val_main || '','') ORDER BY m.col)
+            .EXTRACT(''//text()'').GETCLOBVAL(),
+        '','') AS VALUES_IN_MAIN,
+
+        RTRIM(
+            XMLAGG(XMLELEMENT(e, m.col || '':'' || t.val_temp || '','') ORDER BY m.col)
+            .EXTRACT(''//text()'').GETCLOBVAL(),
+        '','') AS VALUES_IN_TEMP
+
+    FROM
+        (
+            SELECT
+                CANDIDATE_ID,
+                JOB_APPLICATION,
+                JOB_REQ_ID,
+                JOB_REQ_OPEN_DATE,
+                INGESTED_DATE,
+                col,
+                TO_CHAR(val) AS val_main
+            FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS
+            UNPIVOT INCLUDE NULLS (
+                val FOR col IN (' || v_cols || ')
+            )
+        ) m
+    JOIN
+        (
+            SELECT
+                CANDIDATE_ID,
+                JOB_APPLICATION,
+                JOB_REQ_ID,
+                JOB_REQ_OPEN_DATE,
+                INGESTED_DATE,
+                col,
+                TO_CHAR(val) AS val_temp
+            FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP
+            UNPIVOT INCLUDE NULLS (
+                val FOR col IN (' || v_cols || ')
+            )
+        ) t
+      ON m.CANDIDATE_ID      = t.CANDIDATE_ID
+     AND m.JOB_APPLICATION   = t.JOB_APPLICATION
+     AND m.JOB_REQ_ID        = t.JOB_REQ_ID
+     AND m.JOB_REQ_OPEN_DATE = t.JOB_REQ_OPEN_DATE
+     AND m.INGESTED_DATE     = t.INGESTED_DATE
+     AND m.col               = t.col
+
+    WHERE NVL(m.val_main, ''#NULL#'') <> NVL(t.val_temp, ''#NULL#'')
+
+    GROUP BY
+        m.CANDIDATE_ID,
+        m.JOB_APPLICATION,
+        m.JOB_REQ_ID,
+        m.JOB_REQ_OPEN_DATE,
+        m.INGESTED_DATE
+
+    ORDER BY
+        m.CANDIDATE_ID,
+        m.JOB_APPLICATION
+    ';
+
+    -- Uncomment ONLY if you want to inspect SQL
+    -- DBMS_OUTPUT.PUT_LINE(v_sql);
+
+    EXECUTE IMMEDIATE v_sql;
+END;
+/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SET SERVEROUTPUT ON
+DECLARE
     v_cols   CLOB;
     v_sql    CLOB;
 BEGIN
