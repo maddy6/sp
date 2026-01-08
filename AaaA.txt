@@ -1,3 +1,50 @@
+import oracledb
+import pandas as pd
+
+# ---- ORACLE CONNECTION DETAILS ----
+username = "mv25817"
+password = "YOUR_PASSWORD"   # <-- put your real password
+hostname = "oraasmwp184-scan.nam.nsroot.net"
+port = 8889
+service_name = "HAWFA2UAT"
+
+# ---- CREATE DSN ----
+dsn = oracledb.makedsn(
+    host=hostname,
+    port=port,
+    service_name=service_name
+)
+
+# ---- CONNECT ----
+connection = oracledb.connect(
+    user=username,
+    password=password,
+    dsn=dsn
+)
+
+print("Connected to Oracle UAT successfully")
+
+# ---- READ TABLE INTO DATAFRAME ----
+query = """
+SELECT *
+FROM YOUR_SCHEMA.YOUR_TABLE
+"""
+
+df = pd.read_sql(query, connection)
+
+print(df.head())
+
+# ---- CLOSE CONNECTION ----
+connection.close()
+
+
+
+
+
+
+
+
+
 SET SERVEROUTPUT ON SIZE UNLIMITED
 
 DECLARE
