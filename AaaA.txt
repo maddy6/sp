@@ -1,3 +1,84 @@
+SELECT
+    a.CANDIDATE_ID        AS X1,
+    a.JOB_APPLICATION     AS X2,
+    a.JOB_REQ_ID          AS X3,
+    a.JOB_REQ_OPEN_DATE   AS X4,
+    a.INGESTED_DATE       AS X5,
+
+    /* mismatch count */
+    ( CASE WHEN NVL(a.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+                <> NVL(b.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+           THEN 1 ELSE 0 END
+    +
+      CASE WHEN NVL(a.SOURCE_CATEGORY, '#NULL#')
+                <> NVL(b.SOURCE_CATEGORY, '#NULL#')
+           THEN 1 ELSE 0 END
+    ) AS MISMATCH_COLUMN_COUNT,
+
+    /* mismatch column names */
+    RTRIM(
+        CASE WHEN NVL(a.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+                  <> NVL(b.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+             THEN 'JOB_REQ_FILLED_DATE,' END
+      ||
+        CASE WHEN NVL(a.SOURCE_CATEGORY, '#NULL#')
+                  <> NVL(b.SOURCE_CATEGORY, '#NULL#')
+             THEN 'SOURCE_CATEGORY,' END
+    , ',') AS MISMATCH_COLUMNS,
+
+    /* values in MAIN table */
+    RTRIM(
+        CASE WHEN NVL(a.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+                  <> NVL(b.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+             THEN 'JOB_REQ_FILLED_DATE:' || TO_CHAR(a.JOB_REQ_FILLED_DATE) || ',' END
+      ||
+        CASE WHEN NVL(a.SOURCE_CATEGORY, '#NULL#')
+                  <> NVL(b.SOURCE_CATEGORY, '#NULL#')
+             THEN 'SOURCE_CATEGORY:' || a.SOURCE_CATEGORY || ',' END
+    , ',') AS VALUES_IN_MAIN,
+
+    /* values in TEMP table */
+    RTRIM(
+        CASE WHEN NVL(a.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+                  <> NVL(b.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+             THEN 'JOB_REQ_FILLED_DATE:' || TO_CHAR(b.JOB_REQ_FILLED_DATE) || ',' END
+      ||
+        CASE WHEN NVL(a.SOURCE_CATEGORY, '#NULL#')
+                  <> NVL(b.SOURCE_CATEGORY, '#NULL#')
+             THEN 'SOURCE_CATEGORY:' || b.SOURCE_CATEGORY || ',' END
+    , ',') AS VALUES_IN_TEMP
+
+FROM WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS a
+JOIN WFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP b
+  ON a.CANDIDATE_ID      = b.CANDIDATE_ID
+ AND a.JOB_APPLICATION   = b.JOB_APPLICATION
+ AND a.JOB_REQ_ID        = b.JOB_REQ_ID
+ AND a.JOB_REQ_OPEN_DATE = b.JOB_REQ_OPEN_DATE
+ AND a.INGESTED_DATE     = b.INGESTED_DATE
+
+WHERE
+      NVL(a.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+        <> NVL(b.JOB_REQ_FILLED_DATE, DATE '1900-01-01')
+   OR NVL(a.SOURCE_CATEGORY, '#NULL#')
+        <> NVL(b.SOURCE_CATEGORY, '#NULL#')
+
+ORDER BY
+    a.CANDIDATE_ID,
+    a.JOB_APPLICATION;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 SET SERVEROUTPUT ON SIZE UNLIMITED;
 
 DECLARE
