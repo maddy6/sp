@@ -1,0 +1,5 @@
+SELECT column_name
+FROM all_tab_columns
+WHERE owner = 'WFA_APP_USR_TALD'
+  AND table_name = 'WD_RECRUITING_DIVERSE_INTERVIEW_PANELS'
+ORDER BY column_id;
