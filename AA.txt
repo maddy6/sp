@@ -1,3 +1,45 @@
+SELECT COUNT(*) AS COMMON_ROW_COUNT
+FROM (
+    SELECT *
+    FROM VFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS
+    INTERSECT
+    SELECT *
+    FROM VFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP
+);
+
+
+
+SELECT *
+FROM VFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS
+INTERSECT
+SELECT *
+FROM VFA_APP_USR_TALD.WD_RECRUITING_DIVERSE_INTERVIEW_PANELS_TEMP;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 --------------------------------------------------------------------------------
 -- FULL: LISTAGG final (may hit 4000-char limit if many/long diffs)
 -- Filter ETL_BATCHID = '20251124'
@@ -6496,6 +6538,7 @@ df["high_risk_merchant_score"] = df["cnt_5310_5411_24hr"] / (df["cnt_5310_5411_6
 
 # Save the enhanced dataset
 h2o.export_file(df, "fraud_data_with_interaction_features.csv")
+
 
 
 
