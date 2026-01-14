@@ -28,6 +28,14 @@ df1_prep = df1.rename(columns={
     'Notification - YTD Ann Attrition': 'noti_ann',
     'YTD Year': 'Year YTD'
 })
+cols = ['term_hc', 'noti_hc']
+
+df1_prep[cols] = (
+    df1_prep[cols]
+        .astype(str)            # ensure string
+        .replace({',': ''}, regex=True)  # remove commas
+        .apply(pd.to_numeric, errors='coerce')
+)
 
 df1_prep['Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
     safe_div(df1_prep['term_terms'], df1_prep['term_hc'])
@@ -50,6 +58,15 @@ df2_prep = df2.rename(columns={
     'Notification - YTD Ann Attrition': 'noti_ann',
     'YTD Year': 'Year YTD'
 })
+cols = ['term_hc', 'noti_hc']
+
+df2_prep[cols] = (
+    df2_prep[cols]
+        .astype(str)            # ensure string
+        .replace({',': ''}, regex=True)  # remove commas
+        .apply(pd.to_numeric, errors='coerce')
+)
+
 
 df2_prep['Function'] = df2_prep['Officer Title Group'].str.replace(r'^Total\s+', '', regex=True)
 
