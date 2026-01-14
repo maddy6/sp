@@ -1,3 +1,62 @@
+with pd.ExcelWriter(
+    output_file,
+    engine="xlsxwriter",
+    engine_kwargs={"options": {"nan_inf_to_errors": True}}
+) as writer:
+
+    # ----------------------------------
+    # TAB 1: All Product (df3 full view)
+    # ----------------------------------
+    write_sheet(writer, "All Product", df3)
+
+    # ----------------------------------
+    # TAB 2: GOC Summary (df4)
+    # ----------------------------------
+    df4_clean = df4.replace([np.inf, -np.inf], "").fillna("")
+
+    df4_clean.to_excel(
+        writer,
+        sheet_name="GOC_Summary",
+        index=False
+    )
+
+    # Optional basic formatting for df4
+    workbook  = writer.book
+    worksheet = writer.sheets["GOC_Summary"]
+
+    header_fmt = workbook.add_format({'bold': True, 'border': 1})
+    cell_fmt   = workbook.add_format({'border': 1})
+
+    for col, col_name in enumerate(df4_clean.columns):
+        worksheet.write(0, col, col_name, header_fmt)
+        worksheet.set_column(col, col, 22)
+
+    for r in range(1, len(df4_clean) + 1):
+        for c in range(len(df4_clean.columns)):
+            worksheet.write(r, c, df4_clean.iloc[r-1, c], cell_fmt)
+
+    worksheet.freeze_panes(1, 0)
+
+    # ----------------------------------
+    # TAB 3+: Function-wise tabs (df3)
+    # ----------------------------------
+    for func in df3['Function'].unique():
+        write_sheet(
+            writer,
+            str(func)[:31],
+            df3[df3['Function'] == func]
+        )
+
+print("✅ Excel created with All Product + GOC_Summary + Function tabs")
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import xlsxwriter
