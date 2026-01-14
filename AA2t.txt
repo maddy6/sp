@@ -1,0 +1,90 @@
+import pandas as pd
+import numpy as np
+
+
+df1_prep = df1.rename(columns={
+    'Markets Products': 'Function',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+
+df1_prep['term_non_ann'] = np.where(
+    df1_prep['term_hc'] == 0, 0,
+    df1_prep['term_terms'] / df1_prep['term_hc']
+)
+
+df1_prep['noti_non_ann'] = np.where(
+    df1_prep['noti_hc'] == 0, 0,
+    df1_prep['noti_terms'] / df1_prep['noti_hc']
+)
+
+
+df2_prep = df2.rename(columns={
+    'Total Markets Products': 'Officer Title Group',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+
+
+# Fuzzy mapping
+df2_prep['Function'] = df2_prep['Officer Title Group'].str.replace(
+    r'^Total\s+', '', regex=True
+)
+
+
+df2_prep['term_non_ann'] = np.where(
+    df2_prep['term_hc'] == 0, 0,
+    df2_prep['term_terms'] / df2_prep['term_hc']
+)
+
+df2_prep['noti_non_ann'] = np.where(
+    df2_prep['noti_hc'] == 0, 0,
+    df2_prep['noti_terms'] / df2_prep['noti_hc']
+)
+
+
+final_rows = []
+
+for func in sorted(df1_prep['Function'].unique()):
+    
+    # ---- Individual rows ----
+    indiv = df1_prep[df1_prep['Function'] == func] \
+        .sort_values(['Officer Title Group', 'Year YTD'])
+    
+    final_rows.append(indiv)
+    
+    # ---- Total rows ----
+    total = df2_prep[df2_prep['Function'] == func] \
+        .sort_values('Year YTD')
+    
+    final_rows.append(total)
+
+
+df3 = pd.concat(final_rows, ignore_index=True)
+
+
+
+df3 = df3.rename(columns={
+    'term_terms': 'Term Date - YTD Terms Vol',
+    'term_hc': 'Term Date - YTD HC Avg',
+    'term_ann': 'Term Date - YTD Ann Attrition',
+    'term_non_ann': 'Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)',
+    'noti_terms': 'Notification - YTD Terms',
+    'noti_hc': 'Notification - YTD HC Avg',
+    'noti_ann': 'Notification - YTD Ann Attrition',
+    'noti_non_ann': 'Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'
+})
+
+
