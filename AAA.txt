@@ -1,5 +1,236 @@
 import pandas as pd
 import numpy as np
+import xlsxwriter
+from datetime import datetime
+
+# =====================================================
+# Helper
+# =====================================================
+def safe_div(n, d):
+    return np.where(d == 0, np.nan, n / d)
+
+# =====================================================
+# LAST COMPLETED MONTH LOGIC
+# =====================================================
+today = datetime.today()
+if today.month == 1:
+    report_month = "Dec"
+else:
+    report_month = datetime(today.year, today.month - 1, 1).strftime("%b")
+
+# =====================================================
+# STEP 1: Prepare df1 (Individual)
+# =====================================================
+df1_prep = df1.rename(columns={
+    'Markets Products': 'Function',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+df1_prep['Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df1_prep['term_terms'], df1_prep['term_hc'])
+
+df1_prep['Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df1_prep['noti_terms'], df1_prep['noti_hc'])
+
+df1_prep['Month'] = report_month
+
+# =====================================================
+# STEP 2: Prepare df2 (TOTAL – fuzzy mapping)
+# =====================================================
+df2_prep = df2.rename(columns={
+    'Total Markets Products': 'Officer Title Group',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+df2_prep['Function'] = df2_prep['Officer Title Group'].str.replace(
+    r'^Total\s+', '', regex=True
+)
+
+df2_prep['Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df2_prep['term_terms'], df2_prep['term_hc'])
+
+df2_prep['Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df2_prep['noti_terms'], df2_prep['noti_hc'])
+
+df2_prep['Month'] = report_month
+
+# =====================================================
+# STEP 3: Build df3 FUNCTION-WISE
+# =====================================================
+final_blocks = []
+
+for func in sorted(df1_prep['Function'].unique()):
+    indiv = df1_prep[df1_prep['Function'] == func] \
+        .sort_values(['Officer Title Group', 'Year YTD'])
+    final_blocks.append(indiv)
+
+    total = df2_prep[df2_prep['Function'] == func] \
+        .sort_values('Year YTD')
+    final_blocks.append(total)
+
+df3 = pd.concat(final_blocks, ignore_index=True)
+
+# =====================================================
+# STEP 4: Final column names & order
+# =====================================================
+df3 = df3.rename(columns={
+    'term_terms': 'Term Date - YTD Terms Vol',
+    'term_hc': 'Term Date - YTD HC Avg',
+    'term_ann': 'Term Date - YTD Ann Attrition',
+    'noti_terms': 'Notification - YTD Terms',
+    'noti_hc': 'Notification - YTD HC Avg',
+    'noti_ann': 'Notification - YTD Ann Attrition'
+})
+
+final_columns = [
+    'Function',
+    'Officer Title Group',
+    'Term Date - YTD Terms Vol',
+    'Term Date - YTD HC Avg',
+    'Term Date - YTD Ann Attrition',
+    'Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)',
+    'Notification - YTD Terms',
+    'Notification - YTD HC Avg',
+    'Notification - YTD Ann Attrition',
+    'Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)',
+    'Month',
+    'Year YTD'
+]
+
+df3 = df3[final_columns]
+
+# =====================================================
+# EXCEL COLUMN INDEXES (0-BASED)
+# =====================================================
+TERM_TERMS_COL = 2
+TERM_HC_COL = 3
+TERM_ANN_COL = 4
+TERM_NON_ANN_COL = 5
+
+NOTI_TERMS_COL = 6
+NOTI_HC_COL = 7
+NOTI_ANN_COL = 8
+NOTI_NON_ANN_COL = 9
+
+# =====================================================
+# WRITE EXCEL (All Product + Function tabs)
+# =====================================================
+output_file = "DEC_2025_MARKETS_FINAL.xlsx"
+
+def write_sheet(writer, sheet_name, df):
+    workbook  = writer.book
+    worksheet = workbook.add_worksheet(sheet_name)
+    writer.sheets[sheet_name] = worksheet
+
+    percent_fmt = workbook.add_format({'num_format': '0.00%'})
+    header_fmt  = workbook.add_format({'bold': True, 'border': 1})
+    cell_fmt    = workbook.add_format({'border': 1})
+
+    # Headers
+    for col, name in enumerate(df.columns):
+        worksheet.write(0, col, name, header_fmt)
+        worksheet.set_column(col, col, 22)
+
+    # Rows
+    for r in range(len(df)):
+        row = r + 1
+        for c in range(len(df.columns)):
+            val = df.iloc[r, c]
+
+            # BLANK for Ann Attrition if NaN/inf
+            if c in [TERM_ANN_COL, NOTI_ANN_COL]:
+                if pd.isna(val) or val in [np.inf, -np.inf]:
+                    worksheet.write(row, c, "", cell_fmt)
+                else:
+                    worksheet.write(row, c, val, percent_fmt)
+            else:
+                worksheet.write(row, c, val, cell_fmt)
+
+        # Non-annualized formulas (blank if HC = 0)
+        worksheet.write_formula(
+            row, TERM_NON_ANN_COL,
+            f'=IF({xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{row+1}=0,"",'
+            f'{xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{row+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{row+1})',
+            percent_fmt
+        )
+
+        worksheet.write_formula(
+            row, NOTI_NON_ANN_COL,
+            f'=IF({xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{row+1}=0,"",'
+            f'{xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{row+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{row+1})',
+            percent_fmt
+        )
+
+    worksheet.freeze_panes(1, 0)
+
+with pd.ExcelWriter(
+    output_file,
+    engine="xlsxwriter",
+    engine_kwargs={"options": {"nan_inf_to_errors": True}}
+) as writer:
+
+    # All Product
+    write_sheet(writer, "All Product", df3)
+
+    # Function-wise sheets
+    for func in df3['Function'].unique():
+        write_sheet(
+            writer,
+            str(func)[:31],
+            df3[df3['Function'] == func]
+        )
+
+print("✅ FINAL EXCEL CREATED SUCCESSFULLY")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
 
 # ===============================
 # Helper: safe division
