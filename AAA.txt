@@ -200,3 +200,10 @@ with pd.ExcelWriter(output_file, engine="xlsxwriter") as writer:
 
 print("✅ Excel created with formulas + % formatting + multi-tabs")
 
+
+
+with pd.ExcelWriter(
+    output_file,
+    engine="xlsxwriter",
+    engine_kwargs={"options": {"nan_inf_to_errors": True}}
+) as writer:
