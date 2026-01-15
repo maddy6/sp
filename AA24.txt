@@ -1,3 +1,66 @@
+def write_sheet(writer, sheet_name, df):
+    workbook  = writer.book
+    worksheet = workbook.add_worksheet(sheet_name)
+    writer.sheets[sheet_name] = worksheet
+
+    # 🔑 Center-aligned formats
+    border_fmt = workbook.add_format({
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter'
+    })
+
+    percent_fmt = workbook.add_format({
+        'num_format': '0.00%',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter'
+    })
+
+    nrows, ncols = df.shape
+
+    # Headers (center aligned, NO bold)
+    for c, col in enumerate(df.columns):
+        worksheet.write(0, c, col, border_fmt)
+        worksheet.set_column(c, c, 22)
+
+    # Data rows
+    for r in range(nrows):
+        row = r + 1
+        for c in range(ncols):
+            val = df.iloc[r, c]
+            if pd.isna(val) or val in [np.inf, -np.inf]:
+                worksheet.write(row, c, "", border_fmt)
+            else:
+                worksheet.write(row, c, val, border_fmt)
+
+        # Non-annualized attrition formulas (IFERROR → blank)
+        worksheet.write_formula(
+            row, TERM_NON_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{row+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{row+1},0)',
+            percent_fmt
+        )
+
+        worksheet.write_formula(
+            row, NOTI_NON_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{row+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{row+1},0)',
+            percent_fmt
+        )
+
+    worksheet.freeze_panes(1, 0)
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import xlsxwriter
