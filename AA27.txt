@@ -1,3 +1,49 @@
+if 'Function' in df.columns and df.iloc[i-1]['Function'] in ['Markets', 'Markets Excluding Ops']:
+
+for i in range(1, r + 1):
+
+    # Non-annualized (ALL sheets)
+    ws.write_formula(
+        i, TERM_NON_ANN_COL,
+        f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+        f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1},0)',
+        pct
+    )
+    ws.write_formula(
+        i, NOTI_NON_ANN_COL,
+        f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+        f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1},0)',
+        pct
+    )
+
+    # ✅ Annualized ONLY if Function column exists AND is Markets*
+    if 'Function' in df.columns and df.iloc[i-1]['Function'] in ['Markets', 'Markets Excluding Ops']:
+
+        ws.write_formula(
+            i, TERM_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1}*(12/12),0)',
+            pct
+        )
+
+        ws.write_formula(
+            i, NOTI_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1}*(12/12),0)',
+            pct
+        )
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import xlsxwriter
