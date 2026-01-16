@@ -4,6 +4,27 @@ import xlsxwriter
 from datetime import datetime
 
 # =====================================================
+# CONFIG: Optional extra-row injection
+# =====================================================
+counter = False   # ✅ set True only if you want to inject rows
+
+extra_rows_config = [
+    # Example:
+    # {
+    #     "Function": "CMM",
+    #     "Officer Title Group": "NON-OFF",
+    #     "Year YTD": 2025,
+    #     "Month": "Dec",
+    #     "fill_values": {
+    #         "Term Date - YTD Terms Vol": 0,
+    #         "Term Date - YTD HC Avg": 0,
+    #         "Notification - YTD Terms": 0,
+    #         "Notification - YTD HC Avg": 0
+    #     }
+    # }
+]
+
+# =====================================================
 # Helpers
 # =====================================================
 def safe_div(n, d):
@@ -18,7 +39,7 @@ report_month = "Dec" if today.month == 1 else datetime(
 ).strftime("%b")
 
 # =====================================================
-# STEP 1: df1 (Individual)
+# STEP 1: Prepare df1 (Individual)
 # =====================================================
 df1_prep = df1.rename(columns={
     'Markets Products': 'Function',
@@ -47,7 +68,7 @@ df1_prep['Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'] =
 df1_prep['Month'] = report_month
 
 # =====================================================
-# STEP 2: df2 (TOTAL)
+# STEP 2: Prepare df2 (TOTAL)
 # =====================================================
 df2_prep = df2.rename(columns={
     'Total Markets Products': 'Officer Title Group',
@@ -97,7 +118,7 @@ for f in sorted(df1_prep['Function'].unique()):
 df3 = pd.concat(blocks, ignore_index=True)
 
 # =====================================================
-# STEP 4: Final columns
+# STEP 4: Final column order
 # =====================================================
 df3 = df3.rename(columns={
     'term_terms': 'Term Date - YTD Terms Vol',
@@ -127,7 +148,38 @@ df3 = df3[final_cols]
 df3['Year YTD'] = df3['Year YTD'].astype(int)
 
 # =====================================================
-# STEP 5: BUILD MARKETS & MARKETS EXCLUDING OPS (FULL BLOCKS)
+# STEP 5: FAST MERGE-BASED EXTRA ROW INGESTION
+# =====================================================
+if counter and extra_rows_config:
+    extra_cfg_df = pd.DataFrame(extra_rows_config)
+
+    base_rows = []
+    for _, r in extra_cfg_df.iterrows():
+        row = dict.fromkeys(df3.columns, "")
+        row['Function'] = r['Function']
+        row['Officer Title Group'] = r['Officer Title Group']
+        row['Year YTD'] = int(r['Year YTD'])
+        row['Month'] = r.get('Month', report_month)
+        for k, v in r.get('fill_values', {}).items():
+            row[k] = v
+        base_rows.append(row)
+
+    inject_df = pd.DataFrame(base_rows)
+
+    merged = inject_df.merge(
+        df3[['Function', 'Officer Title Group', 'Year YTD']],
+        on=['Function', 'Officer Title Group', 'Year YTD'],
+        how='left',
+        indicator=True
+    )
+
+    missing = merged[merged['_merge'] == 'left_only'].drop(columns='_merge')
+
+    if not missing.empty:
+        df3 = pd.concat([df3, missing], ignore_index=True)
+
+# =====================================================
+# STEP 6: BUILD MARKETS & MARKETS EXCLUDING OPS (FULL BLOCKS)
 # =====================================================
 NUMERIC_COLS = [
     'Term Date - YTD Terms Vol',
@@ -189,7 +241,7 @@ df3 = pd.concat([
 ], ignore_index=True)
 
 # =====================================================
-# EXCEL WRITING (FORMULAS + FORMATTING)
+# STEP 7: EXCEL WRITING (FORMULAS + FORMAT)
 # =====================================================
 TERM_TERMS_COL = 2
 TERM_HC_COL = 3
@@ -215,7 +267,7 @@ def write_sheet(writer, name, df):
 
     for i in range(1, r + 1):
 
-        # Non-annualized (all functions)
+        # Non-annualized (ALL functions)
         ws.write_formula(
             i, TERM_NON_ANN_COL,
             f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
@@ -229,7 +281,7 @@ def write_sheet(writer, name, df):
             pct
         )
 
-        # Annualized ONLY for Markets functions
+        # Annualized ONLY for Markets & Markets Excluding Ops
         if df.iloc[i-1]['Function'] in ['Markets', 'Markets Excluding Ops']:
             ws.write_formula(
                 i, TERM_ANN_COL,
@@ -246,6 +298,9 @@ def write_sheet(writer, name, df):
 
     ws.freeze_panes(1, 0)
 
+# =====================================================
+# WRITE FINAL EXCEL
+# =====================================================
 with pd.ExcelWriter(
     "DEC_2025_MARKETS_FINAL.xlsx",
     engine="xlsxwriter",
@@ -260,4 +315,4 @@ with pd.ExcelWriter(
     for f in df3['Function'].unique():
         write_sheet(writer, str(f)[:31], df3[df3['Function'] == f])
 
-print("✅ FINAL FILE GENERATED — ALL LOGIC APPLIED CORRECTLY")
+print("✅ FINAL FILE GENERATED — ALL REQUIREMENTS SATISFIED")
