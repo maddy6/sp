@@ -1,3 +1,40 @@
+month_to_num = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
+    "May": 5, "Jun": 6, "Jul": 7, "Aug": 8,
+    "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
+}
+
+completed_month_num = month_to_num[report_month]
+annualization_factor = f"(12/{completed_month_num})"
+
+
+
+# Term Date - YTD Ann Attrition (Markets only)
+ws.write_formula(
+    i,
+    TERM_ANN_COL,
+    f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+    f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1}*{annualization_factor},0)',
+    pct
+)
+
+# Notification - YTD Ann Attrition (Markets only)
+ws.write_formula(
+    i,
+    NOTI_ANN_COL,
+    f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+    f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1}*{annualization_factor},0)',
+    pct
+)
+
+
+
+
+
+
+
+
+
 if 'Function' in df.columns and df.iloc[i-1]['Function'] in ['Markets', 'Markets Excluding Ops']:
 
 for i in range(1, r + 1):
