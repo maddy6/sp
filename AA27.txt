@@ -1,3 +1,32 @@
+has_function = 'Function' in df.columns
+has_officer  = 'Officer Title Group' in df.columns
+
+function_end = False
+officer_end  = False
+
+if has_function:
+    function_end = (
+        i == total_rows or
+        next_row['Function'] != curr['Function']
+    )
+
+if has_officer and not function_end:
+    officer_end = (
+        i == total_rows or
+        next_row['Officer Title Group'] != curr['Officer Title Group']
+    )
+
+
+
+nd keep this line unchanged:
+
+row_fmt = thick if (function_end or officer_end) else thin
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import xlsxwriter
