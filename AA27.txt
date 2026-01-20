@@ -1,3 +1,17 @@
+has_function_col = 'Function' in df.columns
+
+if has_function_col and i < rows:
+    curr_func = df.iloc[i-1]['Function']
+    next_func = df.iloc[i]['Function']
+    curr_off  = df.iloc[i-1]['Officer Title Group']
+    next_off  = df.iloc[i]['Officer Title Group']
+
+    if curr_func == next_func and curr_off != next_off:
+        for c in range(OFF_COL, len(df.columns)):
+            ws.write_blank(i + 1, c, None, bold_line)
+
+
+
 import pandas as pd
 import numpy as np
 import xlsxwriter
