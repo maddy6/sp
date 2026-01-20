@@ -1,3 +1,12 @@
+is_last = False
+if '_is_last_of_group' in df.columns:
+    is_last = bool(df.iloc[i]['_is_last_of_group'])
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import xlsxwriter
