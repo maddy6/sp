@@ -1,8 +1,111 @@
+
+
+thin_border = wb.add_format({
+    'border': 1,
+    'align': 'center',
+    'valign': 'vcenter'
+})
+
+thick_bottom = wb.add_format({
+    'bottom': 2,
+    'align': 'center',
+    'valign': 'vcenter'
+})
+
+pct_2 = wb.add_format({
+    'border': 1,
+    'align': 'center',
+    'valign': 'vcenter',
+    'num_format': '0.00%'
+})
+
+pct_1 = wb.add_format({
+    'border': 1,
+    'align': 'center',
+    'valign': 'vcenter',
+    'num_format': '0.0%'
+})
+
+
+
+
+
+for i in range(1, r + 1):
+
+    # Decide if thick border needed
+    is_last_row = i == r
+    next_func = None
+    next_officer = None
+
+    if not is_last_row and 'Function' in df.columns:
+        next_func = df.iloc[i]['Function']
+        next_officer = df.iloc[i]['Officer Title Group']
+
+    curr_func = df.iloc[i-1]['Function'] if 'Function' in df.columns else None
+    curr_officer = df.iloc[i-1]['Officer Title Group'] if 'Officer Title Group' in df.columns else None
+
+    use_thick = (
+        is_last_row or
+        (next_func != curr_func) or
+        (next_officer != curr_officer)
+    )
+
+    cell_fmt = thick_bottom if use_thick else thin_border
+
+    # Write all cells with chosen border
+    for c in range(c):
+        val = df.iloc[i-1, c]
+        ws.write(i, c, "" if pd.isna(val) else val, cell_fmt)
+
+    # ============================
+    # Non-annualized (1 decimal %)
+    # ============================
+    ws.write_formula(
+        i, TERM_NON_ANN_COL,
+        f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+        f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1},0)',
+        pct_1
+    )
+
+    ws.write_formula(
+        i, NOTI_NON_ANN_COL,
+        f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+        f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1},0)',
+        pct_1
+    )
+
+    # ============================
+    # Annualized (Markets only)
+    # ============================
+    if 'Function' in df.columns and curr_func in ['Markets', 'Markets Excluding Ops']:
+        ws.write_formula(
+            i, TERM_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1}*{annualization_factor},0)',
+            pct_2
+        )
+
+        ws.write_formula(
+            i, NOTI_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1}*{annualization_factor},0)',
+            pct_2
+        )
+
+
+
+
+
+
+
+
 month_to_num = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
     "May": 5, "Jun": 6, "Jul": 7, "Aug": 8,
     "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
 }
+
+
 
 completed_month_num = month_to_num[report_month]
 annualization_factor = f"(12/{completed_month_num})"
