@@ -1,3 +1,253 @@
+import pandas as pd
+import numpy as np
+import xlsxwriter
+from datetime import datetime
+
+# =====================================================
+# Helper
+# =====================================================
+def safe_div(n, d):
+    return np.where(d == 0, np.nan, n / d)
+
+# =====================================================
+# Reporting Month & Annualization
+# =====================================================
+today = datetime.today()
+if today.month == 1:
+    report_month = "Dec"
+    month_num = 12
+else:
+    report_month = datetime(today.year, today.month - 1, 1).strftime("%b")
+    month_num = today.month - 1
+
+annualization_factor = 12 / month_num
+
+# =====================================================
+# STEP 1: Prepare df1 (Individual)
+# =====================================================
+df1_prep = df1.rename(columns={
+    'Markets Products': 'Function',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+for c in ['term_hc', 'noti_hc']:
+    df1_prep[c] = (
+        df1_prep[c].astype(str)
+        .replace({',': ''}, regex=True)
+        .apply(pd.to_numeric, errors='coerce')
+    )
+
+df1_prep['Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df1_prep['term_terms'], df1_prep['term_hc'])
+
+df1_prep['Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df1_prep['noti_terms'], df1_prep['noti_hc'])
+
+df1_prep['Month'] = report_month
+
+# =====================================================
+# STEP 2: Prepare df2 (TOTAL)
+# =====================================================
+df2_prep = df2.rename(columns={
+    'Total Markets Products': 'Officer Title Group',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+for c in ['term_hc', 'noti_hc']:
+    df2_prep[c] = (
+        df2_prep[c].astype(str)
+        .replace({',': ''}, regex=True)
+        .apply(pd.to_numeric, errors='coerce')
+    )
+
+df2_prep['Function'] = df2_prep['Officer Title Group'].str.replace(
+    r'^Total\s+', '', regex=True
+)
+
+df2_prep['Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df2_prep['term_terms'], df2_prep['term_hc'])
+
+df2_prep['Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df2_prep['noti_terms'], df2_prep['noti_hc'])
+
+df2_prep['Month'] = report_month
+
+# =====================================================
+# STEP 3: Build df3
+# =====================================================
+blocks = []
+for func in sorted(df1_prep['Function'].unique()):
+    blocks.append(
+        df1_prep[df1_prep['Function'] == func]
+        .sort_values(['Officer Title Group', 'Year YTD'])
+    )
+    blocks.append(
+        df2_prep[df2_prep['Function'] == func]
+        .sort_values('Year YTD')
+    )
+
+df3 = pd.concat(blocks, ignore_index=True)
+
+# =====================================================
+# STEP 4: Final columns
+# =====================================================
+df3 = df3.rename(columns={
+    'term_terms': 'Term Date - YTD Terms Vol',
+    'term_hc': 'Term Date - YTD HC Avg',
+    'term_ann': 'Term Date - YTD Ann Attrition',
+    'noti_terms': 'Notification - YTD Terms',
+    'noti_hc': 'Notification - YTD HC Avg',
+    'noti_ann': 'Notification - YTD Ann Attrition'
+})
+
+final_cols = [
+    'Function',
+    'Officer Title Group',
+    'Term Date - YTD Terms Vol',
+    'Term Date - YTD HC Avg',
+    'Term Date - YTD Ann Attrition',
+    'Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)',
+    'Notification - YTD Terms',
+    'Notification - YTD HC Avg',
+    'Notification - YTD Ann Attrition',
+    'Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)',
+    'Month',
+    'Year YTD'
+]
+
+df3 = df3[final_cols]
+
+# =====================================================
+# Excel Column Indexes
+# =====================================================
+FUNC_COL = 0
+OFF_COL  = 1
+TERM_TERMS_COL = 2
+TERM_HC_COL    = 3
+TERM_ANN_COL   = 4
+TERM_NON_COL   = 5
+NOTI_TERMS_COL = 6
+NOTI_HC_COL    = 7
+NOTI_ANN_COL   = 8
+NOTI_NON_COL   = 9
+
+# =====================================================
+# Excel Writer
+# =====================================================
+def write_sheet(writer, sheet_name, df):
+    wb = writer.book
+    ws = wb.add_worksheet(sheet_name)
+    writer.sheets[sheet_name] = ws
+
+    # Formats
+    header_fmt = wb.add_format({'bold': True, 'border': 1, 'align': 'center'})
+    cell_fmt   = wb.add_format({'border': 1, 'align': 'center'})
+    bold_line  = wb.add_format({'top': 2})   # for separator row
+    pct1 = wb.add_format({'border': 1, 'num_format': '0.0%', 'align': 'center'})
+    pct2 = wb.add_format({'border': 1, 'num_format': '0.00%', 'align': 'center'})
+
+    # Header
+    for c, col in enumerate(df.columns):
+        ws.write(0, c, col, header_fmt)
+        ws.set_column(c, c, 22)
+
+    rows = len(df)
+
+    for i in range(1, rows + 1):
+        curr = df.iloc[i-1]
+
+        # Write normal cells
+        for c in range(len(df.columns)):
+            ws.write(i, c, "" if pd.isna(curr.iloc[c]) else curr.iloc[c], cell_fmt)
+
+        # Non-annualized (1 decimal)
+        ws.write_formula(
+            i, TERM_NON_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1},0)',
+            pct1
+        )
+        ws.write_formula(
+            i, NOTI_NON_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1},0)',
+            pct1
+        )
+
+        # Annualized (Markets only)
+        if 'Function' in df.columns and curr['Function'] in ['Markets', 'Markets Excluding Ops']:
+            ws.write_formula(
+                i, TERM_ANN_COL,
+                f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+                f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1}*{annualization_factor},0)',
+                pct2
+            )
+            ws.write_formula(
+                i, NOTI_ANN_COL,
+                f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+                f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1}*{annualization_factor},0)',
+                pct2
+            )
+
+        # ===== Officer group separator (BOLD LINE, NOT in Function column)
+        if i < rows:
+            curr_off = df.iloc[i-1]['Officer Title Group']
+            next_off = df.iloc[i]['Officer Title Group']
+            curr_func = df.iloc[i-1]['Function']
+            next_func = df.iloc[i]['Function']
+
+            if curr_func == next_func and curr_off != next_off:
+                for c in range(OFF_COL, len(df.columns)):
+                    ws.write_blank(i + 1, c, None, bold_line)
+
+    ws.freeze_panes(1, 0)
+
+# =====================================================
+# WRITE FINAL EXCEL
+# =====================================================
+with pd.ExcelWriter(
+    "FINAL_MARKETS_REPORT.xlsx",
+    engine="xlsxwriter",
+    engine_kwargs={"options": {"nan_inf_to_errors": True}}
+) as writer:
+
+    write_sheet(writer, "All Product", df3)
+
+    # GOC Summary
+    df4_clean = df4.replace([np.inf, -np.inf], "").fillna("")
+    df4_clean.to_excel(writer, sheet_name="GOC_Summary", index=False)
+
+    for func in df3['Function'].unique():
+        write_sheet(writer, str(func)[:31], df3[df3['Function'] == func])
+
+print("✅ FINAL FILE GENERATED — EXACT FORMAT AS CONFIRMED")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 has_function = 'Function' in df.columns
 has_officer  = 'Officer Title Group' in df.columns
 
