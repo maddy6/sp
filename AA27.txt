@@ -1,3 +1,343 @@
+import pandas as pd
+import numpy as np
+import xlsxwriter
+from datetime import datetime
+
+# =====================================================
+# CONFIG
+# =====================================================
+counter = False   # 🔁 Set True only if you want to inject extra rows
+
+extra_rows_config = [
+    # Example:
+    # {
+    #     "Function": "CMM",
+    #     "Officer Title Group": "NON-OFF",
+    #     "Year YTD": 2025,
+    #     "Month": "Dec",
+    #     "fill_values": {
+    #         "Term Date - YTD Terms Vol": 0,
+    #         "Term Date - YTD HC Avg": 0,
+    #         "Notification - YTD Terms": 0,
+    #         "Notification - YTD HC Avg": 0
+    #     }
+    # }
+]
+
+# =====================================================
+# Helpers
+# =====================================================
+def safe_div(n, d):
+    return np.where(d == 0, np.nan, n / d)
+
+# =====================================================
+# Last completed month
+# =====================================================
+today = datetime.today()
+report_month = "Dec" if today.month == 1 else datetime(
+    today.year, today.month - 1, 1
+).strftime("%b")
+
+month_to_num = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
+    "May": 5, "Jun": 6, "Jul": 7, "Aug": 8,
+    "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
+}
+completed_month_num = month_to_num[report_month]
+annualization_factor = f"(12/{completed_month_num})"
+
+# =====================================================
+# STEP 1: df1 (Individual)
+# =====================================================
+df1_prep = df1.rename(columns={
+    'Markets Products': 'Function',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+for c in ['term_hc', 'noti_hc']:
+    df1_prep[c] = (
+        df1_prep[c].astype(str)
+        .replace({',': ''}, regex=True)
+        .apply(pd.to_numeric, errors='coerce')
+    )
+
+df1_prep['Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df1_prep['term_terms'], df1_prep['term_hc'])
+
+df1_prep['Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df1_prep['noti_terms'], df1_prep['noti_hc'])
+
+df1_prep['Month'] = report_month
+
+# =====================================================
+# STEP 2: df2 (TOTAL)
+# =====================================================
+df2_prep = df2.rename(columns={
+    'Total Markets Products': 'Officer Title Group',
+    'Term Date - YTD Terms Vol': 'term_terms',
+    'Term Date - YTD HC Avg': 'term_hc',
+    'Term Date - YTD Ann Attrition': 'term_ann',
+    'Notification - YTD Terms': 'noti_terms',
+    'Notification - YTD HC Avg': 'noti_hc',
+    'Notification - YTD Ann Attrition': 'noti_ann',
+    'YTD Year': 'Year YTD'
+})
+
+for c in ['term_hc', 'noti_hc']:
+    df2_prep[c] = (
+        df2_prep[c].astype(str)
+        .replace({',': ''}, regex=True)
+        .apply(pd.to_numeric, errors='coerce')
+    )
+
+df2_prep['Function'] = df2_prep['Officer Title Group'].str.replace(
+    r'^Total\s+', '', regex=True
+)
+
+df2_prep['Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df2_prep['term_terms'], df2_prep['term_hc'])
+
+df2_prep['Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)'] = \
+    safe_div(df2_prep['noti_terms'], df2_prep['noti_hc'])
+
+df2_prep['Month'] = report_month
+
+# =====================================================
+# STEP 3: Build df3 base
+# =====================================================
+blocks = []
+for f in sorted(df1_prep['Function'].unique()):
+    blocks.append(
+        df1_prep[df1_prep['Function'] == f]
+        .sort_values(['Officer Title Group', 'Year YTD'])
+    )
+    blocks.append(
+        df2_prep[df2_prep['Function'] == f]
+        .sort_values('Year YTD')
+    )
+
+df3 = pd.concat(blocks, ignore_index=True)
+
+# =====================================================
+# STEP 4: Final column order
+# =====================================================
+df3 = df3.rename(columns={
+    'term_terms': 'Term Date - YTD Terms Vol',
+    'term_hc': 'Term Date - YTD HC Avg',
+    'term_ann': 'Term Date - YTD Ann Attrition',
+    'noti_terms': 'Notification - YTD Terms',
+    'noti_hc': 'Notification - YTD HC Avg',
+    'noti_ann': 'Notification - YTD Ann Attrition'
+})
+
+final_cols = [
+    'Function',
+    'Officer Title Group',
+    'Term Date - YTD Terms Vol',
+    'Term Date - YTD HC Avg',
+    'Term Date - YTD Ann Attrition',
+    'Termination - YTD Non-annualized Attrition (Attrition% of HC Avg)',
+    'Notification - YTD Terms',
+    'Notification - YTD HC Avg',
+    'Notification - YTD Ann Attrition',
+    'Notification - YTD Non-annualized Attrition (Attrition% of HC Avg)',
+    'Month',
+    'Year YTD'
+]
+df3 = df3[final_cols]
+df3['Year YTD'] = df3['Year YTD'].astype(int)
+
+# =====================================================
+# STEP 5: FAST extra-row injection (merge-based)
+# =====================================================
+if counter and extra_rows_config:
+    inject = pd.DataFrame(extra_rows_config)
+    rows = []
+
+    for _, r in inject.iterrows():
+        row = dict.fromkeys(df3.columns, "")
+        row['Function'] = r['Function']
+        row['Officer Title Group'] = r['Officer Title Group']
+        row['Year YTD'] = int(r['Year YTD'])
+        row['Month'] = r.get('Month', report_month)
+        for k, v in r.get('fill_values', {}).items():
+            row[k] = v
+        rows.append(row)
+
+    inject_df = pd.DataFrame(rows)
+
+    merged = inject_df.merge(
+        df3[['Function', 'Officer Title Group', 'Year YTD']],
+        on=['Function', 'Officer Title Group', 'Year YTD'],
+        how='left',
+        indicator=True
+    )
+
+    missing = merged[merged['_merge'] == 'left_only'].drop(columns='_merge')
+    df3 = pd.concat([df3, missing], ignore_index=True)
+
+# =====================================================
+# STEP 6: Markets & Markets Excluding Ops
+# =====================================================
+NUMERIC_COLS = [
+    'Term Date - YTD Terms Vol',
+    'Term Date - YTD HC Avg',
+    'Notification - YTD Terms',
+    'Notification - YTD HC Avg'
+]
+
+is_total = df3['Officer Title Group'].str.startswith('Total', na=False)
+officer_df = df3[~is_total]
+total_df   = df3[is_total]
+
+def align(df):
+    for c in final_cols:
+        if c not in df.columns:
+            df[c] = ""
+    return df[final_cols]
+
+markets_officer = (
+    officer_df.groupby(['Officer Title Group', 'Year YTD'], as_index=False)[NUMERIC_COLS]
+    .sum(min_count=1)
+)
+markets_officer['Function'] = 'Markets'
+markets_officer['Month'] = report_month
+
+markets_total = (
+    total_df.groupby(['Year YTD'], as_index=False)[NUMERIC_COLS]
+    .sum(min_count=1)
+)
+markets_total['Function'] = 'Markets'
+markets_total['Officer Title Group'] = 'Total Markets'
+markets_total['Month'] = report_month
+
+markets_ex_ops_officer = (
+    officer_df[officer_df['Function'] != 'Ops']
+    .groupby(['Officer Title Group', 'Year YTD'], as_index=False)[NUMERIC_COLS]
+    .sum(min_count=1)
+)
+markets_ex_ops_officer['Function'] = 'Markets Excluding Ops'
+markets_ex_ops_officer['Month'] = report_month
+
+markets_ex_ops_total = (
+    total_df[total_df['Function'] != 'Ops']
+    .groupby(['Year YTD'], as_index=False)[NUMERIC_COLS]
+    .sum(min_count=1)
+)
+markets_ex_ops_total['Function'] = 'Markets Excluding Ops'
+markets_ex_ops_total['Officer Title Group'] = 'Total Markets Excluding Ops'
+markets_ex_ops_total['Month'] = report_month
+
+df3 = pd.concat([
+    df3,
+    align(markets_officer),
+    align(markets_total),
+    align(markets_ex_ops_officer),
+    align(markets_ex_ops_total)
+], ignore_index=True)
+
+# =====================================================
+# STEP 7: Excel writer with borders & formats
+# =====================================================
+TERM_TERMS_COL = 2
+TERM_HC_COL = 3
+TERM_ANN_COL = 4
+TERM_NON_ANN_COL = 5
+NOTI_TERMS_COL = 6
+NOTI_HC_COL = 7
+NOTI_ANN_COL = 8
+NOTI_NON_ANN_COL = 9
+
+def write_sheet(writer, name, df):
+    wb = writer.book
+    ws = wb.add_worksheet(name)
+    writer.sheets[name] = ws
+
+    df.to_excel(writer, sheet_name=name, index=False)
+
+    thin = wb.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+    thick = wb.add_format({'bottom': 2, 'align': 'center', 'valign': 'vcenter'})
+    pct1 = wb.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'num_format': '0.0%'})
+    pct2 = wb.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'num_format': '0.00%'})
+
+    rows, cols = df.shape
+
+    for i in range(1, rows + 1):
+        curr_func = df.iloc[i-1]['Function'] if 'Function' in df.columns else None
+        curr_off  = df.iloc[i-1]['Officer Title Group'] if 'Officer Title Group' in df.columns else None
+
+        if i == rows:
+            use_thick = True
+        else:
+            next_func = df.iloc[i]['Function'] if 'Function' in df.columns else None
+            next_off  = df.iloc[i]['Officer Title Group'] if 'Officer Title Group' in df.columns else None
+            use_thick = (next_func != curr_func) or (next_off != curr_off)
+
+        fmt = thick if use_thick else thin
+
+        for c in range(cols):
+            val = df.iloc[i-1, c]
+            ws.write(i, c, "" if pd.isna(val) else val, fmt)
+
+        ws.write_formula(
+            i, TERM_NON_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1},0)',
+            pct1
+        )
+
+        ws.write_formula(
+            i, NOTI_NON_ANN_COL,
+            f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+            f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1},0)',
+            pct1
+        )
+
+        if 'Function' in df.columns and curr_func in ['Markets', 'Markets Excluding Ops']:
+            ws.write_formula(
+                i, TERM_ANN_COL,
+                f'=IFERROR({xlsxwriter.utility.xl_col_to_name(TERM_TERMS_COL)}{i+1}/'
+                f'{xlsxwriter.utility.xl_col_to_name(TERM_HC_COL)}{i+1}*{annualization_factor},0)',
+                pct2
+            )
+            ws.write_formula(
+                i, NOTI_ANN_COL,
+                f'=IFERROR({xlsxwriter.utility.xl_col_to_name(NOTI_TERMS_COL)}{i+1}/'
+                f'{xlsxwriter.utility.xl_col_to_name(NOTI_HC_COL)}{i+1}*{annualization_factor},0)',
+                pct2
+            )
+
+    ws.freeze_panes(1, 0)
+
+# =====================================================
+# WRITE FINAL EXCEL
+# =====================================================
+with pd.ExcelWriter(
+    "DEC_2025_MARKETS_FINAL.xlsx",
+    engine="xlsxwriter",
+    engine_kwargs={"options": {"nan_inf_to_errors": True}}
+) as writer:
+
+    write_sheet(writer, "All Product", df3)
+
+    df4_clean = df4.replace([np.inf, -np.inf], "").fillna("")
+    write_sheet(writer, "GOC_Summary", df4_clean)
+
+    for f in df3['Function'].unique():
+        write_sheet(writer, str(f)[:31], df3[df3['Function'] == f])
+
+print("✅ FINAL FILE GENERATED SUCCESSFULLY")
+
+
+
+
+
 
 
 thin_border = wb.add_format({
