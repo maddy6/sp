@@ -1,0 +1,33 @@
+pip install Office365-REST-Python-Client
+
+
+from office365.sharepoint.client_context import ClientContext
+from office365.runtime.auth.user_credential import UserCredential
+
+# --------------------
+# CONFIG
+# --------------------
+SITE_URL = "https://yourcompany.sharepoint.com/sites/YourSite"
+USERNAME = "your.email@company.com"
+PASSWORD = "your_password"
+
+FOLDER_RELATIVE_URL = "/sites/YourSite/Shared Documents/Reports"
+
+# --------------------
+# AUTH
+# --------------------
+ctx = ClientContext(SITE_URL).with_credentials(
+    UserCredential(USERNAME, PASSWORD)
+)
+
+# --------------------
+# ACCESS FOLDER
+# --------------------
+folder = ctx.web.get_folder_by_server_relative_url(FOLDER_RELATIVE_URL)
+files = folder.files
+ctx.load(files)
+ctx.execute_query()
+
+print("Files in folder:")
+for file in files:
+    print(file.properties["Name"])
