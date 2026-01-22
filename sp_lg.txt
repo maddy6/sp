@@ -1,3 +1,24 @@
+import pandas as pd
+from io import BytesIO
+
+FILE_URL = (
+    "/teams/MTG_TAPMOPAIcollaboration-HR-GLOBALHT48114/"
+    "Shared Documents/TA Capacity/Recruiter Load Balancer/"
+    "Recruiter Load Balancer.xlsx"
+)
+
+file = ctx.web.get_file_by_server_relative_url(FILE_URL)
+buffer = BytesIO()
+file.download(buffer).execute_query()
+
+buffer.seek(0)
+df = pd.read_excel(buffer)
+
+print(df.head())
+
+
+
+
 pip install Office365-REST-Python-Client
 
 
